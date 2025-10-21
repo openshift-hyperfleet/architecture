@@ -1,0 +1,438 @@
+---
+# AdapterConfig CRD - Defines adapter configuration for HyperFleet cluster adapters
+# Based on existing implementation with MVP focus and post-MVP extensibility
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: adapterconfigs.hyperfleet.redhat.com
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.13.0
+    description: "Configures a HyperFleet adapter that processes cluster lifecycle events"
+spec:
+  group: hyperfleet.redhat.com
+  names:
+    kind: AdapterConfig
+    listKind: AdapterConfigList
+    plural: adapterconfigs
+    singular: adapterconfig
+    shortNames:
+      - ac
+      - adapter
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          description: AdapterConfig defines the configuration for a HyperFleet cluster adapter
+          type: object
+          required:
+            - spec
+          properties:
+            apiVersion:
+              description: 'APIVersion defines the versioned schema of this representation'
+              type: string
+            kind:
+              description: 'Kind is a string value representing the REST resource'
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AdapterConfigSpec defines the desired state of AdapterConfig
+              type: object
+              required:
+                - adapter
+                - subscription
+                - apiClient
+                - preconditions
+                - resources
+              properties:
+                adapter:
+                  description: Adapter identity and metadata
+                  type: object
+                  required:
+                    - name
+                    - version
+                  properties:
+                    name:
+                      description: Adapter name (e.g., validation, dns, placement)
+                      type: string
+                      minLength: 1
+                      pattern: '^[a-z][a-z0-9-]*[a-z0-9]$'
+                    version:
+                      description: Semantic version of the adapter
+                      type: string
+                      pattern: '^v\d+\.\d+\.\d+$'
+                    description:
+                      description: Human-readable description of adapter purpose
+                      type: string
+
+                subscription:
+                  description: Message broker subscription configuration
+                  type: object
+                  required:
+                    - channel
+                    - consumerGroup
+                  properties:
+                    channel:
+                      description: Event topic/channel to subscribe to
+                      type: string
+                      minLength: 1
+                    consumerGroup:
+                      description: Consumer group name for load balancing
+                      type: string
+                      minLength: 1
+                    maxConcurrent:
+                      description: Maximum concurrent event processing
+                      type: integer
+                      default: 10
+                      minimum: 1
+                      maximum: 100
+                    ackTimeout:
+                      description: Message acknowledgment timeout
+                      type: string
+                      default: "60s"
+                      pattern: '^\d+[smh]$'
+
+                apiClient:
+                  description: HyperFleet API client configuration
+                  type: object
+                  required:
+                    - baseUrl
+                  properties:
+                    baseUrl:
+                      description: Base URL of HyperFleet API
+                      type: string
+                      minLength: 1
+                      pattern: '^https?://'
+                    timeout:
+                      description: HTTP request timeout
+                      type: string
+                      default: "30s"
+                      pattern: '^\d+[smh]$'
+                    retryAttempts:
+                      description: Number of retry attempts for failed API calls
+                      type: integer
+                      default: 3
+                      minimum: 0
+                      maximum: 10
+
+                preconditions:
+                  description: Conditions that must be met before adapter acts
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - field
+                      - operator
+                    properties:
+                      field:
+                        description: JSON path to field in cluster object
+                        type: string
+                        minLength: 1
+                      operator:
+                        description: Comparison operator
+                        type: string
+                        enum:
+                          - eq
+                          - ne
+                          - in
+                          - notin
+                          - lessThan
+                          - greaterThan
+                          - exists
+                          - notExists
+                      value:
+                        description: Static value to compare against
+                        x-kubernetes-preserve-unknown-fields: true
+                      fieldRef:
+                        description: Reference to another field for comparison
+                        type: string
+
+                resources:
+                  description: Kubernetes resources to create/manage
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required:
+                      - name
+                      - kind
+                      - apiVersion
+                      - template
+                    properties:
+                      name:
+                        description: Resource name identifier
+                        type: string
+                        minLength: 1
+                      kind:
+                        description: Kubernetes resource kind (e.g., Job, ConfigMap)
+                        type: string
+                        minLength: 1
+                      apiVersion:
+                        description: Kubernetes API version
+                        type: string
+                        minLength: 1
+                      template:
+                        description: Go template for resource manifest
+                        type: string
+                        minLength: 1
+
+                      postconditions:
+                        description: Conditions to evaluate resource status
+                        type: object
+                        properties:
+                          success:
+                            description: Conditions indicating resource succeeded
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - field
+                                - operator
+                              properties:
+                                field:
+                                  description: JSON path to field in resource
+                                  type: string
+                                  minLength: 1
+                                operator:
+                                  description: Comparison operator
+                                  type: string
+                                  enum:
+                                    - eq
+                                    - ne
+                                    - in
+                                    - notin
+                                    - lessThan
+                                    - greaterThan
+                                    - greaterThanOrEqual
+                                    - lessThanOrEqual
+                                    - exists
+                                    - notExists
+                                value:
+                                  description: Static value to compare against
+                                  x-kubernetes-preserve-unknown-fields: true
+                                fieldRef:
+                                  description: Reference to another field for comparison
+                                  type: string
+                          failure:
+                            description: Conditions indicating resource failed permanently
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - field
+                                - operator
+                              properties:
+                                field:
+                                  description: JSON path to field in resource
+                                  type: string
+                                  minLength: 1
+                                operator:
+                                  description: Comparison operator
+                                  type: string
+                                  enum:
+                                    - eq
+                                    - ne
+                                    - in
+                                    - notin
+                                    - lessThan
+                                    - greaterThan
+                                    - greaterThanOrEqual
+                                    - lessThanOrEqual
+                                    - exists
+                                    - notExists
+                                value:
+                                  description: Static value to compare against
+                                  x-kubernetes-preserve-unknown-fields: true
+                                fieldRef:
+                                  description: Reference to another field for comparison
+                                  type: string
+                          inProgress:
+                            description: Conditions indicating resource is still running
+                            type: array
+                            items:
+                              type: object
+                              required:
+                                - field
+                                - operator
+                              properties:
+                                field:
+                                  description: JSON path to field in resource
+                                  type: string
+                                  minLength: 1
+                                operator:
+                                  description: Comparison operator
+                                  type: string
+                                  enum:
+                                    - eq
+                                    - ne
+                                    - in
+                                    - notin
+                                    - lessThan
+                                    - greaterThan
+                                    - greaterThanOrEqual
+                                    - lessThanOrEqual
+                                    - exists
+                                    - notExists
+                                value:
+                                  description: Static value to compare against
+                                  x-kubernetes-preserve-unknown-fields: true
+                                fieldRef:
+                                  description: Reference to another field for comparison
+                                  type: string
+
+                      resourceManagement:
+                        description: Resource lifecycle management policies
+                        type: object
+                        properties:
+                          recreatePolicy:
+                            description: When to recreate the resource
+                            type: string
+                            default: IfGenerationChanged
+                            enum:
+                              - Always
+                              - IfGenerationChanged
+                              - IfFailed
+                              - Never
+                          cleanupPolicy:
+                            description: When to delete the resource
+                            type: string
+                            default: KeepFailed
+                            enum:
+                              - DeleteAlways
+                              - DeleteOnSuccess
+                              - KeepFailed
+                              - KeepAll
+                          cleanupDelay:
+                            description: Delay before cleanup
+                            type: string
+                            default: "1h"
+                            pattern: '^\d+[smh]$'
+                          maxConcurrent:
+                            description: Maximum concurrent resources per cluster
+                            type: integer
+                            default: 1
+                            minimum: 1
+                          maxRetries:
+                            description: Maximum retry attempts for failed resources
+                            type: integer
+                            default: 3
+                            minimum: 0
+                          retryBackoff:
+                            description: Retry backoff strategy
+                            type: string
+                            default: exponential
+                            enum:
+                              - exponential
+                              - linear
+                              - constant
+                          retryDelay:
+                            description: Initial retry delay
+                            type: string
+                            default: "30s"
+                            pattern: '^\d+[smh]$'
+                          idempotencyKey:
+                            description: Strategy for duplicate detection
+                            type: string
+                            default: "cluster.id+generation"
+                          conflictResolution:
+                            description: How to handle resource conflicts
+                            type: string
+                            default: Replace
+                            enum:
+                              - Replace
+                              - KeepExisting
+                              - Fail
+
+            status:
+              description: AdapterConfigStatus defines the observed state
+              type: object
+              properties:
+                observedGeneration:
+                  description: Most recently observed generation
+                  type: integer
+                  format: int64
+                conditions:
+                  description: Current state conditions
+                  type: array
+                  items:
+                    description: Condition following Kubernetes metav1.Condition standard
+                    type: object
+                    required:
+                      - type
+                      - status
+                      - lastTransitionTime
+                      - reason
+                      - message
+                    properties:
+                      type:
+                        description: Condition type (e.g., Ready, Progressing, Failed)
+                        type: string
+                        minLength: 1
+                      status:
+                        description: Status of the condition (True, False, Unknown)
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - "Unknown"
+                      observedGeneration:
+                        description: Generation when condition was last updated
+                        type: integer
+                        format: int64
+                      lastTransitionTime:
+                        description: Last time the condition transitioned
+                        type: string
+                        format: date-time
+                      reason:
+                        description: Machine-readable reason (CamelCase)
+                        type: string
+                        minLength: 1
+                        pattern: '^[A-Z][A-Za-z0-9]*$'
+                      message:
+                        description: Human-readable message with details
+                        type: string
+                deploymentStatus:
+                  description: Status of adapter deployment
+                  type: object
+                  properties:
+                    replicas:
+                      description: Number of desired replicas
+                      type: integer
+                    readyReplicas:
+                      description: Number of ready replicas
+                      type: integer
+                    updatedReplicas:
+                      description: Number of updated replicas
+                      type: integer
+                    lastUpdateTime:
+                      description: Last time deployment was updated
+                      type: string
+                      format: date-time
+
+      subresources:
+        status: {}
+
+      additionalPrinterColumns:
+        - name: Adapter
+          type: string
+          description: Adapter name
+          jsonPath: .spec.adapter.name
+        - name: Version
+          type: string
+          description: Adapter version
+          jsonPath: .spec.adapter.version
+        - name: Channel
+          type: string
+          description: Subscription channel
+          jsonPath: .spec.subscription.channel
+        - name: Ready
+          type: string
+          description: Ready status
+          jsonPath: .status.conditions[?(@.type=="Ready")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

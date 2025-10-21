@@ -1,0 +1,387 @@
+---
+# Template AdapterConfig - Reference for creating new adapters
+# This template shows all available configuration options
+#
+# Usage:
+# 1. Copy this file and rename it (e.g., my-adapter-example.yaml)
+# 2. Replace all {{PLACEHOLDERS}} with your values
+# 3. Remove any optional sections you don't need
+# 4. Apply: kubectl apply -f my-adapter-example.yaml
+apiVersion: hyperfleet.redhat.com/v1alpha1
+kind: AdapterConfig
+metadata:
+  # REQUIRED: Unique name for this adapter instance
+  name: {{ADAPTER_NAME}}-adapter
+
+  # REQUIRED: Namespace where adapter will be deployed
+  namespace: hyperfleet-system
+
+  # RECOMMENDED: Standard Kubernetes labels
+  labels:
+    app.kubernetes.io/name: {{ADAPTER_NAME}}-adapter
+    app.kubernetes.io/component: adapter
+    app.kubernetes.io/part-of: hyperfleet
+    app.kubernetes.io/version: "{{VERSION}}"
+    hyperfleet.io/adapter-type: {{ADAPTER_NAME}}
+
+  # OPTIONAL: Annotations for additional metadata
+  annotations:
+    hyperfleet.io/description: "{{DESCRIPTION}}"
+    hyperfleet.io/owner: "{{TEAM_NAME}}"
+    hyperfleet.io/docs: "https://docs.hyperfleet.io/adapters/{{ADAPTER_NAME}}"
+
+spec:
+  # ========================================
+  # ADAPTER IDENTITY
+  # ========================================
+  adapter:
+    # REQUIRED: Adapter name (lowercase, alphanumeric, hyphens)
+    # Used for logging, metrics, and status reporting
+    name: {{ADAPTER_NAME}}
+
+    # REQUIRED: Semantic version (v1.0.0 format)
+    # Should match the container image version
+    version: "v1.0.0"
+
+    # OPTIONAL: Human-readable description
+    description: "{{DESCRIPTION}}"
+
+  # ========================================
+  # MESSAGE BROKER SUBSCRIPTION
+  # ========================================
+  subscription:
+    # REQUIRED: Event channel/topic to subscribe to
+    # Common values:
+    #   - hyperfleet.clusters.changed.v1 (cluster lifecycle events)
+    #   - hyperfleet.clusters.updated.v1 (cluster updates only)
+    channel: hyperfleet.clusters.changed.v1
+
+    # REQUIRED: Consumer group name
+    # Should be unique per adapter type for load balancing
+    consumerGroup: {{ADAPTER_NAME}}-adapter
+
+    # OPTIONAL: Maximum concurrent event processing (default: 10)
+    # Higher = more throughput, more resource usage
+    # Lower = less throughput, more controlled resource usage
+    maxConcurrent: 10
+
+    # OPTIONAL: Message acknowledgment timeout (default: 60s)
+    # How long adapter has to process event before auto-NACK
+    ackTimeout: "60s"
+
+  # ========================================
+  # HYPERFLEET API CLIENT
+  # ========================================
+  apiClient:
+    # REQUIRED: HyperFleet API base URL
+    # In-cluster: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080
+    # External: https://hyperfleet-api.example.com
+    baseUrl: "http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080"
+
+    # OPTIONAL: HTTP request timeout (default: 30s)
+    timeout: "30s"
+
+    # OPTIONAL: Retry attempts for failed API calls (default: 3)
+    retryAttempts: 3
+
+  # ========================================
+  # PRECONDITIONS
+  # When should this adapter act?
+  # ========================================
+  preconditions:
+    # EXAMPLE 1: Check if another adapter is ready
+    # This adapter waits for validation to complete
+    - field: status.validation.conditions[?(@.type=="Available")].status
+      operator: eq
+      value: "True"
+
+    # EXAMPLE 2: Check if this adapter already processed this generation
+    # Skip if already processed to prevent duplicate work
+    - field: status.{{ADAPTER_NAME}}.observedGeneration
+      operator: lessThan
+      fieldRef: metadata.generation
+
+    # EXAMPLE 3: Check cluster phase
+    # Only process clusters in specific phase
+    # - field: status.phase
+    #   operator: eq
+    #   value: "Pending"
+
+    # EXAMPLE 4: Check provider type
+    # Only process GCP clusters
+    # - field: spec.provider
+    #   operator: eq
+    #   value: "gcp"
+
+    # EXAMPLE 5: Check multiple values (OR logic)
+    # Process GCP or AWS clusters
+    # - field: spec.provider
+    #   operator: in
+    #   value: ["gcp", "aws"]
+
+    # EXAMPLE 6: Check if field exists
+    # Only process if baseDomain is set
+    # - field: spec.baseDomain
+    #   operator: exists
+
+    # EXAMPLE 7: Compare two fields
+    # Check if status generation matches spec generation
+    # - field: status.observedGeneration
+    #   operator: lessThan
+    #   fieldRef: metadata.generation
+
+    # Available operators:
+    #   - eq: equals
+    #   - ne: not equals
+    #   - in: value in list
+    #   - notin: value not in list
+    #   - lessThan: numeric less than
+    #   - greaterThan: numeric greater than
+    #   - exists: field exists
+    #   - notExists: field does not exist
+
+  # ========================================
+  # KUBERNETES RESOURCES
+  # What resources should this adapter create?
+  # ========================================
+  resources:
+    # You can define multiple resources (Jobs, ConfigMaps, etc.)
+    # They will be created in order
+
+    - name: {{ADAPTER_NAME}}-job
+
+      # REQUIRED: Kubernetes resource kind
+      # Common values: Job, ConfigMap, Secret, Service
+      kind: Job
+
+      # REQUIRED: Kubernetes API version
+      apiVersion: batch/v1
+
+      # REQUIRED: Go template for resource manifest
+      # Available template variables:
+      #   - .Cluster.ID: Cluster ID
+      #   - .Cluster.Generation: Cluster generation
+      #   - .Cluster.Spec.*: Any cluster spec field
+      #   - .Cluster.Status.*: Any cluster status field
+      #   - .Epoch: Current Unix timestamp (for unique names)
+      template: |
+        apiVersion: batch/v1
+        kind: Job
+        metadata:
+          # IMPORTANT: Include generation in name for idempotency
+          name: "{{ADAPTER_NAME}}-{{.Cluster.ID}}-gen{{.Cluster.Generation}}"
+          namespace: hyperfleet-jobs
+
+          labels:
+            hyperfleet.io/cluster-id: "{{.Cluster.ID}}"
+            hyperfleet.io/generation: "{{.Cluster.Generation}}"
+            hyperfleet.io/adapter: {{ADAPTER_NAME}}
+            hyperfleet.io/provider: "{{.Cluster.Spec.Provider}}"
+
+          annotations:
+            hyperfleet.io/created-by: {{ADAPTER_NAME}}-adapter
+            hyperfleet.io/event-id: "{{.EventID}}"
+
+        spec:
+          # Max retries before marking job as failed
+          backoffLimit: 2
+
+          # Auto-delete job after completion (default: never)
+          # Set to 0 to delete immediately, or seconds to keep
+          ttlSecondsAfterFinished: 3600
+
+          # Maximum time job can run before being terminated
+          activeDeadlineSeconds: 600
+
+          template:
+            metadata:
+              labels:
+                hyperfleet.io/cluster-id: "{{.Cluster.ID}}"
+                hyperfleet.io/adapter: {{ADAPTER_NAME}}
+
+            spec:
+              # IMPORTANT: ServiceAccount with necessary RBAC permissions
+              serviceAccountName: {{ADAPTER_NAME}}-job-runner
+
+              # REQUIRED for Jobs
+              restartPolicy: Never
+
+              containers:
+                - name: {{ADAPTER_NAME}}
+
+                  # REQUIRED: Container image
+                  # Use provider-specific images if needed
+                  image: quay.io/hyperfleet/{{ADAPTER_NAME}}-{{.Cluster.Spec.Provider}}:v1.0.0
+
+                  imagePullPolicy: IfNotPresent
+
+                  # Environment variables available to job
+                  env:
+                    - name: CLUSTER_ID
+                      value: "{{.Cluster.ID}}"
+
+                    - name: GENERATION
+                      value: "{{.Cluster.Generation}}"
+
+                    - name: PROVIDER
+                      value: "{{.Cluster.Spec.Provider}}"
+
+                    - name: REGION
+                      value: "{{.Cluster.Spec.Region}}"
+
+                    - name: HYPERFLEET_API_URL
+                      value: "http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080"
+
+                    # Add any custom environment variables
+                    # - name: CUSTOM_VAR
+                    #   value: "{{.Cluster.Spec.CustomField}}"
+
+                  # RECOMMENDED: Set resource requests/limits
+                  resources:
+                    requests:
+                      memory: "128Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "200m"
+
+      # ========================================
+      # POSTCONDITIONS
+      # How to evaluate resource status
+      # ========================================
+      postconditions:
+        # REQUIRED: Define how to determine if resource succeeded
+        # These conditions are evaluated when adapter checks existing resource
+        # Used to report Available=True/False/Unknown and Health=True/False
+
+        # SUCCESS: Job completed successfully
+        success:
+          - field: status.succeeded
+            operator: greaterThan
+            value: 0
+
+        # FAILURE: Job failed permanently (exceeded backoffLimit)
+        # When this is true, Health=False and Available=False
+        failure:
+          - field: status.failed
+            operator: greaterThan
+            value: 0
+          # Optionally check if failed count >= backoffLimit for permanent failure
+          # - field: status.failed
+          #   operator: greaterThanOrEqual
+          #   fieldRef: spec.backoffLimit
+
+        # IN_PROGRESS: Job is still running
+        # When this is true, Available=Unknown
+        inProgress:
+          - field: status.active
+            operator: greaterThan
+            value: 0
+
+        # Examples for other resource types:
+
+        # ConfigMap postconditions (always successful if exists)
+        # success:
+        #   - field: metadata.name
+        #     operator: exists
+
+        # Deployment postconditions
+        # success:
+        #   - field: status.availableReplicas
+        #     operator: greaterThan
+        #     value: 0
+        #   - field: status.availableReplicas
+        #     operator: eq
+        #     fieldRef: spec.replicas
+        # inProgress:
+        #   - field: status.availableReplicas
+        #     operator: lessThan
+        #     fieldRef: spec.replicas
+
+        # Service postconditions
+        # success:
+        #   - field: spec.clusterIP
+        #     operator: exists
+        #   - field: spec.clusterIP
+        #     operator: ne
+        #     value: "None"
+
+      # ========================================
+      # RESOURCE LIFECYCLE MANAGEMENT
+      # How to manage resource lifecycle
+      # ========================================
+      resourceManagement:
+        # OPTIONAL: When to recreate the resource (default: IfGenerationChanged)
+        # Options:
+        #   - Always: Always recreate on new event
+        #   - IfGenerationChanged: Only recreate if generation changed
+        #   - IfFailed: Only recreate if previous attempt failed
+        #   - Never: Create once, never recreate
+        recreatePolicy: IfGenerationChanged
+
+        # OPTIONAL: When to delete the resource (default: KeepFailed)
+        # Options:
+        #   - DeleteAlways: Delete after job completes (success or failure)
+        #   - DeleteOnSuccess: Delete only if job succeeds
+        #   - KeepFailed: Keep failed jobs for debugging
+        #   - KeepAll: Never auto-delete
+        cleanupPolicy: KeepFailed
+
+        # OPTIONAL: Delay before cleanup (default: 1h)
+        # Gives time to inspect completed resources
+        cleanupDelay: "1h"
+
+        # OPTIONAL: Maximum concurrent resources per cluster (default: 1)
+        # Usually set to 1 to prevent race conditions
+        maxConcurrent: 1
+
+        # OPTIONAL: Maximum retry attempts for failed resources (default: 3)
+        maxRetries: 3
+
+        # OPTIONAL: Retry backoff strategy (default: exponential)
+        # Options:
+        #   - exponential: 30s, 60s, 120s, 240s...
+        #   - linear: 30s, 60s, 90s, 120s...
+        #   - constant: 30s, 30s, 30s, 30s...
+        retryBackoff: exponential
+
+        # OPTIONAL: Initial retry delay (default: 30s)
+        retryDelay: "30s"
+
+        # OPTIONAL: Idempotency key strategy (default: cluster.id+generation)
+        # Used to detect duplicate resources
+        # Options:
+        #   - cluster.id+generation: Per cluster per generation
+        #   - cluster.id: Per cluster (ignores generation)
+        #   - custom: Use custom key from template
+        idempotencyKey: "cluster.id+generation"
+
+        # OPTIONAL: How to handle resource conflicts (default: Replace)
+        # Options:
+        #   - Replace: Replace existing resource with new one
+        #   - KeepExisting: Keep existing, skip creation
+        #   - Fail: Report error and fail
+        conflictResolution: Replace
+
+# ========================================
+# STATUS (Managed by operator)
+# Do not edit this section manually
+# ========================================
+status:
+  # Last generation processed by operator
+  observedGeneration: 0
+
+  # Current state conditions
+  conditions:
+    - type: Ready
+      status: "Unknown"
+      lastTransitionTime: "2025-10-20T10:00:00Z"
+      reason: Initializing
+      message: "AdapterConfig created, waiting for controller"
+
+  # Deployment status (populated by operator)
+  # deploymentStatus:
+  #   replicas: 3
+  #   readyReplicas: 3
+  #   updatedReplicas: 3
+  #   lastUpdateTime: "2025-10-20T10:05:00Z"
