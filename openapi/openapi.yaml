@@ -1,0 +1,739 @@
+openapi: 3.0.3
+info:
+  title: HyperFleet API
+  description: |
+    HyperFleet API provides simple CRUD operations for managing cluster resources and their status history.
+
+    **Architecture**: v2 - Simple CRUD only, no business logic, no event creation.
+    Sentinel operator handles all orchestration logic.
+  version: 1.0.0
+  contact:
+    name: HyperFleet Team
+
+servers:
+  - url: https://api.hyperfleet.example.com
+    description: Production
+  - url: https://api.hyperfleet.dev.example.com
+    description: Development
+
+tags:
+  - name: Clusters
+    description: Cluster resource CRUD operations
+  - name: Statuses
+    description: Cluster status history (immutable, append-only)
+
+paths:
+  /api/hyperfleet/v1/clusters:
+    get:
+      summary: List clusters
+      tags:
+        - Clusters
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: orderBy
+          in: query
+          schema:
+            type: string
+            default: created_at
+      responses:
+        '200':
+          description: List of clusters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Cluster'
+                  page:
+                    type: integer
+                  size:
+                    type: integer
+                  total:
+                    type: integer
+
+    post:
+      summary: Create cluster
+      description: |
+        Create a new cluster resource.
+
+        **Note**: The `status` object in the response is read-only and computed by the service.
+        It is NOT part of the request body. Initially, status.phase will be "Pending" and
+        status.adapters will be empty until adapters POST their status.
+      tags:
+        - Clusters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterCreateRequest'
+            example:
+              name: my-production-cluster
+              provider: gcp
+              region: us-east1
+      responses:
+        '201':
+          description: Cluster created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+              example:
+                id: 550e8400-e29b-41d4-a716-446655440000
+                type: Cluster
+                name: my-production-cluster
+                provider: gcp
+                region: us-east1
+                generation: 1
+                observed_generation: 0
+                phase: Pending
+                last_transition_time: "2025-10-22T12:00:00Z"
+                status:
+                  phase: Pending
+                  adapters: []
+                created_at: "2025-10-22T12:00:00Z"
+                updated_at: "2025-10-22T12:00:00Z"
+                href: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000
+        '400':
+          description: Validation error
+
+  /api/hyperfleet/v1/clusters/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get cluster by ID
+      tags:
+        - Clusters
+      responses:
+        '200':
+          description: Cluster details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '404':
+          description: Cluster not found
+
+    patch:
+      summary: Update cluster
+      description: |
+        Updates cluster spec and increments generation field.
+
+        **Note**: The `status` object is read-only and CANNOT be modified via this endpoint.
+        Status is aggregated from adapter status updates via `/clusters/{id}/statuses` endpoints.
+        Only spec fields (name, region) can be updated here.
+      tags:
+        - Clusters
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClusterUpdateRequest'
+            example:
+              region: us-west1
+      responses:
+        '200':
+          description: Cluster updated (generation incremented)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cluster'
+        '404':
+          description: Cluster not found
+
+    delete:
+      summary: Delete cluster
+      tags:
+        - Clusters
+      responses:
+        '204':
+          description: Cluster deleted
+        '404':
+          description: Cluster not found
+
+  /api/hyperfleet/v1/clusters/{id}/statuses:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: Cluster ID
+
+    get:
+      summary: List all adapter statuses for cluster
+      description: Returns current status object for each adapter that has reported status
+      tags:
+        - Statuses
+      responses:
+        '200':
+          description: List of adapter statuses
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AdapterStatus'
+                  total:
+                    type: integer
+        '404':
+          description: Cluster not found
+
+    post:
+      summary: Create adapter status
+      description: |
+        Adapter creates its initial status object for this cluster.
+        Returns 409 if adapter already has a status object for this cluster (use PATCH to update).
+
+        Response includes the status UUID and href for future PATCH operations.
+        Adapter should store the returned id/href to update its status later.
+      tags:
+        - Statuses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdapterStatusCreateRequest'
+      responses:
+        '201':
+          description: Status created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdapterStatus'
+        '404':
+          description: Cluster not found
+        '400':
+          description: Validation error
+        '409':
+          description: Adapter status already exists for this cluster
+
+  /api/hyperfleet/v1/clusters/{cluster_id}/statuses/{id}:
+    parameters:
+      - name: cluster_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: Cluster ID
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: Status ID
+
+    get:
+      summary: Get adapter status by ID
+      description: Returns specific adapter status resource
+      tags:
+        - Statuses
+      responses:
+        '200':
+          description: Adapter status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdapterStatus'
+        '404':
+          description: Status not found
+
+    patch:
+      summary: Update adapter status
+      description: |
+        Adapter updates its status object.
+        Service computes lastTransitionTime for conditions when status changes.
+        Service updates lastUpdated timestamp automatically.
+      tags:
+        - Statuses
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdapterStatusUpdateRequest'
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdapterStatus'
+        '404':
+          description: Status not found
+        '400':
+          description: Validation error
+
+    delete:
+      summary: Delete adapter status
+      description: |
+        Delete adapter status resource.
+
+        This removes the adapter's status from the cluster and updates the cluster's
+        status.adapters array. Use when:
+        - Adapter is being removed/disabled
+        - Cleaning up test data
+        - Recovering from errors (delete then POST new status)
+
+        **Note**: Deleting adapter status does NOT delete the cluster.
+      tags:
+        - Statuses
+      responses:
+        '204':
+          description: Status deleted successfully
+        '404':
+          description: Status not found
+
+components:
+  schemas:
+    Cluster:
+      type: object
+      required:
+        - id
+        - type
+        - name
+        - provider
+        - region
+        - generation
+        - observed_generation
+        - phase
+        - last_transition_time
+        - status
+        - created_at
+        - updated_at
+        - href
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique cluster identifier
+          readOnly: true
+        type:
+          type: string
+          description: Resource type
+          example: Cluster
+          readOnly: true
+        name:
+          type: string
+          description: Cluster name (unique)
+        provider:
+          type: string
+          description: Cloud provider
+          enum:
+            - gcp
+            - aws
+            - azure
+        region:
+          type: string
+          description: Cloud region
+        generation:
+          type: integer
+          description: Incremented on spec updates (for idempotency)
+        observed_generation:
+          type: integer
+          description: Last generation processed by adapters
+        phase:
+          type: string
+          description: |
+            Current cluster phase (native database column).
+            Updated when adapters POST status. Used by Sentinel for queries.
+            Note: status.phase provides aggregated view from all adapter conditions.
+          enum:
+            - Pending
+            - Provisioning
+            - Ready
+            - Failed
+        last_transition_time:
+          type: string
+          format: date-time
+          description: When cluster last transitioned (updated by adapters, used by Sentinel for backoff)
+        status:
+          type: object
+          description: |
+            **READ-ONLY**: Cluster status aggregation from all adapters.
+
+            This object is computed by the service and CANNOT be modified directly.
+            It is aggregated from adapter status updates posted to `/clusters/{id}/statuses`.
+
+            Provides quick overview of which adapters have reported and aggregated phase.
+          required:
+            - phase
+            - adapters
+          readOnly: true
+          properties:
+            phase:
+              type: string
+              description: |
+                Aggregated phase from all adapter conditions.
+                - Pending: No adapters have reported yet or all in Pending
+                - Provisioning: At least one adapter working, none failed
+                - Ready: All adapters report Available=True conditions
+                - Failed: Any adapter reports Available=False with failure reason
+                - Degraded: Required adapters ready, optional adapters failed
+              enum:
+                - Pending
+                - Provisioning
+                - Ready
+                - Failed
+                - Degraded
+            adapters:
+              type: array
+              description: List of adapters that have reported status for this cluster
+              items:
+                type: object
+                required:
+                  - adapter_id
+                  - href
+                properties:
+                  adapter_id:
+                    type: string
+                    description: Adapter identifier
+                    example: validation
+                  href:
+                    type: string
+                    description: Link to adapter status resource (uses status UUID)
+                    example: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000/statuses/660e8400-e29b-41d4-a716-446655440001
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        href:
+          type: string
+          description: API resource URL
+          example: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000
+          readOnly: true
+      example:
+        id: 550e8400-e29b-41d4-a716-446655440000
+        type: Cluster
+        name: my-production-cluster
+        provider: gcp
+        region: us-east1
+        generation: 3
+        observed_generation: 3
+        phase: Ready
+        last_transition_time: "2025-10-22T14:30:00Z"
+        status:
+          phase: Ready
+          adapters:
+            - adapter_id: validation
+              href: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000/statuses/660e8400-e29b-41d4-a716-446655440001
+            - adapter_id: compute
+              href: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000/statuses/660e8400-e29b-41d4-a716-446655440002
+            - adapter_id: networking
+              href: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000/statuses/660e8400-e29b-41d4-a716-446655440003
+        created_at: "2025-10-22T12:00:00Z"
+        updated_at: "2025-10-22T14:30:00Z"
+        href: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000
+
+    ClusterCreateRequest:
+      type: object
+      required:
+        - name
+        - provider
+        - region
+      properties:
+        name:
+          type: string
+        provider:
+          type: string
+          enum:
+            - gcp
+            - aws
+            - azure
+        region:
+          type: string
+      example:
+        name: my-production-cluster
+        provider: gcp
+        region: us-east1
+
+    ClusterUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        region:
+          type: string
+      example:
+        region: us-west1
+
+    AdapterStatus:
+      type: object
+      required:
+        - id
+        - type
+        - cluster_id
+        - adapter_id
+        - observed_generation
+        - conditions
+        - last_updated
+        - created_at
+        - href
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Unique status identifier
+          readOnly: true
+        type:
+          type: string
+          description: Resource type
+          example: AdapterStatus
+          readOnly: true
+        cluster_id:
+          type: string
+          format: uuid
+          description: Cluster this status belongs to
+          readOnly: true
+        adapter_id:
+          type: string
+          description: Adapter identifier
+          example: validation
+        observed_generation:
+          type: integer
+          description: Which cluster generation this status reflects
+        conditions:
+          type: array
+          description: Kubernetes-style conditions tracking adapter state
+          items:
+            $ref: '#/components/schemas/Condition'
+        data:
+          type: object
+          description: Adapter-specific data (structure varies by adapter type)
+          additionalProperties: true
+          example:
+            validationResults:
+              route53Zone:
+                status: passed
+                zoneId: Z0123456789ABC
+        metadata:
+          type: object
+          description: Metadata about the adapter job/execution
+          properties:
+            job_name:
+              type: string
+              example: validate-cls-123-gen-1-1697548800
+            job_namespace:
+              type: string
+              example: hyperfleet-jobs
+            attempt:
+              type: integer
+              example: 1
+            started_at:
+              type: string
+              format: date-time
+            completed_at:
+              type: string
+              format: date-time
+            duration:
+              type: string
+              example: 115s
+        last_updated:
+          type: string
+          format: date-time
+          description: When this status was last updated (computed by service)
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          description: When adapter first created this status
+          readOnly: true
+        href:
+          type: string
+          description: API resource URL (uses status UUID)
+          example: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000/statuses/660e8400-e29b-41d4-a716-446655440001
+          readOnly: true
+      example:
+        id: 660e8400-e29b-41d4-a716-446655440001
+        type: AdapterStatus
+        cluster_id: 550e8400-e29b-41d4-a716-446655440000
+        adapter_id: validation
+        observed_generation: 1
+        conditions:
+          - type: Available
+            status: "True"
+            reason: JobSucceeded
+            message: Job completed successfully after 115 seconds
+            last_transition_time: "2025-10-17T12:02:00Z"
+          - type: Applied
+            status: "True"
+            reason: JobLaunched
+            message: Kubernetes Job created successfully
+            last_transition_time: "2025-10-17T12:00:05Z"
+          - type: Health
+            status: "True"
+            reason: AllChecksPassed
+            message: All validation checks passed
+            last_transition_time: "2025-10-17T12:02:00Z"
+        data:
+          validationResults:
+            route53Zone:
+              status: passed
+              zoneId: Z0123456789ABC
+              nameServers:
+                - ns-1.awsdns.com
+                - ns-2.awsdns.com
+              message: Route53 zone found for hypershift.example.com
+            oidcBucket:
+              status: passed
+              bucketName: my-hypershift-oidc-bucket
+              region: us-east-1
+              publicAccess: true
+              message: S3 bucket configured correctly
+        metadata:
+          job_name: validate-cls-123-gen-1-1697548800
+          job_namespace: hyperfleet-jobs
+          attempt: 1
+          started_at: "2025-10-17T12:00:05Z"
+          completed_at: "2025-10-17T12:02:00Z"
+          duration: 115s
+        last_updated: "2025-10-17T12:02:00Z"
+        created_at: "2025-10-17T12:00:00Z"
+        href: /api/hyperfleet/v1/clusters/550e8400-e29b-41d4-a716-446655440000/statuses/660e8400-e29b-41d4-a716-446655440001
+
+    Condition:
+      type: object
+      required:
+        - type
+        - status
+      properties:
+        type:
+          type: string
+          description: Condition type
+          example: Available
+        status:
+          type: string
+          description: Condition status
+          enum:
+            - "True"
+            - "False"
+            - Unknown
+        reason:
+          type: string
+          description: Machine-readable reason code
+          example: JobSucceeded
+        message:
+          type: string
+          description: Human-readable message
+          example: Job completed successfully after 115 seconds
+        last_transition_time:
+          type: string
+          format: date-time
+          description: When this condition last transitioned (computed by service when status changes)
+          readOnly: true
+
+    AdapterStatusCreateRequest:
+      type: object
+      required:
+        - adapter_id
+        - observed_generation
+        - conditions
+      properties:
+        adapter_id:
+          type: string
+          description: Adapter identifier
+          example: validation
+        observed_generation:
+          type: integer
+          description: Which cluster generation this status reflects
+        conditions:
+          type: array
+          items:
+            type: object
+            required:
+              - type
+              - status
+            properties:
+              type:
+                type: string
+              status:
+                type: string
+                enum:
+                  - "True"
+                  - "False"
+                  - Unknown
+              reason:
+                type: string
+              message:
+                type: string
+        data:
+          type: object
+          description: Adapter-specific data
+          additionalProperties: true
+        metadata:
+          type: object
+          description: Job execution metadata
+          additionalProperties: true
+
+    AdapterStatusUpdateRequest:
+      type: object
+      properties:
+        observed_generation:
+          type: integer
+          description: Update observed generation
+        conditions:
+          type: array
+          description: Update conditions (service computes lastTransitionTime)
+          items:
+            type: object
+            required:
+              - type
+              - status
+            properties:
+              type:
+                type: string
+              status:
+                type: string
+                enum:
+                  - "True"
+                  - "False"
+                  - Unknown
+              reason:
+                type: string
+              message:
+                type: string
+        data:
+          type: object
+          description: Update adapter-specific data
+          additionalProperties: true
+        metadata:
+          type: object
+          description: Update job metadata
+          additionalProperties: true
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
