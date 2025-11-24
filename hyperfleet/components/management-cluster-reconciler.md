@@ -12,6 +12,8 @@ The goal is to ensure reliable hosted cluster provisioning that meets our hosted
 
 The agent must balance these competing objectives - never compromising the SLO for cost savings, but also avoiding wasteful over-provisioning when demand patterns are predictable.
 
+The reconciler will also handle the upgrades to the management cluster. But we will add more details on that after progress with this initial work.
+
 # Glossary
 In Red Hat managed services space, we use the word management cluster interchangeably with ACM's managed cluster - but with one addition. The management clusters also host the hosted control plane for the hosted clusters. In other words, there is a ACM hub managing these management clusters. And in each of these management clusters, the ACM hypershift addon runs, and hosted control planes are created.
 
