@@ -41,7 +41,7 @@ The Sentinel service is designed with multiple layers of reliability to ensure c
 **Implementation**:
 - Listens for termination signals during main polling loop
 - Completes current polling cycle before exiting
-- Maximum shutdown time: 30 seconds (configured via `terminationGracePeriodSeconds`)
+- Maximum shutdown time: 20 seconds for HTTP server shutdown
 - Publishes any pending events before shutdown
 - Cleans up broker connections gracefully
 
@@ -60,16 +60,19 @@ spec:
 **What**: Automatic retry with exponential backoff for HyperFleet API calls.
 
 **Implementation**:
-- **Initial timeout**: 10 seconds per API call (configurable via `hyperfleet_api.timeout`)
-- **Retry strategy**: Exponential backoff starting at 1 second
-- **Maximum retries**: 3 attempts per polling cycle
-- **Failure handling**: Logs error and continues to next polling cycle (doesn't crash)
+- **Timeout**: 5 seconds per API call (configurable via `hyperfleet_api.timeout`)
+- **Initial interval**: 500ms (first retry after 500ms)
+- **Max interval**: 8 seconds (maximum retry interval)
+- **Multiplier**: 2.0 (doubles interval each retry: 500ms → 1s → 2s → 4s → 8s)
+- **Randomization**: 10% jitter added to prevent thundering herd
+- **Max elapsed time**: 30 seconds total (time-based retry, not attempt-based)
+- **Failure handling**: Logs errors, continues with next resource after max elapsed time
 
 **Configuration**:
 ```yaml
 hyperfleet_api:
-  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080
-  timeout: 10s
+  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8000
+  timeout: 5s
 ```
 
 **Metrics**: Failed API calls tracked via `hyperfleet_sentinel_api_errors_total` metric.
@@ -81,11 +84,12 @@ hyperfleet_api:
 **What**: Automatic retry for message broker publishing failures.
 
 **Implementation**:
-- **Retry strategy**: Exponential backoff with jitter
-- **Maximum retries**: 5 attempts per event
-- **Timeout**: 30 seconds per publish attempt
+- **External library**: Retry behavior handled by `hyperfleet-broker` library
+- **Broker support**: GCP Pub/Sub and RabbitMQ with library-managed retry logic
 - **Failure isolation**: Failed events logged but don't stop processing of other resources
-- **Broker support**: GCP Pub/Sub and RabbitMQ with identical retry behavior
+- **Error handling**: Log error, record metric, continue to next resource
+
+> **Note**: Specific retry parameters (attempts, timeouts, backoff strategy) are implemented in the external [hyperfleet-broker](https://github.com/openshift-hyperfleet/hyperfleet-broker) library and not configurable at the Sentinel level.
 
 **Configuration Example (GCP Pub/Sub)**:
 ```yaml
@@ -170,7 +174,7 @@ metadata:
   name: sentinel-pdb
   namespace: hyperfleet-system
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: hyperfleet-sentinel
@@ -194,15 +198,15 @@ Sentinel exposes 7 Prometheus metrics on port 9090 at `/metrics` endpoint for co
 #### `hyperfleet_sentinel_pending_resources`
 - **Type**: Gauge
 - **Labels**: `component`, `version`, `resource_selector`, `resource_type`
-- **Purpose**: Current number of resources matching this Sentinel's selector
-- **Use Case**: Capacity planning and load distribution across Sentinel instances
-- **Alert Threshold**: Sudden drops may indicate API issues or configuration changes
+- **Purpose**: Number of resources requiring reconciliation due to max age expiry or generation changes
+- **Use Case**: Monitor reconciliation workload, processing queue depth, and scaling decisions
+- **Alert Threshold**: Sustained high values may indicate processing bottlenecks or API issues
 
 #### `hyperfleet_sentinel_events_published_total`
 - **Type**: Counter
 - **Labels**: `component`, `version`, `resource_selector`, `resource_type`, `reason`
 - **Purpose**: Total reconciliation events published to message broker
-- **Reason Values**: `generation_changed`, `max_age_expired`
+- **Reason Values**: `generation_mismatch`, `max_age_exceeded`
 - **Use Case**: Monitor reconciliation activity and generation-based vs time-based triggers
 
 #### `hyperfleet_sentinel_resources_skipped_total`
@@ -217,7 +221,7 @@ Sentinel exposes 7 Prometheus metrics on port 9090 at `/metrics` endpoint for co
 #### `hyperfleet_sentinel_poll_duration_seconds`
 - **Type**: Histogram
 - **Labels**: `component`, `version`, `resource_selector`, `resource_type`
-- **Buckets**: 0.5s, 1s, 2.5s, 5s, 10s, 25s, 60s
+- **Buckets**: 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, +Inf (Prometheus default buckets)
 - **Purpose**: Time spent in complete polling cycles
 - **Use Case**: Performance monitoring and capacity planning
 
@@ -225,31 +229,28 @@ Sentinel exposes 7 Prometheus metrics on port 9090 at `/metrics` endpoint for co
 
 #### `hyperfleet_sentinel_api_errors_total`
 - **Type**: Counter
-- **Labels**: `component`, `version`, `resource_selector`, `resource_type`, `operation`
+- **Labels**: `component`, `version`, `resource_selector`, `resource_type`, `error_type`
 - **Purpose**: HyperFleet API call failures
-- **Operation Values**: `fetch_resources`, `config_validation`
 - **Use Case**: Monitor API connectivity and performance issues
 
 #### `hyperfleet_sentinel_broker_errors_total`
 - **Type**: Counter
-- **Labels**: `component`, `version`, `resource_selector`, `resource_type`, `broker_type`
+- **Labels**: `component`, `version`, `resource_selector`, `resource_type`, `error_type`
 - **Purpose**: Message broker publishing failures
-- **Broker Type Values**: `pubsub`, `rabbitmq`
 - **Use Case**: Monitor message broker connectivity and publishing issues
 
 ### Configuration Metrics
 
-#### `hyperfleet_sentinel_config_loads_total`
-- **Type**: Counter
-- **Labels**: `component`, `version`, `resource_selector`, `resource_type`, `status`
-- **Purpose**: Configuration load attempts at startup
-- **Status Values**: `success`, `failed`
-- **Use Case**: Verify configuration changes and troubleshoot startup issues
+#### `hyperfleet_sentinel_last_successful_poll_timestamp_seconds`
+- **Type**: Gauge
+- **Labels**: `component`, `version`
+- **Purpose**: Unix timestamp of the last successful poll cycle completion (dead man's switch)
+- **Use Case**: Monitor if Sentinel polling loop has stopped or is stuck
 
 ### Metric Label Standards
 
 All metrics include these standard labels:
-- **`component`**: Always `"hyperfleet-sentinel"`
+- **`component`**: Always `"sentinel"`
 - **`version`**: Service version (e.g., `"v1.2.0"`)
 - **`resource_selector`**: String representation of label selector (e.g., `"region=us-east"`)
 - **`resource_type`**: Resource being watched (e.g., `"clusters"`, `"nodepools"`)
@@ -265,57 +266,78 @@ The following 8 alert rules provide comprehensive monitoring for production Sent
 #### SentinelDown
 ```yaml
 alert: SentinelDown
-expr: up{job="hyperfleet-sentinel"} == 0
-for: 1m
+expr: absent(up{service="sentinel"}) or up{service="sentinel"} == 0
+for: 5m
 labels:
   severity: critical
+  component: sentinel
 annotations:
-  summary: "Sentinel instance {{ $labels.instance }} is down"
-  description: "Hyperfleet Sentinel instance has been down for more than 1 minute"
+  summary: "Sentinel service is down"
+  description: "Sentinel metrics endpoint is not responding. Service may be down or unreachable."
 ```
-**Impact**: Resource reconciliation stopped for affected resource selector.
+**Impact**: Resource reconciliation stopped completely.
 **Response**: Check pod status, logs, and resource constraints.
 
-#### SentinelAPIErrors
+#### SentinelAPIErrorRateHigh
 ```yaml
-alert: SentinelAPIErrors
+alert: SentinelAPIErrorRateHigh
 expr: rate(hyperfleet_sentinel_api_errors_total[5m]) > 0.1
-for: 2m
+for: 5m
 labels:
   severity: critical
+  component: sentinel
 annotations:
   summary: "High API error rate in Sentinel"
-  description: "Sentinel is experiencing {{ $value }} API errors per second"
+  description: "Sentinel is experiencing {{ $value }} API errors/sec for resource_type {{ $labels.resource_type }}. Check HyperFleet API availability."
 ```
 **Impact**: Unable to fetch resource status, reconciliation decisions based on stale data.
 **Response**: Check HyperFleet API service health and network connectivity.
 
-#### SentinelBrokerErrors
+#### SentinelBrokerErrorRateHigh
 ```yaml
-alert: SentinelBrokerErrors
+alert: SentinelBrokerErrorRateHigh
 expr: rate(hyperfleet_sentinel_broker_errors_total[5m]) > 0.05
-for: 3m
+for: 5m
 labels:
   severity: critical
+  component: sentinel
 annotations:
   summary: "High broker error rate in Sentinel"
-  description: "Sentinel is experiencing {{ $value }} broker errors per second"
+  description: "Sentinel is experiencing {{ $value }} broker errors/sec for resource_type {{ $labels.resource_type }}. Check message broker connectivity."
 ```
 **Impact**: Events not reaching adapters, reconciliation loops broken.
 **Response**: Check message broker health and Sentinel broker configuration.
 
+#### SentinelPollStale
+```yaml
+alert: SentinelPollStale
+expr: |
+  hyperfleet_sentinel_last_successful_poll_timestamp_seconds > 0
+  and time() - hyperfleet_sentinel_last_successful_poll_timestamp_seconds > 60
+for: 1m
+labels:
+  severity: critical
+  component: sentinel
+annotations:
+  summary: "Sentinel poll loop is stale"
+  description: "Sentinel has not completed a successful poll cycle in over 60 seconds. The service may be hung or unable to poll."
+```
+**Impact**: Complete polling failure, no reconciliation events generated.
+**Response**: Check Sentinel logs and restart if necessary.
+
 ### Warning Alerts
 
-#### SentinelHighPollDuration
+#### SentinelSlowPolling
 ```yaml
-alert: SentinelHighPollDuration
-expr: histogram_quantile(0.95, rate(hyperfleet_sentinel_poll_duration_seconds_bucket[5m])) > 30
-for: 5m
+alert: SentinelSlowPolling
+expr: histogram_quantile(0.95, rate(hyperfleet_sentinel_poll_duration_seconds_bucket[5m])) > 5
+for: 10m
 labels:
   severity: warning
+  component: sentinel
 annotations:
-  summary: "Sentinel polling cycles taking too long"
-  description: "95th percentile polling duration is {{ $value }}s"
+  summary: "Sentinel polling cycles are slow"
+  description: "95th percentile poll duration is {{ $value }}s for {{ $labels.resource_type }}. This may indicate API latency or processing issues."
 ```
 **Impact**: Delayed reconciliation, potentially missing max age intervals.
 **Response**: Check resource count growth and API performance.
@@ -323,60 +345,57 @@ annotations:
 #### SentinelNoEventsPublished
 ```yaml
 alert: SentinelNoEventsPublished
-expr: increase(hyperfleet_sentinel_events_published_total[10m]) == 0 and hyperfleet_sentinel_pending_resources > 0
-for: 10m
+expr: |
+  hyperfleet_sentinel_pending_resources > 0
+  unless on(resource_type, resource_selector)
+  rate(hyperfleet_sentinel_events_published_total[15m]) > 0
+for: 15m
 labels:
   severity: warning
+  component: sentinel
 annotations:
-  summary: "Sentinel not publishing events despite pending resources"
-  description: "No events published in 10 minutes but {{ $value }} resources pending"
+  summary: "Sentinel not publishing events"
+  description: "Sentinel has pending resources but hasn't published any events in 15 minutes. Service may be stuck."
 ```
 **Impact**: Resources may be stuck without reconciliation events.
 **Response**: Check decision engine logic and adapter status updates.
 
-#### SentinelHighResourceSkip
+#### SentinelHighPendingResources
 ```yaml
-alert: SentinelHighResourceSkip
-expr: rate(hyperfleet_sentinel_resources_skipped_total[5m]) / rate(hyperfleet_sentinel_pending_resources[5m]) > 0.9
-for: 5m
+alert: SentinelHighPendingResources
+expr: sum(hyperfleet_sentinel_pending_resources) > 100
+for: 10m
 labels:
   severity: warning
+  component: sentinel
 annotations:
-  summary: "High percentage of resources skipped"
-  description: "{{ $value | humanizePercentage }} of resources skipped in last 5 minutes"
+  summary: "High number of pending resources in Sentinel"
+  description: "{{ $value }} resources are pending reconciliation for more than 10 minutes. This may indicate processing bottleneck or API issues."
 ```
-**Impact**: May indicate max age intervals too long or adapter status update issues.
-**Response**: Review max age configuration and adapter health.
+**Impact**: May indicate capacity issues or API problems.
+**Response**: Check resource count growth and consider horizontal scaling.
 
 ### Informational Alerts
 
-#### SentinelConfigReload
+#### SentinelHighSkipRatio
 ```yaml
-alert: SentinelConfigReload
-expr: increase(hyperfleet_sentinel_config_loads_total{status="failed"}[5m]) > 0
-for: 0s
+alert: SentinelHighSkipRatio
+expr: |
+  (
+    rate(hyperfleet_sentinel_resources_skipped_total[10m]) /
+    (rate(hyperfleet_sentinel_resources_skipped_total[10m]) +
+     rate(hyperfleet_sentinel_events_published_total[10m]))
+  ) > 0.95
+for: 30m
 labels:
   severity: info
+  component: sentinel
 annotations:
-  summary: "Sentinel configuration reload failed"
-  description: "{{ $value }} config load failures in last 5 minutes"
+  summary: "High resource skip ratio in Sentinel"
+  description: "{{ $value | humanizePercentage }} of resources are being skipped. This may indicate max_age configuration issues."
 ```
-**Impact**: Service may be running with outdated configuration.
-**Response**: Check ConfigMap validity and pod restart logs.
-
-#### SentinelResourceGrowth
-```yaml
-alert: SentinelResourceGrowth
-expr: increase(hyperfleet_sentinel_pending_resources[1h]) > 100
-for: 0s
-labels:
-  severity: info
-annotations:
-  summary: "Rapid resource growth detected"
-  description: "Resource count increased by {{ $value }} in last hour"
-```
-**Impact**: May need capacity planning or additional Sentinel instances.
-**Response**: Monitor performance impact and consider scaling strategies.
+**Impact**: May indicate max age intervals too long or adapter status update issues.
+**Response**: Review max age configuration and adapter health.
 
 ---
 
@@ -439,8 +458,9 @@ Memory: 64Mi + (5 × 32Mi) + 16Mi = 240Mi
                                       ▼
 ┌─────────────────────┐  ┌─────────────────────┐  ┌─────────────────────┐
 │   Sentinel US-East  │  │   Sentinel US-West  │  │   Sentinel EU-West  │
-│  selector:          │  │  selector:          │  │  selector:          │
-│  region=us-east     │  │  region=us-west     │  │  region=eu-west     │
+│  resource_selector: │  │  resource_selector: │  │  resource_selector: │
+│  - label: region    │  │  - label: region    │  │  - label: region    │
+│    value: us-east   │  │    value: us-west   │  │    value: eu-west   │
 │  max_age_ready=30m  │  │  max_age_ready=1h   │  │  max_age_ready=45m  │
 └──────────┬──────────┘  └──────────┬──────────┘  └──────────┬──────────┘
            │                        │                        │
@@ -497,10 +517,12 @@ resource_selector:
 
 Monitor these metrics to determine scaling needs:
 
-- **`hyperfleet_sentinel_poll_duration_seconds`** > 30s → Scale horizontally
-- **`hyperfleet_sentinel_pending_resources`** > 5000 → Consider partitioning
-- **CPU utilization** > 70% → Increase resource requests
-- **Memory utilization** > 80% → Increase memory limits
+- **`hyperfleet_sentinel_poll_duration_seconds`** → Watch for increasing latency trends
+- **`hyperfleet_sentinel_pending_resources`** → Monitor growth over time
+- **CPU/Memory usage** → Use `kubectl top pod` to check resource consumption
+- **`hyperfleet_sentinel_api_errors_total`** → Monitor API connectivity issues
+
+> **Note**: Specific threshold values are not defined in the implementation. Operators should establish baselines based on their environment and resource scale, then monitor for trends indicating performance degradation or capacity constraints.
 
 ### Deployment Configuration
 
@@ -585,104 +607,6 @@ spec:
         # Mount us-west specific config
 ```
 
-### Troubleshooting
-
-#### Common Issues and Resolution
-
-**Issue**: Sentinel not publishing events
-```bash
-# Check metrics
-kubectl port-forward svc/sentinel-metrics 9090:9090
-curl http://localhost:9090/metrics | grep events_published
-
-# Check decision engine logs
-kubectl logs -l app=cluster-sentinel | grep "decision"
-
-# Verify adapter status updates
-kubectl logs -l app=cluster-sentinel | grep "last_updated_time"
-```
-
-**Resolution**:
-- Verify adapters are updating `observed_time` on every check
-- Check max age configuration values
-- Confirm generation/observed_generation logic
-
-**Issue**: High API error rate
-```bash
-# Check API connectivity
-kubectl exec -it deploy/cluster-sentinel -- wget -qO- http://hyperfleet-api:8080/health
-
-# Check API token
-kubectl get secret sentinel-secrets -o yaml
-
-# Review API error details
-kubectl logs -l app=cluster-sentinel | grep "api_error"
-```
-
-**Resolution**:
-- Verify HyperFleet API service health
-- Check API token validity and permissions
-- Review network policies and service mesh configuration
-
-**Issue**: High polling duration
-```bash
-# Check resource count
-kubectl logs -l app=cluster-sentinel | grep "pending_resources"
-
-# Check API response times
-kubectl logs -l app=cluster-sentinel | grep "api_duration"
-
-# Monitor memory usage
-kubectl top pod -l app=cluster-sentinel
-```
-
-**Resolution**:
-- Consider horizontal scaling if >5000 resources
-- Increase CPU/memory resources
-- Implement resource selector partitioning
-
-**Issue**: Broker publishing failures
-```bash
-# Check broker configuration
-kubectl get configmap hyperfleet-sentinel-broker -o yaml
-
-# Test broker connectivity
-kubectl exec -it deploy/cluster-sentinel -- nslookup rabbitmq.hyperfleet-system.svc.cluster.local
-
-# Review broker credentials
-kubectl get secret sentinel-secrets -o yaml
-```
-
-**Resolution**:
-- Verify broker service health (Pub/Sub, RabbitMQ)
-- Check broker credentials and permissions
-- Review broker configuration syntax
-
-#### Debug Commands
-
-**View current configuration**:
-```bash
-kubectl exec -it deploy/cluster-sentinel -- cat /etc/sentinel/config.yaml
-```
-
-**Check health endpoints**:
-```bash
-kubectl exec -it deploy/cluster-sentinel -- wget -qO- http://localhost:8080/healthz
-kubectl exec -it deploy/cluster-sentinel -- wget -qO- http://localhost:8080/readyz
-```
-
-**Monitor polling cycles**:
-```bash
-kubectl logs -f -l app=cluster-sentinel | grep -E "(polling_cycle|decision_made|event_published)"
-```
-
-**Resource selector validation**:
-```bash
-# Verify resource selector matches expected resources
-kubectl logs -l app=cluster-sentinel | grep "resource_selector"
-kubectl logs -l app=cluster-sentinel | grep "fetched.*resources"
-```
-
 ---
 
 ## Configuration Examples
@@ -699,14 +623,15 @@ max_age_ready: 30m
 resource_selector: []
 
 hyperfleet_api:
-  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080
-  timeout: 10s
+  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8000
+  timeout: 5s
 
+# CloudEvent data payload using CEL expressions
 message_data:
-  resource_id: .id
-  resource_type: .kind
-  generation: .generation
-  region: .metadata.labels.region
+  resource_id: "resource.id"        # CEL expression accessing resource.id field
+  resource_type: "resource.kind"   # CEL expression accessing resource.kind field
+  generation: "resource.generation" # CEL expression accessing resource.generation field
+  region: "resource.labels.region" # CEL expression accessing nested labels.region field
 ```
 
 ### Multi-Region Configuration
@@ -722,14 +647,14 @@ resource_selector:
     value: us-east
 
 hyperfleet_api:
-  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080
-  timeout: 10s
+  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8000
+  timeout: 5s
 
 message_data:
-  resource_id: .id
-  resource_type: .kind
-  generation: .generation
-  region: .metadata.labels.region
+  resource_id: "resource.id"
+  resource_type: "resource.kind"
+  generation: "resource.generation"
+  region: "resource.labels.region"
 ```
 
 ### Development Environment Configuration
@@ -745,14 +670,14 @@ resource_selector:
     value: development
 
 hyperfleet_api:
-  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8080
-  timeout: 30s
+  endpoint: http://hyperfleet-api.hyperfleet-system.svc.cluster.local:8000
+  timeout: 5s
 
 message_data:
-  resource_id: .id
-  resource_type: .kind
-  generation: .generation
-  environment: .metadata.labels.environment
+  resource_id: "resource.id"
+  resource_type: "resource.kind"
+  generation: "resource.generation"
+  environment: "resource.labels.environment"
 ```
 
 ---
