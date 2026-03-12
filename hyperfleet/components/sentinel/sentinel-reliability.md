@@ -53,7 +53,7 @@ spec:
       terminationGracePeriodSeconds: 30
 ```
 
-**Operational Impact**: Zero event loss during rolling deployments or pod eviction.
+**Operational Impact**: Graceful shutdown minimizes event loss by attempting to publish pending events before exit, subject to the grace period.
 
 ### API Retry Logic
 
@@ -100,7 +100,7 @@ BROKER_PROJECT_ID: "hyperfleet-prod"
 
 **Metrics**: Publishing failures tracked via `hyperfleet_sentinel_broker_errors_total` metric.
 
-**Operational Impact**: Temporary broker outages don't cause event loss. Events are retried until broker recovers.
+**Operational Impact**: Temporary broker outages don't cause event loss. Events are retried by the broker library, but durability depends on broker availability and Sentinel remaining active.
 
 ### Per-Resource Error Isolation
 
@@ -166,7 +166,7 @@ readinessProbe:
 
 **What**: Ensures minimum Sentinel availability during cluster maintenance.
 
-**Recommended Configuration**:
+**Configuration for Single-Replica Deployments** (typical topology):
 ```yaml
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -174,18 +174,19 @@ metadata:
   name: sentinel-pdb
   namespace: hyperfleet-system
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: hyperfleet-sentinel
 ```
 
 **Operational Impact**:
-- **Single replica per resource selector**: Each Sentinel deployment typically runs 1 replica
-- **Multiple Sentinels**: Different resource selectors allow multiple Sentinel deployments
-- **Maintenance protection**: PDB prevents voluntary pod eviction during node drains
+- **Single replica protection**: `minAvailable: 1` blocks voluntary pod eviction when only 1 replica exists
+- **Maintenance blocking**: Node drains will be delayed until Sentinel pods are manually drained or scaled up
+- **Multiple Sentinels**: Each Sentinel deployment (per resource selector) can have its own PDB
+- **Trade-off**: Maintenance operations may require manual intervention for single-replica Sentinels
 
-**Operational Impact**: Cluster maintenance operations respect Sentinel availability requirements.
+> **Note**: Cluster maintenance operations respect Sentinel availability requirements.
 
 ---
 
