@@ -1,5 +1,13 @@
 # Linting and Static Analysis Standard
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Defines the shared linting and static analysis baseline for all HyperFleet Go repositories using golangci-lint. Covers which linters are enabled, how they are configured, and how they are enforced in CI. A shared lint configuration ensures consistent code quality and catches common errors before review.
+
+---
+
 This document defines the shared linting and static analysis baseline for all HyperFleet Go repositories.
 
 ## Overview

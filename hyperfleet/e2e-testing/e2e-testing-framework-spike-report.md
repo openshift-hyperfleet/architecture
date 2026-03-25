@@ -1,5 +1,13 @@
 # Spike Report: E2E Testing Framework for Hyperfleet Core Data Flow
 
+**Status**: Active
+**Owner**: HyperFleet QE Team
+**Last Updated**: 2026-03-25
+
+> Spike report evaluating E2E testing frameworks for HyperFleet, comparing options for testing the full system stack from API through Sentinel, Broker, and Adapters. Documents evaluation criteria, framework comparison, and the recommended testing approach.
+
+---
+
 ---
 
 **JIRA Story:** HYPERFLEET-403  

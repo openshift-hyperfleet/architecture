@@ -1,5 +1,9 @@
 # Claude Code Guidelines for HyperFleet Standards
 
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+
 ## What Standards Are
 
 Standards are **PRESCRIPTIVE** - they define rules that MUST be followed across all HyperFleet repositories. They are not suggestions or design documents.
@@ -20,7 +24,7 @@ Reference these when working with standards (non-exhaustive - see `hyperfleet/st
 
 | Standard | Purpose |
 |----------|---------|
-| `commit-standard.md` | Commit message format |
+| `commit-standard.md` | Commit message format (Conventional Commits + JIRA prefix) |
 | `configuration.md` | Configuration management |
 | `container-image-standard.md` | Container image requirements |
 | `dependency-pinning.md` | Dependency version pinning |
@@ -29,6 +33,7 @@ Reference these when working with standards (non-exhaustive - see `hyperfleet/st
 | `generated-code-policy.md` | Generated code management |
 | `graceful-shutdown.md` | Shutdown signal handling |
 | `health-endpoints.md` | Health check endpoints |
+| `helm-chart-conventions.md` | Helm chart structure and conventions |
 | `linting.md` | Linting requirements |
 | `logging-specification.md` | Logging format and levels |
 | `makefile-conventions.md` | Makefile patterns |

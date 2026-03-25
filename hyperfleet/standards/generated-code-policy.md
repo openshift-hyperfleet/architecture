@@ -1,5 +1,13 @@
 # HyperFleet Generated Code Policy
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Defines rules for managing code generated from specifications (OpenAPI, protobuf, etc.) in HyperFleet repositories. Covers where generated files live, whether they are committed to source control, and how they are regenerated. Prevents inconsistencies between specs and generated code.
+
+---
+
 ## *Policy for managing generated code in HyperFleet repositories*
 
 ## Metadata

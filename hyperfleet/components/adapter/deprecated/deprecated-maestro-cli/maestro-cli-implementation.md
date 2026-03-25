@@ -1,5 +1,13 @@
 # Maestro CLI Implementation Guide
 
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Implementation notes for the Maestro CLI-based adapter integration approach. Deprecated — the CLI-based implementation was replaced by direct SDK integration. See `adapter/maestro-integration/` for the current Maestro integration design.
+
+---
+
 ## Overview
 
 This document provides detailed implementation guidance for the job-based maestro-cli approach for HyperFleet's Maestro integration.

@@ -1,5 +1,13 @@
 # Workload Identity Federation
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Spike report investigating Workload Identity Federation (WIF) for authenticating HyperFleet services to GCP APIs without long-lived service account keys. Documents WIF capabilities, integration approach with GKE workloads, and recommendations for adoption in HyperFleet's GCP adapter deployments.
+
+---
+
 ## Problem statement
 
 We need to provide a secure way to access customer's cloud infrastructure from several Hyperfleeet components.

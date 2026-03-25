@@ -1,5 +1,11 @@
 # HyperFleet v2 Architecture Summary
 
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+
+> Overview document for the HyperFleet architecture describing its main components and purpose
+
 ---
 
 ## Overview
@@ -27,9 +33,7 @@ HyperFleet v2 represents a significant architectural simplification from v1, rem
 
 ## Component Architecture
 
-For detailed visual diagrams, see:
-- [Component Architecture Diagram](component-architecture-diagram.md) - Detailed Mermaid diagram showing all components and relationships
-- [Data Flow Diagrams](data-flow-diagram.md) - Sequence diagrams for cluster creation, status updates, and decision logic
+The high-level component diagram and detailed data flow sequence diagrams are included inline below.
 
 ### High-Level Overview
 

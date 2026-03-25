@@ -1,5 +1,13 @@
 # Maestro Integration Guide for HyperFleet Adapters
 
+**Status**: Active
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Guide for integrating HyperFleet Adapters with the Maestro service. Covers how adapters interact with Maestro for resource orchestration, the CloudEvent format used between Maestro and adapters, and the configuration required to connect an adapter to a Maestro instance.
+
+---
+
 **Purpose**: This guide shows adapter developers how to use the Maestro SDK to create and manage resources in management
 clusters.
 

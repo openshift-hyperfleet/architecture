@@ -1,5 +1,13 @@
 # HyperFleet Pull Secret Adapter - GCP Secret Manager Requirements
 
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Requirements document for the GCP pull secret management adapter. Deprecated — these GCP-specific pull secret requirements were superseded by the generalized adapter framework approach. See the `adapter/framework/` directory for the current design.
+
+---
+
 ---
 
 ## Table of Contents

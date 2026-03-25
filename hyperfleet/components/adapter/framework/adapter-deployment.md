@@ -1,5 +1,13 @@
 # HyperFleet Adapter Framework - Deployment Guide
 
+**Status**: Active
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Deployment guide for the HyperFleet Adapter Framework in Kubernetes. Covers the Helm chart structure, configuration loading, ServiceAccount and RBAC requirements, health/readiness probe setup, and metrics/monitoring configuration. This is the operational reference for teams deploying adapters.
+
+---
+
 This document describes how to deploy the HyperFleet Adapter Framework in Kubernetes.
 
 **Related Documentation:**

@@ -528,6 +528,14 @@ hyperfleet-<component>/
 **Example Component Chart.yaml**:
 ```yaml
 # hyperfleet-api/charts/Chart.yaml
+
+**Status**: Historical
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Documents the test and release strategy defined for the HyperFleet MVP phase. Covers the MVP-specific CI/CD approach, testing scope, release criteria, and known limitations accepted for the initial release. This document is historical — see current test-release docs for active process.
+
+---
 apiVersion: v2
 name: hyperfleet-api
 description: HyperFleet API component

@@ -1,5 +1,13 @@
 # HyperFleet Graceful Shutdown Standard
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Prescribes how HyperFleet services must handle SIGTERM and SIGINT signals to shut down gracefully. Covers in-flight request draining, connection cleanup, and shutdown timeout requirements. Graceful shutdown prevents data loss and ensures adapters complete their current work cycle before stopping.
+
+---
+
 This document defines the standard approach for graceful shutdown and drain behavior across all HyperFleet components (API, Sentinel, Adapters).
 
 ---

@@ -1,5 +1,13 @@
 # HyperFleet Adapter Status Contract
 
+**Status**: Active
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Defines the status reporting contract between HyperFleet Adapters and the HyperFleet API. Specifies the structure of status payloads, the three required conditions (Available, Applied, Health), `observed_generation` semantics, and the upsert behavior of the API status endpoint. All adapters must conform to this contract.
+
+---
+
 ## Overview
 
 This document defines the contract between HyperFleet adapters and the HyperFleet API for status reporting. Adapters use this contract to report their progress, state, and outcomes when processing cluster events.

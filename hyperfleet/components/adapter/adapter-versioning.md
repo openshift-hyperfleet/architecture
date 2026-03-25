@@ -1,5 +1,13 @@
 # HyperFleet Adapter Versioning Strategy
 
+**Status**: Active
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Defines the versioning strategy for HyperFleet Adapters, covering binary versioning, configuration versioning, and compatibility guarantees with Sentinel and the HyperFleet API. Establishes how adapter versions are incremented, what constitutes a breaking change, and how backward compatibility is maintained during upgrades.
+
+---
+
 ## *Define versioning strategy for Adapters including binary versioning, config versioning, and compatibility with Sentinel and HyperFleet API*
 
 **Metadata**

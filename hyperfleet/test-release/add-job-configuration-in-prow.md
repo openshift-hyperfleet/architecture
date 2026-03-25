@@ -1,5 +1,13 @@
 # Adding CI Configuration for New Repositories
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> General guide for adding and configuring jobs in the HyperFleet Prow CI system. Covers Prow job types (presubmit, postsubmit, periodic), configuration file structure, job naming conventions, and the review process for new job configurations.
+
+---
+
 **Metadata**
 - **Date:** 2025-12-24
 - **Authors:** Ying Zhang

@@ -1,5 +1,13 @@
 # Vault Engine on Prow - Documentation
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Describes how secrets are managed for Prow CI jobs using HashiCorp Vault. Covers how to add new secrets to Vault, configure Prow jobs to access them securely, and the access control model for CI secrets. Required reading before creating Prow jobs that need credentials.
+
+---
+
 **Metadata**
 - **Date:** 2025-11-13
 - **Authors:** Ying Zhang

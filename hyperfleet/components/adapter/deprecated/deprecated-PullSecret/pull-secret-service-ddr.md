@@ -1,5 +1,13 @@
 # Pull Secret Service for HyperFleet Architecture
 
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Detailed Design Review (DDR) document for the GCP Pull Secret Service adapter. Deprecated — this design was not implemented as described; pull secret management is handled through the standard adapter framework. See the `adapter/framework/` directory for the current approach.
+
+---
+
 ## Executive Summary
 
 The Pull Secret Adapter is responsible for securely storing and managing image registry pull secrets in GCP Secret Manager for HyperShift-managed OpenShift clusters. These secrets enable cluster nodes to pull container images from authenticated registries (e.g., Red Hat registries, Quay.io).

@@ -1,5 +1,13 @@
 # Maestro Integration Spike
 
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Documents the original strategy for integrating adapters with Maestro via the Maestro CLI. Deprecated — the CLI-based integration approach was replaced by the Maestro SDK integration. See `adapter/maestro-integration/` for the current approach.
+
+---
+
 ## Overview
 
 Maestro is a system that leverages CloudEvents to transport Kubernetes resources to target clusters and return status updates. This spike document provides comprehensive information for integrating HyperFleet with Maestro.

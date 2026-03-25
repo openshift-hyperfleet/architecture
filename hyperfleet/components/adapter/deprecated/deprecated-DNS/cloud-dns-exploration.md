@@ -1,4 +1,12 @@
 # Exploring Cloud DNS Creation via Config Connector on OSD GCP Cluster
+
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Exploration document from the GCP DNS adapter spike, investigating Cloud DNS API capabilities and integration options. Deprecated since GCP specific adapters will be developed by GCP team and out of scope for the core HyperFleet repositories
+
+---
 ## Summary of Exploration
 Following the exploration of creating Google Cloud DNS resources using Config Connector, the key findings are as follows:
 - The DNS CR status can partially reflect the creation result. See [Check DNS CR Status](#32-Check-DNS-CR-Status) for details.

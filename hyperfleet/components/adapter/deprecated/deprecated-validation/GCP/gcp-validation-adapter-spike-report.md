@@ -1,4 +1,12 @@
 # SPIKE REPORT: Define Validation Adapter Criteria and Implementation Plan for GCP
+
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Spike report from the GCP cluster validation adapter investigation, documenting the validation logic explored for GCP-specific cluster prerequisites. Deprecated — the GCP-specific validation approach was superseded by the current validation adapter within the adapter framework.
+
+---
 **JIRA Story**: HYPERFLEET-59   
 **Date**: November 21, 2025,  
 **Status**: Approve

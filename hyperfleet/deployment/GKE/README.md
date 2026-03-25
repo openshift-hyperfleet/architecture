@@ -1,5 +1,13 @@
 # GKE Cluster Automation with Config Connector
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Overview of the HyperFleet GKE deployment configuration and guides. Describes the GKE-specific deployment architecture, required GCP services, and links to the quickstart and detailed configuration guides for running HyperFleet on GKE.
+
+---
+
 This directory contains automation scripts for creating Google Kubernetes Engine (GKE) clusters with Config Connector enabled. The solution supports both **Autopilot** and **Standard** cluster modes with full network configuration options.
 
 Note: We are not using Autopilot mode due to current policy restrictions.

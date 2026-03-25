@@ -1,5 +1,13 @@
 # GCP Secret Manager SDK Methods - Go Client Library Reference
 
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Reference document for GCP Secret Manager SDK methods used during the pull secret adapter spike. Deprecated since GCP specific adapters will be developed by GCP team and out of scope for the core HyperFleet repositories
+
+---
+
 ---
 
 ## Table of Contents

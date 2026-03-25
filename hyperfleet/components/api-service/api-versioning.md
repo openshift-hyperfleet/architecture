@@ -1,5 +1,13 @@
 # HyperFleet API Versioning Strategy
 
+**Status**: Active
+**Owner**: HyperFleet API Team
+**Last Updated**: 2026-03-25
+
+> Defines the versioning strategy for the HyperFleet REST API, covering URL path versioning (e.g., `/v1/clusters`), backward compatibility guarantees, and the process for introducing breaking changes. Establishes when and how to introduce new API versions and how to deprecate old ones without breaking existing clients.
+
+---
+
 ## *Define versioning strategy for the HyperFleet REST API to enable safe upgrades, backwards compatibility, and clear partner contracts*
 
 **Metadata**

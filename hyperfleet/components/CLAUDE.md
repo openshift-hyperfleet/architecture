@@ -1,5 +1,9 @@
 # Claude Code Guidelines for HyperFleet Component Documents
 
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+
 ## What Component Documents Are
 
 Component documents are **DESIGN documents** - they describe architectural decisions for individual components. Unlike standards, they are not prescriptive rules but rather documentation of how specific components work and why.
@@ -76,6 +80,7 @@ Components are organized by type:
 | `adapter/` | Adapter implementations (validation, cloud providers, etc.) |
 | `api-service/` | HyperFleet API service design |
 | `broker/` | Message broker architecture |
+| `claude-code-plugin/` | Claude Code plugin spike and brainstorming |
 | `sentinel/` | Sentinel reconciliation service |
 
 ## Quantification Guidelines

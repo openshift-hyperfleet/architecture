@@ -1,5 +1,13 @@
 # Add Hyperfleet E2E CI Job in Prow
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Guide for adding HyperFleet end-to-end CI jobs to Prow. Covers the job configuration, test cluster provisioning requirements, secrets management, and the process for integrating E2E tests into the pull request and post-merge CI pipelines.
+
+---
+
 
 **Metadata**
 - **Date:** 2026-01-27

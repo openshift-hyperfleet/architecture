@@ -1,5 +1,13 @@
 # HyperFleet Adapter Framework - Design Document
 
+**Status**: Active
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Architecture overview of the HyperFleet Adapter Framework, a config-driven Go-based framework for building cloud provider adapters. Describes the framework's components, how adapters consume CloudEvents from message brokers, evaluate conditions, create Kubernetes resources, and report status back to the HyperFleet API.
+
+---
+
 ## Overview
 
 This document describes the design of the HyperFleet Adapter Framework, a config-driven Go-based framework for building cloud provider adapters. The framework enables adapters to consume CloudEvents from message brokers, evaluate conditions, create Kubernetes resources, and report status back to the HyperFleet API.

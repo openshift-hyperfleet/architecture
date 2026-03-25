@@ -1,5 +1,13 @@
 # Spike Report: HyperFleet E2E Test Automation Run Strategy
 
+**Status**: Active
+**Owner**: HyperFleet QE Team
+**Last Updated**: 2026-03-25
+
+> Spike report on the strategy for running HyperFleet end-to-end tests, including test environment provisioning, test ordering, parallelization, and cleanup. Documents the options evaluated for running E2E tests in CI and the recommended approach for integration with the Prow pipeline.
+
+---
+
 **JIRA Story:** HYPERFLEET-532  
 **Date:** Jan 30, 2026  
 **Focus:** Deployment lifecycle management, resource isolation, and parallel Test Run execution safety

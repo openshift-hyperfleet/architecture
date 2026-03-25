@@ -1,5 +1,13 @@
 # HyperFleet Sentinel Versioning Strategy
 
+**Status**: Active
+**Owner**: HyperFleet Sentinel Team
+**Last Updated**: 2026-03-25
+
+> Defines the versioning strategy for the HyperFleet Sentinel service, covering binary versioning, configuration versioning, and compatibility guarantees with the HyperFleet API and Adapters. Establishes how Sentinel versions are incremented and how backward compatibility is maintained during upgrades.
+
+---
+
 ## *Define versioning strategy for Sentinel to enable independent evolution while maintaining compatibility with HyperFleet API and Adapters*
 
 **Metadata**

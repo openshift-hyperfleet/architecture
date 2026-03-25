@@ -1,5 +1,13 @@
 # Maestro Architecture Deep Dive
 
+**Status**: Active
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Introduces the Maestro service architecture and explains how it fits into the HyperFleet system as the work orchestration layer. Covers Maestro's role in managing work items, its event-based communication model with adapters, and the design decisions behind choosing Maestro over alternative orchestration approaches.
+
+---
+
 ## Core Architecture
 
 ### System Components

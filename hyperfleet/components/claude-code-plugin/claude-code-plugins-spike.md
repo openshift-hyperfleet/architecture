@@ -1,5 +1,13 @@
 # Claude Code Plugins Spike
 
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+
+> Spike report exploring the use of Claude Code plugins to enhance AI-assisted development workflows in HyperFleet repositories. Investigates plugin capabilities, potential use cases (code generation, documentation, standards enforcement), and recommendations for adoption.
+
+---
+
 ## *Investigation of Claude Code plugin system for HyperFleet development workflow automation*
 
 **Metadata**

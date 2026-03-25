@@ -1,5 +1,13 @@
 # HyperFleet Configuration Standard
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Prescribes how configuration is loaded, merged, and overridden across all HyperFleet applications. Defines the precedence order (defaults < config file < environment variables < CLI flags) and the standard YAML config file structure. Ensures consistent, predictable configuration behavior across all services.
+
+---
+
 ## Overview
 
 This document defines the standard approach for configuration loading, merging, and override rules across all HyperFleet applications. This ensures consistent, predictable configuration behavior across all repositories.

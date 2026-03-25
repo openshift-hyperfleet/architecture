@@ -1,4 +1,12 @@
 # Post-MVP Tasks (Temporary Record)
+
+**Status**: Active
+**Owner**: HyperFleet API Team
+**Last Updated**: 2026-03-25
+
+> Temporary record of post-MVP features and enhancements for the HyperFleet API service that were deferred from the initial release. This document lists CRUD completions (PATCH/DELETE for clusters and nodepools), performance improvements, and foundational work items. Review and formalize or archive as items are completed or prioritized in JIRA.
+
+---
 This document records post-MVP actions we can enhance and additional features we will implement. This file will be updated as more documentation is added. Any tasks determined to be deprecated can be removed directly from this document.
 This was recorded on Thursday, November 6th, 2025.
 # CLM Foundational components

@@ -1,5 +1,13 @@
 # SPIKE REPORT: Define HyperShift Control Plane Adapter Criteria and Implementation Plan for GCP
 
+**Status**: Deprecated
+**Owner**: HyperFleet Adapter Team
+**Last Updated**: 2026-03-25
+
+> Spike report exploring the GCP HyperShift control plane adapter implementation. Deprecated — this GCP-specific HyperShift integration approach was superseded by the current adapter framework. See the `adapter/framework/` directory for the active adapter design.
+
+---
+
 **JIRA Story**: [HYPERFLEET-63](https://issues.redhat.com/browse/HYPERFLEET-63)
 **Prepared By**: avulaj@redhat.com
 **Date**: December 8, 2025

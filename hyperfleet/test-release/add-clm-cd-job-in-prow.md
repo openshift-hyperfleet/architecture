@@ -1,5 +1,13 @@
 # Add CLM CD Job in Prow
 
+**Status**: Active
+**Owner**: HyperFleet Platform Team
+**Last Updated**: 2026-03-25
+
+> Step-by-step guide for adding a CLM (Cluster Lifecycle Management) continuous delivery job to the HyperFleet Prow CI infrastructure. Covers the Prow job configuration, required permissions, and the process for getting a new CD job approved and running.
+
+---
+
 
 **Metadata**
 - **Date:** 2026-01-19

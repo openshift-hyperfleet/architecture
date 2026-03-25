@@ -46,23 +46,56 @@ This repository serves as the **single source of truth** for all architectural d
 ```
 architecture/
 ├── README.md                      # This file - repository guide
-├── hyperfleet/                    # HyperFleet-specific architecture
-│   ├── architecture/              # 30,000 feet view (system-level)
-│   │   ├── architecture-summary.md
-│   │   ├── component-diagram.md
-│   │   ├── data-flow-diagram.md
-│   │   └── deployment-architecture.md
-│   ├── components/                # Component-level design decisions
-│   │   ├── api.md
-│   │   ├── sentinel.md
-│   │   ├── message-broker.md
-│   │   ├── adapters.md
-│   │   └── database.md
-│   └── docs/                      # Implementation guides and features
-│       ├── status-guide.md
-│       ├── adapter-development-guide.md
-│       ├── deployment-guide.md
-│       └── monitoring-guide.md
+├── CONTRIBUTING.md                # How to contribute to this repository
+├── CLAUDE.md                      # Claude Code guidelines for AI-assisted workflows
+├── OWNERS                         # Repository ownership
+├── hack/                          # Utility scripts
+└── hyperfleet/                    # HyperFleet-specific architecture
+    ├── architecture/              # 30,000 feet view (system-level)
+    │   └── architecture-summary.md
+    ├── components/                # Component-level design decisions
+    │   ├── CLAUDE.md              # Component document guidelines
+    │   ├── adapter/               # Adapter framework and implementations
+    │   │   ├── framework/         # Core adapter design docs
+    │   │   ├── maestro-integration/
+    │   │   ├── DNS-deprecated/    # Deprecated DNS adapter (GCP)
+    │   │   ├── PullSecret-deprecated/
+    │   │   ├── hypershift-deprecated/
+    │   │   ├── maestro-cli-deprecated/
+    │   │   └── validation-deprecated/
+    │   ├── api-service/           # HyperFleet API service design
+    │   ├── broker/                # Message broker design
+    │   ├── claude-code-plugin/    # Claude Code plugin spike
+    │   └── sentinel/              # Sentinel reconciliation service
+    ├── deployment/                # Deployment guides
+    │   └── GKE/                   # GKE-specific deployment
+    ├── docs/                      # Implementation guides and features
+    │   ├── documentation.md       # Documentation standard
+    │   ├── status-guide.md
+    │   ├── sentinel-pulses.md
+    │   ├── versioning-trade-offs.md
+    │   ├── hyperfleet-release-process.md
+    │   └── templates/             # Document templates
+    ├── e2e-testing/               # End-to-end testing strategy
+    ├── mvp/                       # MVP scope and working agreements (historical)
+    ├── standards/                 # Prescriptive engineering standards
+    │   ├── CLAUDE.md              # Standards document guidelines
+    │   ├── commit-standard.md
+    │   ├── configuration.md
+    │   ├── container-image-standard.md
+    │   ├── dependency-pinning.md
+    │   ├── directory-structure.md
+    │   ├── error-model.md
+    │   ├── generated-code-policy.md
+    │   ├── graceful-shutdown.md
+    │   ├── health-endpoints.md
+    │   ├── helm-chart-conventions.md
+    │   ├── linting.md
+    │   ├── logging-specification.md
+    │   ├── makefile-conventions.md
+    │   ├── metrics.md
+    │   └── tracing.md
+    └── test-release/              # Test and release process docs
 ```
 
 ---
@@ -361,7 +394,7 @@ grep -r "Status: Deprecated" hyperfleet/
 
 ### Good Component Document
 
-See: `hyperfleet/components/sentinel.md`
+See: `hyperfleet/components/sentinel/sentinel.md`
 - Clear purpose and responsibilities
 - Detailed trade-offs section
 - Alternatives considered
@@ -425,8 +458,8 @@ Create new documents when:
 ## Contact
 
 **Questions or suggestions?**
-- Slack: //todo
-- Architecture Team: //todo
+- Slack: [#hcm-hyperfleet-team](https://redhat.enterprise.slack.com/archives/hcm-hyperfleet-team)
+- Architecture Team: Open a PR or post in the Slack channel above
 - Pull requests welcome for documentation updates
 
 ---

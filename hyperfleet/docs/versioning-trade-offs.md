@@ -1,5 +1,13 @@
 # HyperFleet Versioning Trade-offs (Post-MVP)
 
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+
+> Documents versioning trade-offs that were considered post-MVP, including API versioning approaches, adapter-API compatibility matrices, and sentinel-adapter version negotiation. These versioning considerations are out of scope for the MVP release but capture the architectural thinking for future iterations.
+
+---
+
 ## *Versioning considerations that are OUT OF SCOPE for MVP but may be adopted in future iterations*
 
 **Metadata**
