@@ -6,7 +6,8 @@
 
 ---
 
-## Purpose
+## Overview
+
 
 This repository serves as the **single source of truth** for all architectural documentation related to HyperFleet. All documents are **living documents** that evolve as the design and implementation progress.
 
@@ -299,6 +300,9 @@ All HyperFleet team developers have approve and merge access. **Goal**: Move fas
 
 **Track technical debt**
 → Search all component docs for "Technical Debt Incurred"
+
+**Look up a HyperFleet term or acronym**
+→ See `hyperfleet/docs/glossary.md`
 
 ---
 
