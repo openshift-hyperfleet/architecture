@@ -70,40 +70,43 @@ The event payload is intentionally minimal (anemic event pattern — see [Design
 
 ### Supported Broker Implementations
 
-| Implementation | Environment | Notes |
-|----------------|-------------|-------|
-| GCP Pub/Sub | Production | Cloud-native, highly available, at-least-once delivery |
-| RabbitMQ | On-premise / self-hosted | AMQP-based, suitable for environments without GCP access |
-| Stub (in-memory) | Local development / testing | No external dependencies, useful for adapter unit tests |
+The broker library ([openshift-hyperfleet/hyperfleet-broker](https://github.com/openshift-hyperfleet/hyperfleet-broker)) is built on [Watermill](https://watermill.io/), a Go library providing a broker-agnostic pub/sub abstraction. Watermill handles the underlying transport; the HyperFleet broker library adds CloudEvents conversion, metrics, health checks, and a worker pool for parallel processing.
 
-The broker implementation is selected via `BROKER_TYPE` environment variable. Sentinel and Adapters use separate broker ConfigMaps (Sentinel uses a publish config; Adapters use a subscribe config).
+| Implementation | Broker Type Value | Environment | Notes |
+|----------------|-------------------|-------------|-------|
+| GCP Pub/Sub | `googlepubsub` | Production | Cloud-native, highly available, at-least-once delivery |
+| RabbitMQ | `rabbitmq` | On-premise / self-hosted | AMQP-based, suitable for environments without GCP access |
 
-### Sentinel Broker Configuration
+The broker implementation is selected via the `broker.type` field in `broker.yaml`.
+
+### Configuration
+
+The library uses a YAML configuration file (`broker.yaml`). The path defaults to the executable directory but can be overridden with the `BROKER_CONFIG_FILE` environment variable. All fields support environment variable overrides using dot-notation (e.g., `BROKER_TYPE` overrides `broker.type`).
+
+**Sentinel publisher configuration (`broker.yaml`):**
 
 ```yaml
-# sentinel-broker-config.yaml (Sentinel publishes events)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hyperfleet-sentinel-broker
-data:
-  BROKER_TYPE: "pubsub"            # or "rabbitmq", "stub"
-  BROKER_PROJECT_ID: "hyperfleet-prod"  # GCP Pub/Sub only
-  BROKER_TOPIC: "hyperfleet.clusters.changed.v1"
+broker:
+  type: googlepubsub        # or "rabbitmq"
+  googlepubsub:
+    project_id: hyperfleet-prod
+    # topic is passed at publish time via Publisher.Publish(ctx, topic, event)
+
+subscriber:
+  parallelism: 1            # number of concurrent message handlers per subscription
 ```
 
-### Adapter Broker Configuration
+**Adapter subscriber configuration (`broker.yaml`):**
 
 ```yaml
-# adapter-broker-config.yaml (Adapters subscribe to events)
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hyperfleet-adapter-broker
-data:
-  BROKER_TYPE: "pubsub"
-  BROKER_PROJECT_ID: "hyperfleet-prod"
-  BROKER_SUBSCRIPTION_ID: "validation-adapter-sub"
+broker:
+  type: googlepubsub
+  googlepubsub:
+    project_id: hyperfleet-prod
+    # subscription_id is passed at subscribe time via NewSubscriber(logger, subscriptionID, metrics)
+
+subscriber:
+  parallelism: 2            # increase for high-throughput adapters
 ```
 
 ### Event Flow
@@ -147,11 +150,17 @@ sequenceDiagram
 
 **Rationale**: Routing events to specific adapters at the broker level would require the broker or Sentinel to know which adapters exist and what they respond to. Adapter-side precondition evaluation keeps adapter logic self-contained and makes it trivial to add or remove adapters without touching the broker or Sentinel.
 
-### Pluggable Broker Abstraction
+### Pluggable Broker Abstraction via Watermill
 
-**Decision**: The broker is accessed through a common Go interface (`BrokerPublisher` / `BrokerSubscriber`) with concrete implementations for each backend.
+**Decision**: The broker library is built on [Watermill](https://watermill.io/) and exposes its own `Publisher` / `Subscriber` interfaces with CloudEvents as the first-class message type.
 
-**Rationale**: HyperFleet must support GCP-managed environments (Pub/Sub) and on-premise environments (RabbitMQ). A shared interface allows Sentinel and Adapter code to be tested with the Stub implementation and deployed with whichever real broker the environment requires.
+**Rationale**: HyperFleet must support GCP-managed environments (GCP Pub/Sub) and on-premise environments (RabbitMQ). Watermill provides the broker-agnostic transport layer, while the HyperFleet broker library adds CloudEvents conversion, metrics, health checks, and worker pool parallelism on top. Components program against the `Publisher` / `Subscriber` interfaces and are not coupled to either Watermill or the underlying broker backend.
+
+### Worker Pool for Parallel Processing
+
+**Decision**: The Subscriber supports a configurable `parallelism` setting that registers multiple concurrent Watermill handlers per subscription.
+
+**Rationale**: High-throughput adapters may need to process multiple events concurrently. The default parallelism of 1 provides safe sequential processing; adapters can increase it via `subscriber.parallelism` in `broker.yaml` without any code changes.
 
 ---
 
@@ -232,23 +241,42 @@ See `hyperfleet/architecture/architecture-summary.md` for the full v1 vs. v2 com
 
 ## Interfaces
 
+From [openshift-hyperfleet/hyperfleet-broker](https://github.com/openshift-hyperfleet/hyperfleet-broker):
+
 ### Publisher Interface (used by Sentinel)
 
 ```go
-type BrokerPublisher interface {
-    Publish(ctx context.Context, event cloudevents.Event) error
+// Publisher defines the interface for publishing CloudEvents
+type Publisher interface {
+    // Publish publishes a CloudEvent to the specified topic
+    Publish(ctx context.Context, topic string, event *event.Event) error
+    // Health checks if the underlying broker connection is healthy
+    Health(ctx context.Context) error
+    // Close closes the underlying publisher
     Close() error
 }
 ```
+
+Instantiated via `broker.NewPublisher(logger, metrics)` or `broker.NewPublisher(logger, metrics, configMap)`.
 
 ### Subscriber Interface (used by Adapters)
 
 ```go
-type BrokerSubscriber interface {
-    Subscribe(ctx context.Context, handler func(event cloudevents.Event) error) error
+// HandlerFunc processes a received CloudEvent
+type HandlerFunc func(ctx context.Context, event *event.Event) error
+
+// Subscriber defines the interface for subscribing to CloudEvents
+type Subscriber interface {
+    // Subscribe subscribes to a topic and processes messages with the provided handler
+    Subscribe(ctx context.Context, topic string, handler HandlerFunc) error
+    // Errors returns a channel that receives errors from background operations
+    Errors() <-chan *SubscriberError
+    // Close closes the underlying subscriber
     Close() error
 }
 ```
+
+Instantiated via `broker.NewSubscriber(logger, subscriptionID, metrics)`. The `subscriptionID` determines fan-out vs. load-balancing: different IDs = each subscriber gets every message (fan-out); same ID = messages are shared across instances (competing consumers).
 
 ---
 
