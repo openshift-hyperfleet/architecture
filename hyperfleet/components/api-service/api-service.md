@@ -6,7 +6,7 @@ Last Updated: 2026-03-26
 
 # HyperFleet API Service
 
-> The HyperFleet API is the data layer for the HyperFleet platform — a stateless REST service providing CRUD operations for clusters and node pools, adapter-based status reporting with Kubernetes-style conditions, and generation tracking. It contains no business logic and creates no events; all reconciliation is driven by Sentinel and Adapters.
+The HyperFleet API is the data layer for the HyperFleet platform — a stateless REST service providing CRUD operations for clusters and node pools, adapter-based status reporting with Kubernetes-style conditions, and generation tracking. It contains no business logic and creates no events; all reconciliation is driven by Sentinel and Adapters.
 
 ---
 
@@ -38,27 +38,6 @@ graph TD
     API -->|Expose| Metrics[Metrics :9090\n/metrics]
 ```
 
-### Request Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as API :8000
-    participant DB as PostgreSQL
-
-    U->>A: POST /clusters {name, spec, labels}
-    A->>DB: INSERT cluster (generation=1)
-    A->>DB: INSERT conditions [Available=False, Ready=False]
-    A-->>U: 201 {id, href, generation: 1, status: ...}
-
-    Note over A: Sentinel polls, publishes event
-    Note over A: Adapter processes, calls POST /statuses
-
-    U->>A: POST /clusters/:id/statuses {adapter, conditions}
-    A->>DB: UPSERT adapter_status
-    A->>DB: Aggregate → update Ready condition
-    A-->>U: 201 updated status
-```
 
 ### Resources
 
@@ -131,7 +110,13 @@ This aggregated `Ready` condition is the primary signal consumed by Sentinel's C
 
 ### Generation Tracking
 
-`generation` increments on every `PATCH` to the cluster or node pool `spec`. Adapters include `observed_generation` in status reports. The API uses this to detect stale reports: if `adapter.observed_generation < resource.generation`, that adapter has not yet reconciled the latest desired state, and `Ready` is set to `False`.
+`generation` increments on every change to the API resource that conveys some customer intention. 
+This is, changes to the fields:
+- `spec`
+- `labels`
+
+Adapters include `observed_generation` in status reports. The API uses this to detect stale reports: if `adapter.observed_generation < resource.generation`, that adapter has not yet reconciled the latest desired state, and `Ready` is set to `False`.
+
 
 ### Technology Stack
 
@@ -145,50 +130,6 @@ This aggregated `Ready` condition is the primary signal consumed by Sentinel's C
 | Authentication | OCM JWT (production) / disabled (development) |
 | Deployment | Kubernetes (Helm chart in `charts/`) |
 
-### Package Structure
-
-```
-hyperfleet-api/
-├── cmd/hyperfleet-api/          # Entrypoint: serve and migrate subcommands
-│   └── server/                  # HTTP server, routes, middleware
-├── openapi/                     # OpenAPI 3.0 specification (source of truth)
-├── pkg/
-│   ├── api/                     # Generated models + manual handler wiring
-│   ├── dao/                     # Data access objects (DB queries)
-│   ├── db/                      # PostgreSQL connection, migrations, advisory locking
-│   ├── handlers/                # HTTP request handlers
-│   └── services/                # Business logic layer
-│       ├── cluster.go           # Cluster CRUD
-│       ├── node_pool.go         # NodePool CRUD
-│       ├── adapter_status.go    # Status upsert
-│       └── aggregation.go      # Ready condition aggregation
-└── test/                        # Integration tests + test factories
-```
-
-### Database Schema
-
-```
-clusters (1) ──→ (N) node_pools
-    │                    │
-    └────────┬───────────┘
-             │
-             ├──→ adapter_statuses  (polymorphic: owner_type + owner_id)
-             └──→ labels            (polymorphic: owner_type + owner_id)
-```
-
-**Key patterns**:
-- **JSONB** for `spec` and `conditions` — supports multiple cloud providers without schema changes
-- **Soft delete** — `deleted_at` timestamp; records excluded from queries but retained for audit
-- **Advisory locks** — PostgreSQL `pg_advisory_xact_lock` prevents migration race conditions during rolling deploys
-
-### Authentication
-
-| Mode | Mechanism | When |
-|------|-----------|------|
-| Development | `AUTH_ENABLED=false` | Local dev and CI |
-| Production | OCM JWT (Red Hat SSO) | All deployments |
-
-JWT validation checks: signature, issuer (`JWT_ISSUER`), audience (`JWT_AUDIENCE`), expiration, and required claims.
 
 ### Ports
 
@@ -213,19 +154,20 @@ JWT validation checks: signature, issuer (`JWT_ISSUER`), audience (`JWT_AUDIENCE
 ### What We Lose / What Gets Harder
 
 - ❌ **No transactional event creation**: When a user creates or updates a cluster, no event is published atomically with the DB write. Sentinel must poll to detect the change, introducing up to one poll-interval of latency (default 5s).
+- ❌ **Resource intensive**: Polling to detect changes is more resource intensive than publishing messages when these occur.
 - ❌ **Adapter status is eventually consistent**: The `Ready` condition reflects the last adapter reports, not real-time cluster state. A cluster may be `Ready: True` briefly after adapters report success while a cloud-side failure is occurring.
 - ⚠️ **All query load hits the database**: Sentinel polls all matching clusters every cycle. At large cluster counts, this creates significant read load on PostgreSQL.
 - ⚠️ **No watch/streaming API**: Sentinel must poll rather than receive push notifications. Long-term, this limits reaction time and increases idle load.
 
 ### Technical Debt Incurred
 
-- **No event publishing on write**: The API does not publish events when resources are created or updated. Sentinel compensates by polling, but this means there is no push-based notification path.
-  - **Impact**: Up to 5s reaction latency to spec changes; constant background query load.
-  - **Remediation**: Post-MVP, add a watch endpoint or webhook capability so Sentinel can subscribe to changes.
+- **JSONB in DB schema**: The current DB schema contains some JSONB fields 
+  - **Impact**: Code is marshalling/unmarshalling from these fields instead of leveraging the ORM directly. Harder to use indexes
+  - **Remediation**: Post-MVP, convert status conditions to a table instead of JSONB
+- **`spec` field in clusters/nodepools table**: this is a JSONB that can grow big in size
+  - Impact: increased network traffic, as the full API resource payload travels for every API request
+  - Remediation: split the `spec` into its own table, or provide a way for Sentinel to fetch API resources without payload, as it is unused in Sentinel
 
-- **Advisory lock migration approach**: PostgreSQL advisory locks prevent migration races but introduce a startup delay in rolling deployments as pods queue for the lock.
-  - **Impact**: Slower rolling deployments at high replica counts.
-  - **Remediation**: Evaluate dedicated migration job (pre-deploy hook) as replica count grows.
 
 ### Acceptable Because
 
@@ -236,6 +178,13 @@ JWT validation checks: signature, issuer (`JWT_ISSUER`), audience (`JWT_AUDIENCE
 ---
 
 ## Alternatives Considered
+
+### Publishing changes from the API
+
+What: Instead of polling the API, for every change in the API resource, publish the change to a queue
+
+Why Rejected: the API gets an additional concern (publishing) and needs to guarantee delivery, so some type of transactional outbox pattern has to be implemented. For simplicity we accept polling at the scale the solution will be operating.
+
 
 ### Embed Business Logic in the API (Monolith)
 
