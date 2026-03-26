@@ -104,7 +104,7 @@ architecture/
 
 ## Document Types
 
-### 1. Architecture Documents (`architecture/`)
+### 1. Architecture Overview (`hyperfleet/README.md`)
 
 **Purpose**: High-level system architecture (30,000 feet view)
 
@@ -115,7 +115,7 @@ architecture/
 - Deployment topology
 - Cross-cutting concerns (security, scalability, observability)
 
-**When to create**: Major system redesigns, new architecture proposals
+**When to update**: Major system redesigns, new architecture proposals
 
 **Living Document**: Update as system architecture evolves
 

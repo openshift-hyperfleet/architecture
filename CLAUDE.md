@@ -11,17 +11,17 @@ All documents are **living documents** that evolve with design and implementatio
 ```
 ├── README.md                      # Main guide - required reading
 ├── hyperfleet/
-│   ├── architecture/              # System-level docs (30,000 feet view)
+│   ├── README.md                  # System overview (30,000 feet view)
 │   ├── components/                # Component design decisions
 │   │   ├── adapter/               # Adapter architecture
 │   │   ├── api-service/           # API service design
 │   │   ├── broker/                # Message broker design
 │   │   ├── claude-code-plugin/    # Claude Code plugin
 │   │   └── sentinel/              # Sentinel service design
+│   ├── deprecated/                # Archived documents (MVP, old adapters, deployment)
 │   ├── deployment/                # Deployment configurations
 │   ├── docs/                      # Implementation guides
 │   ├── e2e-testing/               # End-to-end testing
-│   ├── mvp/                       # MVP-specific decisions
 │   ├── standards/                 # Prescriptive standards (must follow)
 │   └── test-release/              # Test release configurations
 ```

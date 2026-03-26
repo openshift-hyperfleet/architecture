@@ -43,14 +43,14 @@ See [README.md](README.md) for the full directory layout. Key directories:
 ```
 architecture/
 ├── hyperfleet/
-│   ├── architecture/    # System-level architecture documents
+│   ├── README.md        # System overview and architecture summary
 │   ├── components/      # Component design documents (design decisions, trade-offs)
+│   ├── deprecated/      # Archived documents (MVP, old adapters, deployment)
 │   ├── docs/            # Implementation guides and operational docs
 │   │   └── glossary.md  # HyperFleet term definitions — consult before writing
 │   ├── standards/       # Prescriptive standards all HyperFleet repos must follow
 │   ├── deployment/      # Deployment guides (GKE, etc.)
 │   ├── e2e-testing/     # E2E testing strategy documents
-│   ├── mvp/             # Historical MVP scope and agreements
 │   └── test-release/    # Test and release process documents
 ├── hack/                # Linting scripts (markdownlint.sh, yamllint.sh, linkcheck.sh)
 ├── README.md
@@ -66,7 +66,7 @@ architecture/
 
 | What you're documenting | Where it goes |
 |------------------------|---------------|
-| System-level architecture | `hyperfleet/architecture/` |
+| System-level architecture | `hyperfleet/README.md` |
 | Component design (what/why/how/trade-offs) | `hyperfleet/components/<component>/` |
 | Implementation or operational guide | `hyperfleet/docs/` |
 | Engineering standards (must-follow rules) | `hyperfleet/standards/` |
