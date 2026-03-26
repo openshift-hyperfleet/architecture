@@ -1,8 +1,10 @@
 # HyperFleet Container Image Standard
 
-**Status**: Active
-**Owner**: HyperFleet Platform Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Platform Team
+Last Updated: 2026-03-25
+---
 
 > Defines conventions for Dockerfiles, base images, and container build practices across all HyperFleet service repositories. Covers base image selection, multi-stage builds, image labeling, and security hardening requirements. All HyperFleet container images published to quay.io must comply with this standard.
 

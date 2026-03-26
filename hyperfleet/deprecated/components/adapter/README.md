@@ -1,8 +1,10 @@
 # Deprecated Adapters
 
-**Status**: Historical
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
+---
+Status: Historical
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-03-25
+---
 
 > This directory contains spike reports, design documents, and exploration notes for adapter approaches that were investigated but not carried forward into the active adapter framework. Each subdirectory preserves the original work as a historical record.
 

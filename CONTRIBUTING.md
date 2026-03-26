@@ -1,8 +1,10 @@
 # Contributing to HyperFleet Architecture
 
-**Status**: Active
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-03-25
+---
 
 > How to contribute architectural documents, standards, and design decisions to this repository. This is a documentation-only repository — there is no application code. Read this file before opening a PR.
 
@@ -79,9 +81,11 @@ Every document **must** start with:
 ```markdown
 # Document Title
 
-**Status**: Active
-**Owner**: Team Name
-**Last Updated**: YYYY-MM-DD
+---
+Status: Active
+Owner: Team Name
+Last Updated: YYYY-MM-DD
+---
 
 > [2-4 sentence summary of what this document covers and the key decision or purpose]
 

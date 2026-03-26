@@ -1,8 +1,10 @@
 # Maestro Architecture Deep Dive
 
-**Status**: Active
-**Owner**: HyperFleet Adapter Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Adapter Team
+Last Updated: 2026-03-25
+---
 
 ## Overview
 

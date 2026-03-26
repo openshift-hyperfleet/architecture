@@ -1,8 +1,10 @@
 # GKE Cluster Automation with Config Connector
 
-**Status**: Deprecated
-**Owner**: HyperFleet Platform Team
-**Last Updated**: 2026-03-25
+---
+Status: Deprecated
+Owner: HyperFleet Platform Team
+Last Updated: 2026-03-25
+---
 
 
 These scripts have been deprecated in favor of the [infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) repository.

@@ -40,15 +40,13 @@ Unless asked explicitly otherwise, discard any document with "deprecated" in the
 
 ## Document Header Format
 
-All documents must start with fields:
+All documents must start with metadata fields:
 
 ```markdown
-# Document Title
-
-**Status**: Active
-**Owner**: Team Name
-**Last Updated**: YYYY-MM-DD
-
+---
+Status: Active
+Owner: Team Name
+Last Updated: YYYY-MM-DD
 ---
 ```
 

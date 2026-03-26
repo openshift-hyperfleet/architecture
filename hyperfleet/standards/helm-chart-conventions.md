@@ -1,8 +1,10 @@
 # HyperFleet Helm Chart Conventions
 
-**Status**: Active
-**Owner**: HyperFleet Team
-**Last Updated**: 2026-03-23
+---
+Status: Active
+Owner: HyperFleet Team
+Last Updated: 2026-03-23
+---
 
 ---
 

@@ -1,6 +1,8 @@
 # HyperFleet Versioning Trade-offs (Post-MVP)
 
-**Status**: Pending
+---
+Status: Pending
+---
 - **Status:** Post-MVP - Not enforced for initial release
 **Owner**: HyperFleet Architecture Team
 **Last Updated**: 2026-03-25

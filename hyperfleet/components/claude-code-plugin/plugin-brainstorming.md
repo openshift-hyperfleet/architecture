@@ -1,8 +1,10 @@
 # HyperFleet Claude Code Plugins - Brainstorming Proposal
 
-**Status**: Active
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-03-25
+---
 
 ## Overview
 

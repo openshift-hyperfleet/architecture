@@ -1,8 +1,10 @@
 # HyperFleet Documentation Standard
 
-**Status**: Active
-**Owner**: HyperFleet Team
-**Last Updated**: 2026-03-12
+---
+Status: Active
+Owner: HyperFleet Team
+Last Updated: 2026-03-12
+---
 
 ---
 

@@ -1,8 +1,10 @@
 # Spike Report: E2E Testing Framework for Hyperfleet Core Data Flow
 
-**Status**: Active
-**Owner**: HyperFleet QE Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet QE Team
+Last Updated: 2026-03-25
+---
 **JIRA Story:** HYPERFLEET-403  
 **Date:** Jan 9, 2026  
 

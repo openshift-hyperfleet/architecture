@@ -1,8 +1,10 @@
 # HyperFleet Logging Specification
 
-**Status**: Active
-**Owner**: HyperFleet Platform Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Platform Team
+Last Updated: 2026-03-25
+---
 
 > Defines the standard logging approach for all HyperFleet components (API, Sentinel, Adapters). Prescribes structured JSON logging, log levels, required fields (component, operation, resource_id), and correlation ID propagation. Consistent structured logging enables centralized log aggregation and cross-component trace correlation.
 

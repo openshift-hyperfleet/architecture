@@ -1,8 +1,10 @@
 # Claude Code Guidelines for HyperFleet Component Documents
 
-**Status**: Active
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-03-25
+---
 
 ## What Component Documents Are
 

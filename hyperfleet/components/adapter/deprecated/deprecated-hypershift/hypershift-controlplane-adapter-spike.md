@@ -1,8 +1,10 @@
 # SPIKE REPORT: Define HyperShift Control Plane Adapter Criteria and Implementation Plan for GCP
 
-**Status**: Deprecated
-**Owner**: HyperFleet Adapter Team
-**Last Updated**: 2026-03-25
+---
+Status: Deprecated
+Owner: HyperFleet Adapter Team
+Last Updated: 2026-03-25
+---
 
 
 ## 1. Overview

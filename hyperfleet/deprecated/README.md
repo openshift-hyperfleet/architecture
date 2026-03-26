@@ -1,8 +1,10 @@
 # Deprecated Documents
 
-**Status**: Historical
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
+---
+Status: Historical
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-03-25
+---
 
 > Central archive for all deprecated HyperFleet architecture documents. Content is preserved as historical record. Do not use these documents as the basis for new work — see the "Replaced By" column for current alternatives.
 

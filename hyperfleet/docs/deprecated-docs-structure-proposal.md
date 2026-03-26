@@ -1,8 +1,10 @@
 # Proposed Structure for Deprecated Documents
 
-**Status**: Draft
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
+---
+Status: Draft
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-03-25
+---
 
 > Proposal for a consistent, discoverable structure for deprecated documentation across the HyperFleet architecture repository. The current state has deprecation handled inconsistently — this document proposes a unified approach.
 
@@ -39,9 +41,12 @@ Every deprecated document MUST include a deprecation notice immediately after th
 ```markdown
 # Document Title
 
-**Status**: Deprecated
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: YYYY-MM-DD
+---
+Status: Deprecated
+Owner: HyperFleet Architecture Team
+Last Updated: YYYY-MM-DD
+---
+
 **Deprecated**: YYYY-MM-DD
 **Replaced By**: [Link to replacement document or directory](./path/to/replacement.md)
 
@@ -79,8 +84,10 @@ When a document or directory is moved to `deprecated/`, leave a short forwarding
 ```markdown
 # DNS Adapter (GCP)
 
-**Status**: Deprecated — moved to archive
-**Last Updated**: YYYY-MM-DD
+---
+Status: Deprecated — moved to archive
+Last Updated: YYYY-MM-DD
+---
 
 > This content has been moved to [hyperfleet/deprecated/adapter-dns-gcp/](../../deprecated/adapter-dns-gcp/).
 > See the [Deprecated Directory README](../../deprecated/README.md) for context.

@@ -1,8 +1,10 @@
 # HyperFleet Git Workflow and Release Management
 
-**Status**: Active
-**Owner**: HyperFleet Platform Team
-**Last Updated**: 2026-03-25
+---
+Status: Active
+Owner: HyperFleet Platform Team
+Last Updated: 2026-03-25
+---
 
 > Defines the Git branching strategy and release process for HyperFleet components. Covers branch naming, release tagging, hotfix procedures, and how release branches map to deployed environments. This is the canonical reference for managing the HyperFleet release lifecycle.
 

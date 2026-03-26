@@ -1,8 +1,11 @@
 # SPIKE REPORT: Define Validation Adapter Criteria and Implementation Plan for GCP
 
-**Status**: Deprecated
-**Owner**: HyperFleet Adapter Team
-**Last Updated**: 2026-03-25
+---
+Status: Deprecated
+Owner: HyperFleet Adapter Team
+Last Updated: 2026-03-25
+---
+
 **JIRA Story**: HYPERFLEET-59   
 
 ## 1. Overview

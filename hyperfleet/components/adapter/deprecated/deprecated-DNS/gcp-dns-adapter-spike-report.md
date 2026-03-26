@@ -1,8 +1,10 @@
 # SPIKE REPORT: Define DNS Adapter Requirements and Implementation Plan for GCP
 
-**Status**: Deprecated
-**Owner**: HyperFleet Adapter Team
-**Last Updated**: 2026-03-25
+---
+Status: Deprecated
+Owner: HyperFleet Adapter Team
+Last Updated: 2026-03-25
+---
 
 > Spike report from the GCP DNS adapter investigation, documenting findings, challenges, and recommendations from the exploration. Deprecated since GCP specific adapters will be developed by GCP team and out of scope for the core HyperFleet repositories
 
@@ -16,7 +18,9 @@
 ## Metadata
 **JIRA Story**: HYPERFLEET-60  
 **Date**: December 3, 2025,  
-**Status**: Outdated, the following spike report serves as a record of the DNS-related findings.
+---
+Status: Outdated, the following spike report serves as a record of the DNS-related findings.
+---
 ---
 
 ## 1. Executive Summary
