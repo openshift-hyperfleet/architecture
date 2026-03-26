@@ -6,15 +6,10 @@ Last Updated: 2026-01-02
 
 # HyperFleet Error Model and Codes Standard
 
-> Defines how errors are structured, propagated, and communicated across HyperFleet services. Covers API error response format, Go error wrapping conventions, and error classification (transient vs. permanent). Consistent error handling enables better observability, retry logic, and client-side error handling.
-
----
-
-This document defines the standard error model and error codes for all HyperFleet components (API, Sentinel, Adapters), following [RFC 9457 - Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457.html).
-
----
 
 ## Overview
+
+This document defines the standard error model and error codes for all HyperFleet components (API, Sentinel, Adapters), following [RFC 9457 - Problem Details for HTTP APIs](https://www.rfc-editor.org/rfc/rfc9457.html).
 
 ### Goals
 

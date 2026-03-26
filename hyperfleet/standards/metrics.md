@@ -6,15 +6,9 @@ Last Updated: 2026-03-20
 
 # HyperFleet Metrics Standard
 
-> Prescribes the Prometheus metrics naming conventions, required metric types, and labeling standards for all HyperFleet services. Covers namespace prefixes, standard labels (component, instance), required metrics per service category, and cardinality guidelines. Consistent metrics naming enables shared dashboards and alerting rules across all components.
-
----
+## Overview
 
 This document defines the standard conventions for Prometheus metrics across all HyperFleet components (API, Sentinel, Adapters).
-
----
-
-## Overview
 
 ### Goals
 

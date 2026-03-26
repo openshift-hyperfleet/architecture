@@ -6,15 +6,11 @@ Last Updated: 2026-03-20
 
 # HyperFleet Health and Readiness Endpoint Standard
 
-> Defines the required health check endpoints (`/healthz` and `/readyz`) for all HyperFleet services. Covers response format, HTTP status codes, and what each endpoint must check. Consistent health endpoints enable Kubernetes liveness and readiness probes to work correctly across all components.
 
----
+## Overview
 
 This document defines the standard contract for health and readiness endpoints across all HyperFleet components (API, Sentinel, Adapters).
 
----
-
-## Overview
 
 ### Goals
 

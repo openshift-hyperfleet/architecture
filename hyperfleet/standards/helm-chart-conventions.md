@@ -6,8 +6,6 @@ Last Updated: 2026-03-23
 
 # HyperFleet Helm Chart Conventions
 
----
-
 ## Overview
 
 This standard defines conventions for Helm charts across all HyperFleet component repositories (API, Sentinel, Adapter). It ensures consistent naming, structure, security posture, and operational patterns across charts. All HyperFleet charts MUST follow these conventions.

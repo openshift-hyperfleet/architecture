@@ -6,9 +6,8 @@ Last Updated: 2026-03-12
 
 # HyperFleet Directory Structure Standard
 
-> Defines the standard directory layout for HyperFleet service and tooling repositories. Prescribes where source code, tests, configuration, and documentation belong within a repository. Consistent structure makes it easier to navigate any HyperFleet repo and enables shared tooling (Makefiles, CI pipelines).
 
----
+## Overview
 
 This document defines the standard directory structure for all HyperFleet repositories to ensure consistency, improve developer experience, and enable automation.
 

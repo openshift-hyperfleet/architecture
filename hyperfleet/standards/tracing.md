@@ -6,15 +6,9 @@ Last Updated: 2026-01-05
 
 # HyperFleet Tracing and Telemetry Standard
 
-> Defines how distributed tracing is implemented across HyperFleet services using OpenTelemetry. Covers trace context propagation (W3C TraceContext headers), span naming conventions, required span attributes, and sampling configuration. Consistent tracing enables end-to-end request visibility across API, Sentinel, Broker, and Adapter boundaries.
-
----
+## Overview
 
 This document defines the standard approach for distributed tracing across all HyperFleet components (API, Sentinel, Adapters).
-
----
-
-## Overview
 
 ### Goals
 

@@ -6,25 +6,11 @@ Last Updated: 2026-01-13
 
 # HyperFleet Generated Code Policy
 
-> Defines rules for managing code generated from specifications (OpenAPI, protobuf, etc.) in HyperFleet repositories. Covers where generated files live, whether they are committed to source control, and how they are regenerated. Prevents inconsistencies between specs and generated code.
-
----
-
-## *Policy for managing generated code in HyperFleet repositories*
-
-## Metadata
-
-- **Date:** 2025-12-26
-- **Authors:** Rafael Benevides
-- **Status:** Active
-- **Related Jira(s):** [HYPERFLEET-303](https://issues.redhat.com/browse/HYPERFLEET-303)
-- **Related Docs:** [Makefile Conventions](makefile-conventions.md)
-
----
-
 ## 1. Overview
 
 This document establishes the policy for handling generated code in HyperFleet repositories.
+
+- **Related Docs:** [Makefile Conventions](makefile-conventions.md)
 
 ### What is Generated Code?
 
