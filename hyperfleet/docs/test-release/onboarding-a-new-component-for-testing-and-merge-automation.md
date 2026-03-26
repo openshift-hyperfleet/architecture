@@ -14,7 +14,7 @@ This document provides an overview of the workflow for onboarding new public com
 ## Granting Robots Privileges
 In order to add labels, move PRs and issues into milestones, merge PRs, etc., the robots will need write access to your repository.
 
-There is a team named  **automation-bots** created that has added bot **openshift-ci-robot** and **openshift-merge-robot**. The two bots are using to handle CI jobs triggering and code merging behaviors. For the repositories under **openshift-hyperfleet** organization they just need to added team **automation-bots** to grant the same permission for the two bots. And if it has already been done by referring to the [repository-creation-guidelines.md](../docs/repository-creation-guidelines.md) when create the new repository just skip the above step.
+There is a team named  **automation-bots** created that has added bot **openshift-ci-robot** and **openshift-merge-robot**. The two bots are using to handle CI jobs triggering and code merging behaviors. For the repositories under **openshift-hyperfleet** organization they just need to added team **automation-bots** to grant the same permission for the two bots. And if it has already been done by referring to the [repository-creation-guidelines.md](../repository-creation-guidelines.md) when create the new repository just skip the above step.
 
 **Note**
  - If your component repository is not in the **openshift-hyperfleet** Github organization, you can refer to the guidance [Granting Robots Privileges and Installing the GitHub App](https://docs.ci.openshift.org/docs/how-tos/onboarding-a-new-component/#granting-robots-privileges-and-installing-the-github-app) to grant robots premission
@@ -35,7 +35,7 @@ This will place a new **_pluginconfig.yaml** file in the **/core-services/prow/0
 
 If your repository does not have **OWNERS** files, you will not be able to opt into the /approve process or automatic pull request review assignment. **OWNERS** file format and interaction details can be found [upstream](https://docs.prow.k8s.io/docs/components/plugins/approve/approvers/).
 
-After creating the **OWNERS** file in your new repository when preparing the new repository via [repository-creation-guidelines.md](../docs/repository-creation-guidelines.md), copy it to the **/core-services/prow/02_config/$org/$repo** directory
+After creating the **OWNERS** file in your new repository when preparing the new repository via [repository-creation-guidelines.md](../repository-creation-guidelines.md), copy it to the **/core-services/prow/02_config/$org/$repo** directory
 
 ## Detailed steps
 

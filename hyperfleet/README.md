@@ -200,7 +200,7 @@ cluster_statuses
   - Using the OLDEST adapter timestamp ensures Sentinel triggers reconciliation when ANY adapter is stale
 - Each adapter has `observed_generation` to track which cluster generation it reconciled
 - Labels stored as JSONB for flexible querying by Sentinel shards
-- See [Status Guide](../docs/status-guide.md) for complete status contract details
+- See [Status Guide](./docs/status-guide.md) for complete status contract details
 
 ---
 
@@ -708,7 +708,7 @@ The cluster's aggregated `status.phase` is computed from adapter conditions:
 - Any adapter `Available: False` → Cluster phase: `Not Ready` (MVP) or `Provisioning`/`Failed`/`Degraded` (Post-MVP)
 - Any adapter `Health: False` → Cluster phase: `Degraded`
 
-See [Status Guide](../docs/status-guide.md) for complete details on the status contract.
+See [Status Guide](./docs/status-guide.md) for complete details on the status contract.
 
 ---
 

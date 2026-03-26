@@ -13,7 +13,7 @@ This document defines integration test scenarios and acceptance criteria for the
 **Related Documentation:**
 - [Adapter Framework Design](./adapter-frame-design.md) - Architecture overview
 - [Adapter Status Contract](./adapter-status-contract.md) - Status reporting contract
-- [Test Release MVP](../../../test-release/test-release-MVP.md) - Testing strategy
+- [Test Release MVP](../../../docs/test-release/test-release-MVP.md) - Testing strategy
 
 ---
 
