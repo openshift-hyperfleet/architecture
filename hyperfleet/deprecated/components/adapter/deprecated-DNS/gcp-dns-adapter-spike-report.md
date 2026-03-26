@@ -1,7 +1,7 @@
 ---
 Status: Deprecated
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-03-25
+Last Updated: 2026-01-27
 ---
 
 # SPIKE REPORT: Define DNS Adapter Requirements and Implementation Plan for GCP

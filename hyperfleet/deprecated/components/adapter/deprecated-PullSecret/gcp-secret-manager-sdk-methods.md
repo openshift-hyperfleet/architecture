@@ -1,7 +1,7 @@
 ---
 Status: Deprecated
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-03-25
+Last Updated: 2026-01-27
 ---
 
 # GCP Secret Manager SDK Methods - Go Client Library Reference

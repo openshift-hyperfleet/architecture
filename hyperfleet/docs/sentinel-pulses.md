@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-03-25
+Last Updated: 2026-01-22
 ---
 
 # Sentinel pulses, adapter behavior and API resource status

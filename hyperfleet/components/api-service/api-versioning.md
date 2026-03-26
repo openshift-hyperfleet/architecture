@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet API Team
-Last Updated: 2026-03-25
+Last Updated: 2025-12-30
 ---
 
 # HyperFleet API Versioning Strategy

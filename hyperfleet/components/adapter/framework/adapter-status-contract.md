@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-03-25
+Last Updated: 2025-12-09
 ---
 
 # HyperFleet Adapter Status Contract

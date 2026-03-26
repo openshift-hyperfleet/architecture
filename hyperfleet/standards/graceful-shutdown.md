@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-03-25
+Last Updated: 2026-01-09
 ---
 
 # HyperFleet Graceful Shutdown Standard

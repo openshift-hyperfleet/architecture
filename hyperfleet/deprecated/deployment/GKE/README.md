@@ -1,7 +1,7 @@
 ---
 Status: Deprecated
 Owner: HyperFleet Platform Team
-Last Updated: 2026-03-25
+Last Updated: 2025-11-17
 ---
 
 # GKE Cluster Automation with Config Connector
