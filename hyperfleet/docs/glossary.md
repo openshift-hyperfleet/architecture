@@ -6,7 +6,7 @@ Last Updated: 2026-03-25
 
 # HyperFleet Glossary
 
-> Definitions for HyperFleet-specific terms, concepts, and abbreviations used across architecture documents, standards, and component designs. The **Applies To** column identifies which components use or are most closely associated with each term.
+Definitions for HyperFleet-specific terms, concepts, and abbreviations used across architecture documents, standards, and component designs. The **Applies To** column identifies which components use or are most closely associated with each term.
 
 ---
 
@@ -44,7 +44,6 @@ Last Updated: 2026-03-25
 | **MVP (Minimum Viable Product)** | The initial release of HyperFleet, completed in late 2024. Documents marked `Status: Historical` in `hyperfleet/mvp/` describe the scope and working agreements from this phase. | All |
 | **NodePool** | A group of worker nodes associated with a HyperShift cluster. HyperFleet manages NodePool lifecycle via the same adapter pattern as clusters. Referred to as `/nodepools` in the API. | API, Sentinel, Adapter Framework |
 | **observed_generation** | An integer field included in adapter status reports indicating which resource `generation` the adapter processed. Allows Sentinel to detect when an adapter's status report is stale (refers to an older generation than the current resource spec). | Adapter Framework, Sentinel, API |
-| **Outbox Pattern** | A message delivery pattern used in HyperFleet v1 (now removed). The API wrote reconciliation events to an "outbox" database table; a separate Outbox Reconciler polled and published them. Replaced in v2 by direct Sentinel publishing, which reduces latency and component count. | Historical (v1) |
 | **Precondition** | A condition an Adapter checks before deciding to act on a reconciliation event. Preconditions verify that dependencies are met (e.g., Validation adapter has completed before DNS adapter runs) and that the current resource state requires the adapter's action. | Adapter Framework |
 | **Pulse** | A proposed extension to the HyperFleet status model that introduces periodic heartbeat status updates from adapters. Pulses disambiguate between "new generation not yet reconciled" and "system error" in the `status.phase` field. See: [Sentinel Pulses](sentinel-pulses.md) | Sentinel, Adapter Framework |
 | **RabbitMQ** | An AMQP-based self-hosted message broker used in on-premise HyperFleet deployments. Configured with `broker.type: rabbitmq` in `broker.yaml`. | Broker |
@@ -55,7 +54,6 @@ Last Updated: 2026-03-25
 | **Subscription** | A named queue attached to a Message Broker topic. In HyperFleet, each Adapter has its own subscription to the shared topic, ensuring every adapter independently receives every reconciliation event (fan-out). The subscription ID determines whether multiple instances share messages (same ID = load-balanced) or each receives all messages (different IDs). | Broker |
 | **Technical Debt** | A consciously accepted trade-off that simplifies current implementation at the cost of future work. HyperFleet component documents explicitly track technical debt in a "Technical Debt Incurred" section within the Trade-offs section. | All |
 | **Topic** | A named channel in the Message Broker to which Sentinel publishes events. HyperFleet uses topic naming convention: `hyperfleet.<resourceType>.changed.<version>` (e.g., `hyperfleet.clusters.changed.v1`). | Broker, Sentinel |
-| **v2 Architecture** | The current HyperFleet architecture, which removed the Outbox Pattern from v1. Key change: Sentinel publishes events directly to the broker (vs. the v1 Outbox Reconciler polling a database table). This reduces latency, removes a component, and simplifies the API. See: [Architecture Summary](../architecture/architecture-summary.md) | Architecture |
 | **Watermill** | The Go pub/sub library ([ThreeDotsLabs/watermill](https://github.com/ThreeDotsLabs/watermill)) used as the transport abstraction inside `hyperfleet-broker`. Watermill handles broker-specific protocol details; the HyperFleet broker library adds CloudEvents conversion, metrics, and health checks on top. | Broker |
 
 ---

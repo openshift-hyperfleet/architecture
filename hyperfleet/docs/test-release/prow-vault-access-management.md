@@ -6,14 +6,6 @@ Last Updated: 2026-03-25
 
 # Vault Engine on Prow - Documentation
 
-> Describes how secrets are managed for Prow CI jobs using HashiCorp Vault. Covers how to add new secrets to Vault, configure Prow jobs to access them securely, and the access control model for CI secrets. Required reading before creating Prow jobs that need credentials.
-
----
-
-**Metadata**
-- **Date:** 2025-11-13
-- **Authors:** Ying Zhang
-
 ## Overview
 This document provides guidance on how to apply for, manage, and use Vault secrets in the OpenShift CI (Prow) environment.
 

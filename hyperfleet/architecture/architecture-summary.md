@@ -6,10 +6,6 @@ Last Updated: 2026-03-25
 
 # HyperFleet v2 Architecture Summary
 
-> Overview document for the HyperFleet architecture describing its main components and purpose
-
----
-
 ## Overview
 
 HyperFleet v2 represents a significant architectural simplification from v1, removing the Outbox Pattern and consolidating business logic into the Sentinel Service. This design reduces complexity while maintaining the event-driven, scalable nature of the system.

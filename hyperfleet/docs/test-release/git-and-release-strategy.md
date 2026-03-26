@@ -6,19 +6,6 @@ Last Updated: 2026-03-25
 
 # HyperFleet Git Workflow and Release Management
 
-> Defines the Git branching strategy and release process for HyperFleet components. Covers branch naming, release tagging, hotfix procedures, and how release branches map to deployed environments. This is the canonical reference for managing the HyperFleet release lifecycle.
-
----
-
-## *Define Git branching strategy, release process, and hotfix procedures for all HyperFleet components*
-
-**Metadata**
-- **Date:** 2025-10-30
-- **Authors:** Alex Vulaj
-- **Related Jira(s):** [HYPERFLEET-70](https://issues.redhat.com/browse/HYPERFLEET-70)
-
----
-
 ## 1. Overview
 
 This document defines HyperFleet's Git workflow, branching strategy, release process, and hotfix procedures. It applies to all HyperFleet components: API, Sentinel, and Adapters.

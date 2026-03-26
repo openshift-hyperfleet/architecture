@@ -6,14 +6,9 @@ Last Updated: 2026-03-25
 
 # Onboarding a New Component for Testing and Merge Automation
 
-> Step-by-step guide for onboarding a new HyperFleet component into the CI testing and merge automation system. Covers repository setup, Prow job configuration, tide merge automation, and the verification checklist for ensuring a new component is fully integrated with HyperFleet CI.
+## Overview
 
----
-This document provides an overview of the workflow for onboarding new public component repositories to the Openshift CI. 
-
-**Metadata**
-- **Date:** 2025-12-23
-- **Authors:** Ying Zhang
+This document provides an overview of the workflow for onboarding new public component repositories to the Openshift CI.
 
 
 ## Granting Robots Privileges
