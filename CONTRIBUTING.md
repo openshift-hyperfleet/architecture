@@ -186,7 +186,7 @@ Examples:
 ```
 HYPERFLEET-123 - docs: add broker component design document
 HYPERFLEET-456 - docs: update sentinel trade-offs section
-chore: fix broken links in architecture-summary.md
+chore: fix broken links in hyperfleet/README.md
 ```
 
 ---

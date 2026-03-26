@@ -54,8 +54,7 @@ architecture/
 ├── OWNERS                         # Repository ownership
 ├── hack/                          # Utility scripts
 └── hyperfleet/                    # HyperFleet-specific architecture
-    ├── architecture/              # 30,000 feet view (system-level)
-    │   └── architecture-summary.md
+    ├── README.md                  # HyperFleet system overview and architecture summary
     ├── components/                # Component-level design decisions
     │   ├── CLAUDE.md              # Component document guidelines
     │   ├── adapter/               # Adapter framework and implementations
@@ -289,7 +288,7 @@ All HyperFleet team developers have approve and merge access. **Goal**: Move fas
 ### I want to...
 
 **Understand HyperFleet architecture**
-→ Start with `hyperfleet/architecture/architecture-summary.md`
+→ Start with `hyperfleet/README.md`
 
 **Design a new component**
 → Add document to `hyperfleet/components/` with required sections (see "Component Design Documents")

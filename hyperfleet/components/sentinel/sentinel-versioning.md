@@ -222,7 +222,7 @@ Sentinel includes `schemaversion` field in all published events:
 
 ## References
 
-- [HyperFleet Architecture Summary](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/architecture/architecture-summary.md)
+- [HyperFleet Architecture Summary](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/README.md)
 - [AsyncAPI Specification](https://www.asyncapi.com/docs/reference/specification)
 - [CloudEvents 1.0 Specification](https://cloudevents.io/)
 - [Semantic Versioning 2.0.0](https://semver.org/)

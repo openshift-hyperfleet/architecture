@@ -321,7 +321,7 @@ Binary v1.3.x supports Config Schema 1.3
 
 ## References
 
-- [HyperFleet Architecture Summary](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/architecture/architecture-summary.md)
+- [HyperFleet Architecture Summary](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/README.md)
 - [Sentinel Versioning Strategy](../sentinel/sentinel-versioning.md)
 - [API Versioning Strategy](../api-service/api-versioning.md)
 - [Semantic Versioning 2.0.0](https://semver.org/)

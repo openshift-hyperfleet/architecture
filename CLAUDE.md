@@ -65,7 +65,7 @@ Use **Mermaid diagrams** in all architecture and component documents:
 
 | I want to...                    | Start here                                    |
 |---------------------------------|-----------------------------------------------|
-| Understand HyperFleet           | `hyperfleet/architecture/architecture-summary.md` |
+| Understand HyperFleet           | `hyperfleet/README.md` |
 | Design a new component          | `hyperfleet/components/` + see README         |
 | Write an implementation guide   | `hyperfleet/docs/`                            |
 | Find trade-offs                 | Component docs → "Trade-offs" section         |

@@ -117,7 +117,7 @@ spec:
         memory: 512Mi
 ```
 
-**Source:** https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/architecture/architecture-summary.md#5-adapter-deployments
+**Source:** https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/README.md#5-adapter-deployments
 
 ---
 

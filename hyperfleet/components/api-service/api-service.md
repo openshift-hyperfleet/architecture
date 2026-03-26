@@ -302,7 +302,7 @@ Key environment variables (see `docs/config.md` in the repository for the full l
 
 ## Related Documents
 
-- [Architecture Summary](../../architecture/architecture-summary.md) — system-level view of the API's role
+- [Architecture Summary](../../README.md) — system-level view of the API's role
 - [Sentinel Design](../sentinel/sentinel.md) — how Sentinel polls the API
 - [Adapter Framework Design](../adapter/framework/adapter-frame-design.md) — how Adapters report status
 - [Status Guide](../../docs/status-guide.md) — complete condition contract

@@ -257,7 +257,7 @@ Instantiated via `broker.NewSubscriber(logger, subscriptionID, metrics)`. The `s
 
 ## Related Documents
 
-- [Architecture Summary](../../architecture/architecture-summary.md) — system-level view of broker's role
+- [Architecture Summary](../../README.md) — system-level view of broker's role
 - [Sentinel Design](../sentinel/sentinel.md) — how Sentinel publishes events
 - [Adapter Framework Design](../adapter/framework/adapter-frame-design.md) — how adapters subscribe and process events
 - [Adapter Design Decisions](../adapter/framework/adapter-design-decisions.md) — anemic event pattern rationale

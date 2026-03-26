@@ -179,6 +179,6 @@ v2.0.0: Remove deprecated field, make "metadata" required, change "status" from 
 
 ## References
 
-- [HyperFleet Architecture Summary](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/architecture/architecture-summary.md)
+- [HyperFleet Architecture Summary](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/README.md)
 - [HyperFleet Error Model and Codes Standard](../../standards/error-model.md)
 - [Semantic Versioning 2.0.0](https://semver.org/)
