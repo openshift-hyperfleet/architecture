@@ -390,7 +390,7 @@ if err := db.GetCluster(id); err != nil {
 
 ### Adapters
 
-- Report errors via adapter status (see [Status Guide](./status-guide.md))
+- Report errors via adapter status (see [Status Guide](../docs/status-guide.md))
 - Distinguish between:
   - **Business logic failures**: `Health: True` (adapter worked, validation failed)
   - **Adapter errors**: `Health: False` (unexpected error in adapter)
@@ -535,6 +535,6 @@ Content-Type: application/problem+json
 - [RFC 7807 - Problem Details for HTTP APIs (obsoleted by RFC 9457)](https://www.rfc-editor.org/rfc/rfc7807.html)
 - [HyperFleet Logging Specification](./logging-specification.md)
 - [HyperFleet Tracing Standard](./tracing.md)
-- [HyperFleet Status Guide](./status-guide.md)
+- [HyperFleet Status Guide](../docs/status-guide.md)
 - [HyperFleet API Versioning](../components/api-service/api-versioning.md)
 - [Google Cloud API Design Guide - Errors](https://cloud.google.com/apis/design/errors)

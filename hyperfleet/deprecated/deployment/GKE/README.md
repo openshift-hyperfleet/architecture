@@ -1,10 +1,11 @@
 # GKE Cluster Automation with Config Connector
 
-**Status**: Active
+**Status**: Deprecated
 **Owner**: HyperFleet Platform Team
 **Last Updated**: 2026-03-25
 
-> Overview of the HyperFleet GKE deployment configuration and guides. Describes the GKE-specific deployment architecture, required GCP services, and links to the quickstart and detailed configuration guides for running HyperFleet on GKE.
+
+These scripts have been deprecated in favor of the [infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) repository.
 
 ---
 

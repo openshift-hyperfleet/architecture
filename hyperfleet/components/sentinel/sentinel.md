@@ -1043,6 +1043,74 @@ For logging configuration standards, see [Logging Specification](../../standards
 
 ---
 
+## Trade-offs
+
+### What We Gain
+
+- ✅ **Decoupled reconciliation**: Sentinel has no knowledge of which adapters exist; adapters have no knowledge of each other. New adapters can be added with zero changes to Sentinel.
+- ✅ **Self-healing**: Transient failures are automatically retried on the next poll cycle without manual intervention.
+- ✅ **Configurable decision logic**: CEL expressions allow different reconciliation thresholds and conditions per deployment (e.g., different debounce periods for prod vs. dev, or different logic per resource type) without code changes.
+- ✅ **Horizontal scalability**: Multiple Sentinel instances with label-based resource selectors distribute load without inter-instance coordination.
+- ✅ **Generic pattern**: The same service handles clusters, nodepools, or any future HyperFleet resource type — only the configuration changes.
+- ✅ **Low implementation complexity**: A polling loop against a REST API is simpler to implement, test, and operate than a watch/push mechanism for MVP.
+
+### What We Lose / What Gets Harder
+
+- ❌ **Polling overhead**: Sentinel fetches all matching resources on every poll cycle (default 5s), even when most resources are stable. This creates constant API load proportional to resource count, not to activity level.
+- ❌ **No guaranteed exactly-once delivery**: If Sentinel publishes to the broker and then crashes, the event may be re-published on the next cycle. Mitigated by requiring all adapters to be idempotent.
+- ⚠️ **Gap/overlap risk with label-based sharding**: Resource selectors are label filters, not true shards. Operators must manually ensure full resource coverage — there is no automated verification that all resources are watched by at least one Sentinel instance.
+- ⚠️ **Minimum reconciliation latency equals poll interval**: A resource spec change is not reconciled until the next poll cycle (up to 5s). This is acceptable for cluster provisioning use cases but unsuitable for latency-sensitive workflows.
+- ⚠️ **Broker dependency**: If the message broker is unavailable, Sentinel cannot trigger reconciliation events. Adapters are not notified; the cluster remains in its current state until the broker recovers.
+
+### Technical Debt Incurred
+
+- **Single-instance MVP**: The initial deployment uses a single Sentinel watching all resources (`resource_selector: []`). Multi-Sentinel sharding requires manual operator coordination with no automated coverage verification.
+  - **Impact**: Low at MVP cluster counts; becomes a reliability risk as the number of managed clusters grows.
+  - **Remediation**: Post-MVP, add automated shard coverage validation or implement coordinated sharding with a registry.
+
+- **Polling instead of watching**: Sentinel polls the API on a fixed interval rather than reacting to resource change events via a push mechanism. This wastes compute on stable resources and introduces latency proportional to the poll interval.
+  - **Impact**: Constant background API load; up to 5s reaction time to spec changes.
+  - **Remediation**: Post-MVP, consider an API watch endpoint or webhook-triggered publishing to reduce idle load.
+
+### Acceptable Because
+
+- MVP targets a small number of clusters where polling overhead is negligible.
+- Adapters are designed to be idempotent, making duplicate events safe.
+- CEL-based decision logic with debouncing controls event flood risk.
+- Decoupling and self-healing are higher-priority reliability properties for MVP than polling efficiency.
+
+---
+
+## Alternatives Considered
+
+### Outbox Pattern (v1 Architecture)
+
+**What**: The API writes reconciliation events to an "outbox" database table; a separate Outbox Reconciler polls the table and publishes events to the broker.
+
+**Why Rejected**: Introduces an extra service component (Outbox Reconciler), increases end-to-end latency (two polling hops: API poll + outbox poll), and adds operational complexity. The v2 direct Sentinel publishing approach removes the outbox entirely, reduces component count from 6 to 5, and simplifies the architecture. Adapters are idempotent, so the loss of strict transactional event delivery is an acceptable trade-off for MVP.
+
+See: [Glossary: Outbox Pattern](../../docs/glossary.md)
+
+### Push-Based Triggering (Webhooks / API Watch)
+
+**What**: Instead of Sentinel polling the API, the API pushes notifications to Sentinel when resources change — via webhooks or a watch API similar to Kubernetes informers.
+
+**Why Rejected**: Requires the API to know about Sentinel (coupling in the wrong direction), and adds webhook delivery reliability complexity (retry queues, failure handling). Polling is simpler to implement and operate at MVP scale. This remains a viable post-MVP enhancement to reduce idle API load.
+
+### Hardcoded Decision Logic
+
+**What**: Encode fixed reconciliation logic (e.g., "always publish if not ready for more than 10s") directly in Go code, removing the CEL configuration layer.
+
+**Why Rejected**: Different resource types (clusters vs. nodepools), environments (production vs. dev), and tenants need different reconciliation thresholds and conditions. CEL expressions allow operators to tune behavior without redeploying Sentinel. The configurability cost (CEL expression management, topological sort, compile-time validation) is justified by the flexibility gained.
+
+### Kubernetes Controller Pattern
+
+**What**: Implement Sentinel as a Kubernetes controller using `controller-runtime`, watching Kubernetes CRDs rather than polling the HyperFleet REST API.
+
+**Why Rejected**: HyperFleet resources live in the HyperFleet REST API, not as Kubernetes CRDs. Adopting `controller-runtime` would require converting all HyperFleet resources to CRDs — a significant API design change outside current scope. A simple polling loop against the REST API is sufficient for MVP and avoids introducing a Kubernetes API server dependency.
+
+---
+
 ## Post-MVP Enhancements
 
 ### Advanced Alerting

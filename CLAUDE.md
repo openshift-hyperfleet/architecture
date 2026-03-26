@@ -32,9 +32,15 @@ All documents are **living documents** that evolve with design and implementatio
 - **Active**: Current implementation
 - **Deprecated**: No longer used (link to replacement)
 
+## Use only Active status pages
+
+Unless asked explicitly otherwise, discard any document with `Status` field different than `Active`
+
+Unless asked explicitly otherwise, discard any document with "deprecated" in the name or under a folder with "deprecated" in the name
+
 ## Document Header Format
 
-All documents must start with:
+All documents must start with fields:
 
 ```markdown
 # Document Title
@@ -69,12 +75,14 @@ Use **Mermaid diagrams** in all architecture and component documents:
 ## Commit Message Format
 
 ```
-HYPERFLEET-XXX - docs: brief description
+HYPERFLEET-XXX - <type>: <subject>
 ```
 
 Examples:
 - `HYPERFLEET-123 - docs: add sentinel component design`
 - `HYPERFLEET-456 - docs: update API trade-offs section`
+
+More info on [commit-standard.md](./hyperfleet/standards/commit-standard.md)
 
 ## What Claude Should NOT Do
 

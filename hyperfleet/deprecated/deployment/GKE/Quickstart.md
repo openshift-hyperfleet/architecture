@@ -4,9 +4,8 @@
 **Owner**: HyperFleet Platform Team
 **Last Updated**: 2026-03-25
 
-> Quickstart guide for deploying HyperFleet on Google Kubernetes Engine (GKE). Provides step-by-step instructions to get a working HyperFleet environment running on GKE, including prerequisites, cluster setup, and initial component deployment.
+## Overview
 
----
 
 This guide provides quick commands to create GKE clusters with Config Connector enabled. For detailed configuration options, see [README.md](README.md).
 

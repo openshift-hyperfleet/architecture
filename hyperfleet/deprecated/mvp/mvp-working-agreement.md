@@ -173,7 +173,7 @@ Document significant decisions in the architecture repo when:
 ### How to Document Decisions
 The architecture repo README provides comprehensive guidance on documenting decisions, trade-offs, and technical debt.
 
-**See**: [Architecture Repo README](../../README.md) for:
+**See**: [Architecture Repo README](../../../README.md) for:
 - Component design document templates (required sections)
 - Trade-offs and alternatives templates
 - Technical debt tracking
@@ -181,10 +181,10 @@ The architecture repo README provides comprehensive guidance on documenting deci
 - Review and merge process
 
 **Quick Links**:
-- [Document Types](../../README.md#document-types) - Architecture, components, guides
-- [Tracking Trade-offs](../../README.md#tracking-trade-offs-and-technical-debt) - Required trade-offs template
-- [Living Documents](../../README.md#living-documents) - How to update documents
-- [Review Process](../../README.md#review-and-merge-process) - How to submit changes
+- [Document Types](../../../README.md#document-types) - Architecture, components, guides
+- [Tracking Trade-offs](../../../README.md#tracking-trade-offs-and-technical-debt) - Required trade-offs template
+- [Living Documents](../../../README.md#living-documents) - How to update documents
+- [Review Process](../../../README.md#review-and-merge-process) - How to submit changes
 
 ---
 

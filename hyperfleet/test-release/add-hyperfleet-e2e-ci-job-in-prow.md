@@ -4,16 +4,6 @@
 **Owner**: HyperFleet Platform Team
 **Last Updated**: 2026-03-25
 
-> Guide for adding HyperFleet end-to-end CI jobs to Prow. Covers the job configuration, test cluster provisioning requirements, secrets management, and the process for integrating E2E tests into the pull request and post-merge CI pipelines.
-
----
-
-
-**Metadata**
-- **Date:** 2026-01-27
-- **Authors:** Ying Zhang
-
-
 ## Overview
 
 This document provides a comprehensive guide for adding and managing Hyperfleet Continuous Integration (CI) jobs in Prow. It covers job configuration, step registry setup, monitoring, triggering, and debugging procedures specific to HyperFleet E2E CI test workflows.

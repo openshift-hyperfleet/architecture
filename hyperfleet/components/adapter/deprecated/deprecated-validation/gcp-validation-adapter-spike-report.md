@@ -3,17 +3,11 @@
 **Status**: Deprecated
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
+**JIRA Story**: HYPERFLEET-59   
+
+## 1. Overview
 
 > Spike report from the GCP cluster validation adapter investigation, documenting the validation logic explored for GCP-specific cluster prerequisites. Deprecated — the GCP-specific validation approach was superseded by the current validation adapter within the adapter framework.
-
----
-**JIRA Story**: HYPERFLEET-59   
-**Date**: November 21, 2025,  
-**Status**: Approve
-
----
-
-## 1. Executive Summary
 
 This spike defines a **phased implementation approach** for a GCP validation adapter that runs as a Kubernetes Job to validate GCP prerequisites before cluster provisioning. The solution is based on proven patterns from the existing uhc-clusters-service (CS) [GCP preflight logic](https://gitlab.cee.redhat.com/service/uhc-clusters-service/-/blob/master/cmd/clusters-service/service/gcp_preflight/preflight_service.go), adapted for the adapter framework context.
 

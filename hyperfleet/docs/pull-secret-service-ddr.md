@@ -1269,7 +1269,7 @@ $ rhit-cli audit-logs --partner-code hyperfleet --since 7d
 |---------|--------------------------|
 | [Section2.3 RHIT Client](#23-support-for-privatecustomer-specific-registries) | RHITClient uses `/partners/hyperfleet/` namespace (not `/partners/ocm-service/`) |
 | [Section4 Deployment](#4-deployment-architecture) | Separate mTLS certificates deployed in HyperFleet namespace |
-| [Section5.1 Authentication](#51-authentication-flow) | HyperFleet-specific client certificates for RHIT mTLS |
+| [Section5.1 Authentication](#61-authentication-flow) | HyperFleet-specific client certificates for RHIT mTLS |
 | [Section6 Security](#6-security-architecture) | Independent certificate rotation schedule |
 
 **Trade-offs Accepted:**

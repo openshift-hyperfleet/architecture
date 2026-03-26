@@ -3,20 +3,12 @@
 **Status**: Active
 **Owner**: HyperFleet QE Team
 **Last Updated**: 2026-03-25
-
-> Spike report evaluating E2E testing frameworks for HyperFleet, comparing options for testing the full system stack from API through Sentinel, Broker, and Adapters. Documents evaluation criteria, framework comparison, and the recommended testing approach.
-
----
-
----
-
 **JIRA Story:** HYPERFLEET-403  
 **Date:** Jan 9, 2026  
-**Target System:** Hyperfleet API → Sentinel → Message Broker → Adapters (Core Framework)
 
 ---
 
-## Executive Summary
+## Overview
 
 This spike report evaluates E2E testing frameworks for **Hyperfleet's core data flow**—testing the end-to-end pipeline: Hyperfleet API → Sentinel → Message Broker → Adapters → back to API.
 

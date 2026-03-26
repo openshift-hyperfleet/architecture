@@ -4,16 +4,14 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
-> Describes the integration testing strategy and test patterns for HyperFleet Adapters. Covers how adapters are tested against real or mock broker and API endpoints, test environment setup, and the test scenarios that verify correct adapter behavior across the full event-to-status lifecycle.
-
----
+## Overview
 
 This document defines integration test scenarios and acceptance criteria for the HyperFleet Adapter Framework.
 
 **Related Documentation:**
 - [Adapter Framework Design](./adapter-frame-design.md) - Architecture overview
 - [Adapter Status Contract](./adapter-status-contract.md) - Status reporting contract
-- [Test Release MVP](../../test-release/test-release-MVP.md) - Testing strategy
+- [Test Release MVP](../../../test-release/test-release-MVP.md) - Testing strategy
 
 ---
 

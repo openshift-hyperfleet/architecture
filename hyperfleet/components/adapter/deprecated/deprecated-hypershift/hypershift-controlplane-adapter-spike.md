@@ -4,17 +4,10 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
+
+## 1. Overview
+
 > Spike report exploring the GCP HyperShift control plane adapter implementation. Deprecated — this GCP-specific HyperShift integration approach was superseded by the current adapter framework. See the `adapter/framework/` directory for the active adapter design.
-
----
-
-**JIRA Story**: [HYPERFLEET-63](https://issues.redhat.com/browse/HYPERFLEET-63)
-**Prepared By**: avulaj@redhat.com
-**Date**: December 8, 2025
-
----
-
-## 1. Executive Summary
 
 This spike defines the implementation approach for a GCP HyperShift Control Plane adapter that creates and manages
 HostedCluster CRs in a management cluster to provision OpenShift control planes. The solution leverages the HyperFleet
@@ -29,7 +22,7 @@ config-driven adapter framework and integrates with HyperShift's GCP platform su
   set)
 - **Workload Identity Federation**: GCP HostedClusters require WIF configuration (pools, providers, service accounts)
     - **Note:** This refers to WIF for the **HostedCluster CR** (worker node authentication to GCP). For WIF enabling *
-      *CLM adapters** to access customer GCP resources, see [WIF Spike](../../../docs/wif-spike.md). These are two
+      *CLM adapters** to access customer GCP resources, see [WIF Spike](../../../../docs/wif-spike.md). These are two
       separate WIF configurations.
 - **Network Configuration**: Requires VPC network and Private Service Connect subnet
 - **Control Plane Creation**: Adapter creates HostedCluster CR (HyperShift operator provisions control plane)
@@ -1163,7 +1156,7 @@ Based on this spike's findings, the following implementation stories should be c
 
 - [Adapter Framework Design](../../framework/adapter-frame-design.md)
 - [Adapter Status Contract](../../framework/adapter-status-contract.md)
-- [GCP Validation Adapter Spike](../../validation/GCP/gcp-validation-adapter-spike-report.md)
+- [GCP Validation Adapter Spike](../deprecated-validation/gcp-validation-adapter-spike-report.md)
 
 ### Kubernetes Documentation
 

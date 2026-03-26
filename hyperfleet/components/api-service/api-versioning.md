@@ -3,19 +3,8 @@
 **Status**: Active
 **Owner**: HyperFleet API Team
 **Last Updated**: 2026-03-25
-
-> Defines the versioning strategy for the HyperFleet REST API, covering URL path versioning (e.g., `/v1/clusters`), backward compatibility guarantees, and the process for introducing breaking changes. Establishes when and how to introduce new API versions and how to deprecate old ones without breaking existing clients.
-
----
-
-## *Define versioning strategy for the HyperFleet REST API to enable safe upgrades, backwards compatibility, and clear partner contracts*
-
-**Metadata**
 - **Date:** 2025-10-30
-- **Authors:** Alex Vulaj
 - **Related Jira(s):** [HYPERFLEET-65](https://issues.redhat.com/browse/HYPERFLEET-65)
-
----
 
 ## 1. Overview & Principles
 
@@ -41,7 +30,7 @@ The HyperFleet API uses semantic versioning (MAJOR.MINOR.PATCH):
 - Changing field types
 - Changing endpoint behavior in non-backwards-compatible ways
 
-**Note:** For container image tagging strategy and release management, see [Git and Release Strategy](./git-and-release-strategy.md).
+**Note:** For container image tagging strategy and release management, see [Git and Release Strategy](../../test-release/git-and-release-strategy.md).
 
 ---
 

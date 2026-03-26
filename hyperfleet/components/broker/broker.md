@@ -1,26 +1,31 @@
+---
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+---
 # HyperFleet Message Broker
 
 **Status**: Active
 **Owner**: HyperFleet Architecture Team
 **Last Updated**: 2026-03-25
 
-> The HyperFleet Message Broker is the fan-out layer that decouples the Sentinel reconciliation service from the Adapter Deployments. Sentinel publishes a single CloudEvent per resource reconciliation cycle; the Broker delivers that event to every registered adapter subscription simultaneously, enabling independent parallel execution of provisioning tasks without Sentinel or adapters knowing about each other.
+## Overview
 
----
+This document describes the hyperfleet-broker library purpose and main design decisions.
 
 ## What & Why
 
-**What**: A message broker implementing the fan-out (publish/subscribe) pattern to distribute CloudEvent reconciliation events from the Sentinel service to multiple Adapter Deployments. The broker is accessed via a pluggable abstraction that supports GCP Pub/Sub, RabbitMQ, and an in-memory Stub for local development.
+HyperFleet is composed by a set of microservices with narrow responsibility, and as low coupling as possible.
 
-**Why**:
+The Sentinels are background job instances that watch API resource changes and publish messages for adapters to react and reconcile the intended state of the API resources.
 
-Without a broker, Sentinel would need to know about every adapter and call each one directly. This creates tight coupling: adding a new adapter requires changing Sentinel, and a slow adapter blocks others. The broker solves this by:
+Sentinels are unaware of consumers of the messages, which are fanned out to multiple adapters.
 
-- **Decoupling**: Sentinel publishes to a single topic without knowing which adapters exist. Adapters subscribe without knowing about Sentinel or other adapters.
-- **Fan-out**: One reconciliation event automatically triggers all registered adapters in parallel.
-- **Independent scaling**: Each adapter subscription is consumed independently — a high-volume adapter doesn't affect others.
-- **Reliability**: At-least-once delivery guarantees ensure events are not lost if an adapter is temporarily unavailable.
-- **Extensibility**: New adapters are added by creating a new subscription — no code changes to Sentinel or existing adapters.
+Since HyperFleet will run in different cloud providers, it has to support multiple broker types, since each cloud provider will offer a native service and there is no cross-cloud product that can offer that.
+
+`hyperfleet-broker` is a golang library that abstracts away the communication with a broker to Publish/Subscribe to topics.
+
+By changing configuration alone, the same application binary can use different brokers.
 
 ---
 
@@ -28,26 +33,27 @@ Without a broker, Sentinel would need to know about every adapter and call each 
 
 ### Topic and Subscription Model
 
+This is a visualization of a Sentinel that watches the API for cluster changes and publishes a message to a topic. Then, one subscription per adapter will listen to this topic and receive its own copy of the message.
+
+The `hyperfleet-broker` makes the Sentinel agnostic of the broker in use, it will use an interface to publish and the adapters will use an interface for subscribing.
+
 ```mermaid
 graph LR
+    S[Sentinel] -->|watches|A[API]
     S[Sentinel] -->|Publish CloudEvent| T[Topic<br/>hyperfleet.clusters.changed.v1]
     T -->|Fan-out| V[validation-adapter-sub]
     T -->|Fan-out| D[dns-adapter-sub]
     T -->|Fan-out| P[placement-adapter-sub]
-    T -->|Fan-out| PS[pullsecret-adapter-sub]
-    T -->|Fan-out| CP[hypershift-adapter-sub]
     V --> VA[Validation Adapter]
     D --> DA[DNS Adapter]
     P --> PA[Placement Adapter]
-    PS --> PSA[Pull Secret Adapter]
-    CP --> CPA[Control Plane Adapter]
 ```
 
 Each adapter gets its own subscription to the shared topic, so every adapter receives every event independently. Adapters evaluate their own preconditions to decide whether to act on an event.
 
 ### CloudEvent Format
 
-All events conform to the [CloudEvents 1.0](https://cloudevents.io/) specification:
+All events conform to the [CloudEvents 1.0](https://cloudevents.io/) specification, and the `hyperfleet-broker` provides support for working with CloudEvents
 
 ```json
 {
@@ -66,6 +72,8 @@ All events conform to the [CloudEvents 1.0](https://cloudevents.io/) specificati
 }
 ```
 
+The full contract is in [asyncapi.yaml](./asyncapi.yaml)
+
 The event payload is intentionally minimal (anemic event pattern — see [Design Decisions](#design-decisions)). Adapters fetch full resource details from the API after receiving the event.
 
 ### Supported Broker Implementations
@@ -82,6 +90,7 @@ The broker implementation is selected via the `broker.type` field in `broker.yam
 ### Configuration
 
 The library uses a YAML configuration file (`broker.yaml`). The path defaults to the executable directory but can be overridden with the `BROKER_CONFIG_FILE` environment variable. All fields support environment variable overrides using dot-notation (e.g., `BROKER_TYPE` overrides `broker.type`).
+
 
 **Sentinel publisher configuration (`broker.yaml`):**
 
@@ -136,13 +145,16 @@ sequenceDiagram
 
 ## Design Decisions
 
-### Anemic Events (Minimal Payload)
+### Configuration with a separate config file and environment variables
 
-**Decision**: Events contain only the resource ID, kind, href, and generation — not the full resource spec.
+**Decision**: the library is configured using a separate `broker.yaml` config file and environment variables
 
-**Rationale**: Adapters always need fresh resource data when they act, so including full spec in the event creates a race condition (the spec may have changed between when the event was published and when the adapter processes it). The minimal event forces adapters to fetch current state from the API, ensuring they always act on authoritative data.
+**Rationale**: To keep the application agnostic of the broker in use, the library has to manage all the details of the connection. Any broker-specific data is in the broker.yaml config file which makes clients of the library (sentinel, adapters) not to have broker vendor specific code nor parameters.
 
-**Trade-off**: Adds one extra API call per adapter per event. Acceptable given that provisioning operations themselves take seconds to minutes.
+
+**Trade-off**: This adds complexity to the deployment of the application, since it has to deal with an additional `broker.yaml` file besides its own file.
+
+And the same with environment variables since they are used to override settings in the `broker.yaml` file.
 
 ### Fan-out via Subscriptions (Not Routing Keys)
 
@@ -177,54 +189,21 @@ sequenceDiagram
 
 ### What We Lose / What Gets Harder
 
-- ❌ **Exactly-once semantics**: At-least-once delivery means adapters can receive duplicate events. Adapters must be idempotent.
-- ❌ **Ordering guarantees**: Events may be delivered out of order within a subscription. Adapters must tolerate out-of-order delivery.
-- ⚠️ **Operational overhead**: Running a message broker is an additional infrastructure component to deploy, monitor, and maintain.
-- ⚠️ **Debug complexity**: Tracing an event from Sentinel through the broker to each adapter requires distributed tracing tooling.
+- ⚠️ **Operational overhead**: Configuration is harder because of the required broker settings
+- ⚠️ **Debug complexity**: An extra library is involved when debugging an issue with publish/subscribe messages
 
-### Technical Debt Incurred
-
-- **No dead-letter queue (DLQ) policy defined**: If an adapter consistently fails to process an event, it may be retried indefinitely. A DLQ with alert on accumulation should be defined post-MVP.
-  - **Impact**: Low (adapters are designed to be idempotent; retries are expected)
-  - **Remediation**: Define DLQ configuration and alerting threshold in broker setup
-
-### Acceptable Because
-
-- At-least-once delivery is sufficient: all adapters are designed to be idempotent (they evaluate preconditions and report current state on every invocation)
-- Eventual consistency (5–10 second Sentinel poll interval) is acceptable for cluster provisioning workflows
-- Operational overhead is justified by the decoupling and extensibility benefits
 
 ---
 
 ## Alternatives Considered
 
-### Direct Sentinel-to-Adapter RPC (HTTP/gRPC)
+### Implement broker-specific code in each application
 
-**What**: Sentinel calls each adapter's HTTP or gRPC endpoint directly when reconciliation is needed.
+**What**: Instead of factoring out a library, include all broker code in each application
 
 **Why Rejected**:
-- Requires Sentinel to maintain a registry of all adapter endpoints — tight coupling
-- Adding a new adapter requires a Sentinel configuration change and redeployment
-- A slow or failing adapter blocks Sentinel from notifying other adapters
-- No built-in retry or delivery guarantees
-
-### Shared Database Polling (Outbox Pattern)
-
-**What**: Sentinel writes reconciliation events to an "outbox" table; adapters poll the database for new rows.
-
-**Why Rejected**: This was the v1 architecture. It was replaced in v2 specifically because:
-- Requires an additional Outbox Reconciler component
-- Higher latency (polling delay vs. direct publish)
-- More complex API (transactional outbox writes alongside CRUD)
-- Database becomes a bottleneck at scale
-
-See `hyperfleet/architecture/architecture-summary.md` for the full v1 vs. v2 comparison.
-
-### Single Event Queue (One Subscription for All Adapters)
-
-**What**: All adapters share a single subscription queue; events are consumed by whichever adapter picks them up first (competing consumers).
-
-**Why Rejected**: Competing consumers don't implement fan-out — each event would be processed by only one adapter. The HyperFleet model requires every adapter to evaluate every reconciliation event.
+- Encapsulation of responsibilities
+- The broker library can be tested in isolation
 
 ---
 

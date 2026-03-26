@@ -4,16 +4,14 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
-> Documents the key architectural design decisions behind the HyperFleet Adapter Framework, including the config-driven approach, Kubernetes Job pattern for long-running tasks, anemic CloudEvents pattern, and condition-based status reporting. Each decision includes rationale, trade-offs, and alternatives that were considered and rejected.
-
----
+## Overview
 
 This document captures the key design decisions, trade-offs, and rationale behind the HyperFleet Adapter Framework architecture.
 
 **Related Documentation:**
 - [Adapter Framework Design](./adapter-frame-design.md) - Architecture overview
 - [Adapter Status Contract](./adapter-status-contract.md) - Status reporting contract
-- [Adapter Config Template MVP](./adapter-config-template-MVP.yaml) - Configuration structure
+- `adapter-config-template-MVP.yaml` - Configuration structure
 
 ---
 

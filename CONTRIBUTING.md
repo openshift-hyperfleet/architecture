@@ -1,5 +1,13 @@
 # Contributing to HyperFleet Architecture
 
+**Status**: Active
+**Owner**: HyperFleet Architecture Team
+**Last Updated**: 2026-03-25
+
+> How to contribute architectural documents, standards, and design decisions to this repository. This is a documentation-only repository — there is no application code. Read this file before opening a PR.
+
+---
+
 This repository is a **documentation-only** repository — there is no application code here.
 Contributing means adding or updating architectural documents, standards, and design decisions.
 
@@ -12,9 +20,9 @@ Contributing means adding or updating architectural documents, standards, and de
 git clone https://github.com/openshift-hyperfleet/architecture.git
 cd architecture
 
-# 2. Install linting tools (optional, but recommended before submitting PRs)
-npm install -g markdownlint-cli2   # Markdown linting
-pip install yamllint               # YAML linting
+# 2. Install linting tools (recommended before submitting PRs)
+npm install -g markdownlint-cli2 markdown-link-check   # Markdown linting and link checking
+pip install yamllint                                    # YAML linting
 ```
 
 **First-time setup notes:**
@@ -22,6 +30,7 @@ pip install yamllint               # YAML linting
 - No build step required — this is a documentation repository
 - The CI pipeline runs `markdownlint`, `yamllint`, and link checking automatically on PRs
 - Run linting locally before pushing to catch issues early
+- If using Claude Code for AI-assisted editing, see [CLAUDE.md](CLAUDE.md) for repository-specific guidelines
 
 ---
 
@@ -35,12 +44,15 @@ architecture/
 │   ├── architecture/    # System-level architecture documents
 │   ├── components/      # Component design documents (design decisions, trade-offs)
 │   ├── docs/            # Implementation guides and operational docs
+│   │   └── glossary.md  # HyperFleet term definitions — consult before writing
 │   ├── standards/       # Prescriptive standards all HyperFleet repos must follow
 │   ├── deployment/      # Deployment guides (GKE, etc.)
 │   ├── e2e-testing/     # E2E testing strategy documents
 │   ├── mvp/             # Historical MVP scope and agreements
 │   └── test-release/    # Test and release process documents
+├── hack/                # Linting scripts (markdownlint.sh, yamllint.sh, linkcheck.sh)
 ├── README.md
+├── CLAUDE.md            # AI-assisted workflow guidelines
 └── CONTRIBUTING.md      # This file
 ```
 
@@ -58,6 +70,8 @@ architecture/
 | Engineering standards (must-follow rules) | `hyperfleet/standards/` |
 | Deployment procedures | `hyperfleet/deployment/` |
 
+When in doubt about where something belongs, check the [README.md Navigation Guide](README.md#navigation-guide).
+
 ### Required Document Header
 
 Every document **must** start with:
@@ -74,6 +88,8 @@ Every document **must** start with:
 ---
 ```
 
+Update `Last Updated` only for meaningful changes (design changes, new sections, trade-offs modified). Not for typos or formatting fixes.
+
 ### Component Documents
 
 Every component design document **must** include:
@@ -84,30 +100,39 @@ Every component design document **must** include:
 - **Alternatives Considered**: What other approaches were considered and why rejected (REQUIRED)
 
 See `hyperfleet/components/sentinel/sentinel.md` for a reference example.
-See `hyperfleet/components/CLAUDE.md` for detailed guidelines.
+See `hyperfleet/components/CLAUDE.md` for detailed section requirements.
 
 ### Standards Documents
 
 Every standard document must follow the pattern: Overview → Standard → Examples → Enforcement → References.
 Use RFC 2119 language (MUST/SHOULD/MAY). See `hyperfleet/standards/CLAUDE.md` for guidelines.
 
+### Terminology
+
+Before introducing new terms or acronyms, consult the [HyperFleet Glossary](hyperfleet/docs/glossary.md). If you introduce a new term not already defined there, add it to the glossary as part of your PR.
+
 ---
 
 ## Testing / Linting
 
+Use the scripts in `hack/` to run linting locally before pushing:
+
 ```bash
 # Run markdown linting
-markdownlint-cli2 "**/*.md"
+./hack/markdownlint.sh
 
 # Run YAML linting
-yamllint .
+./hack/yamllint.sh
 
-# Check for broken links (CI runs this automatically)
-# Install: npm install -g markdown-link-check
-find . -name "*.md" | xargs -I{} markdown-link-check {}
+# Check for broken internal links (informational — does not block CI)
+./hack/linkcheck.sh
 ```
 
-The CI pipeline enforces these checks on all PRs. Fix any lint errors before requesting review.
+**Notes:**
+- `linkcheck.sh` only checks **internal links** — external URLs (http/https) are skipped by design
+- `linkcheck.sh` always exits 0 (informational only); broken internal links are surfaced as warnings, not failures
+- The CI pipeline enforces markdownlint and yamllint on all PRs — fix any errors before requesting review
+- Markdownlint rules are configured in `.markdownlint-cli2.yaml` at the repository root
 
 ---
 
@@ -121,17 +146,26 @@ The CI pipeline enforces these checks on all PRs. Fix any lint errors before req
 
 2. **Make your changes** following the document standards above
 
-3. **Commit** following the [commit standard](hyperfleet/standards/commit-standard.md):
+3. **Lint locally** using the `hack/` scripts before pushing
+
+4. **Commit** following the [commit standard](hyperfleet/standards/commit-standard.md):
 
    ```
    HYPERFLEET-XXX - docs: brief description of change
    ```
 
-4. **Open a PR** and post the link in [#hcm-hyperfleet-team](https://redhat.enterprise.slack.com/archives/hcm-hyperfleet-team)
+5. **Open a PR** with a description that includes:
+   - **What changed**: Which documents were added or updated
+   - **Why**: The architectural context or decision being documented
+   - **Reviewers to loop in**: Tag any component owners affected by the change
 
-5. **Wait 24 hours** for team review (accounts for time zone differences)
+6. **Post the PR link** in [#hcm-hyperfleet-team](https://redhat.enterprise.slack.com/archives/hcm-hyperfleet-team) for team visibility
 
-6. **Merge** once approved with no objections
+7. **Wait 24 hours** for peer review (accounts for time zone differences between regions)
+   - For urgent changes, use judgement but ensure the rationale is well-documented in the PR
+   - For major architectural changes, strongly consider waiting for at least one Technical Leader review
+
+8. **Merge** once approved with no objections
 
 ---
 
@@ -153,7 +187,23 @@ chore: fix broken links in architecture-summary.md
 
 ---
 
+## Paying Down Technical Debt
+
+When a previously documented debt item is resolved, update the component document:
+
+```markdown
+### Technical Debt Incurred
+- ~~**No retry logic**: Adapters don't retry failed operations~~
+  - **Status**: Resolved in #123
+  - **Resolution**: Added exponential backoff retry logic
+```
+
+Then update the `Last Updated` date and include a note in your PR description.
+
+---
+
 ## Questions?
 
 - Slack: [#hcm-hyperfleet-team](https://redhat.enterprise.slack.com/archives/hcm-hyperfleet-team)
 - Open a PR with your changes — discussion is welcome in PR comments
+- See [README.md FAQ](README.md#faq) for common questions about document structure

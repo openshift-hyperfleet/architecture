@@ -4,9 +4,7 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
-> Provides complete system workflow diagrams, adapter lifecycle sequence diagrams, and event flow patterns for the HyperFleet Adapter Framework. These Mermaid diagrams are the visual reference for understanding how adapters receive events, evaluate preconditions, create Kubernetes resources, and report status.
-
----
+## Overview
 
 This document provides visual diagrams to help understand the reconciliation flow in HyperFleet v2.
 

@@ -209,4 +209,4 @@ Developers may optionally configure local commit hooks using [husky](https://typ
 ### Related HyperFleet Standards
 
 - [Makefile Conventions](./makefile-conventions.md)
-- [Linting Standard](./linting-standard.md)
+- [Linting Standard](./linting.md)

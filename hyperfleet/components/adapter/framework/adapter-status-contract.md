@@ -4,18 +4,14 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
-> Defines the status reporting contract between HyperFleet Adapters and the HyperFleet API. Specifies the structure of status payloads, the three required conditions (Available, Applied, Health), `observed_generation` semantics, and the upsert behavior of the API status endpoint. All adapters must conform to this contract.
-
----
-
 ## Overview
 
 This document defines the contract between HyperFleet adapters and the HyperFleet API for status reporting. Adapters use this contract to report their progress, state, and outcomes when processing cluster events.
 
 **Related Documentation:**
 - [Adapter Framework Design](./adapter-frame-design.md) - Framework architecture and workflow
-- [Adapter Config Template MVP](./adapter-config-template-MVP.yaml) - Configuration structure
-- [Status Guide](../../docs/status-guide.md) - Comprehensive status guide
+- `adapter-config-template-MVP.yaml` - Configuration structure
+- [Status Guide](../../../docs/status-guide.md) - Comprehensive status guide
 
 ---
 
@@ -745,6 +741,6 @@ This contract is versioned with the HyperFleet API version. Adapters must use th
 ## References
 
 - [Kubernetes Conditions](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/#pod-conditions) - Inspiration for condition structure
-- [Status Guide](../../docs/status-guide.md) - Comprehensive status guide
+- [Status Guide](../../../docs/status-guide.md) - Comprehensive status guide
 - [Adapter Framework Design](./adapter-frame-design.md) - Framework architecture
 

@@ -4,13 +4,6 @@
 **Owner**: HyperFleet Platform Team
 **Last Updated**: 2026-03-25
 
-> Guidelines for creating new HyperFleet service repositories, covering naming conventions, required files (README, CONTRIBUTING, CHANGELOG), CI pipeline setup, and integration with the HyperFleet GitHub organization. Ensures all new repositories start with a consistent, compliant foundation.
-
----
-
-**Purpose**: Standardized conventions for creating and configuring new repositories in the HyperFleet project.  
-**Note**: This document provides the MVP baseline. More conventions will be introduced and refined after the MVP phase. 
-
 ---
 
 ## Overview
@@ -22,6 +15,8 @@ This document outlines the mandatory configuration steps and conventions for cre
 2. Branch Protection Configuration
 3. Team Access Configuration
 
+**Purpose**: Standardized conventions for creating and configuring new repositories in the HyperFleet project.  
+**Note**: This document provides the MVP baseline. More conventions will be introduced and refined after the MVP phase. 
 ---
 
 ## Repository Naming and Initialization

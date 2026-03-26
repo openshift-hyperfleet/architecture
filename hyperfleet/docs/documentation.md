@@ -6,7 +6,7 @@
 
 ---
 
-## Purpose
+## Overview
 
 This document establishes the standard approach for structuring documentation across all HyperFleet repositories. The goal is to create a homogeneous documentation structure that engineers can navigate consistently regardless of which repo they are working in.
 
@@ -82,8 +82,8 @@ Each piece of operational content has exactly one canonical location. Other docs
 
 | Content | Canonical Location | Other Docs |
 |---------|-------------------|------------|
-| Metric names, types, labels | `metrics.md` | Link: "See [metrics.md](metrics.md) for definitions" |
-| Health endpoint behavior | `runbook.md` (Health Checks section) | Link: "See [runbook.md#health-checks](runbook.md#health-checks)" |
+| Metric names, types, labels | `metrics.md` | Link: "See `metrics.md` for definitions" |
+| Health endpoint behavior | `runbook.md` (Health Checks section) | Link: "See `runbook.md#health-checks`" |
 | PromQL for alerting | `alerts.md` | Do not duplicate in `metrics.md` |
 | PromQL for "what does this metric look like" | `metrics.md` (Example Queries section) | Do not duplicate in `alerts.md` |
 | Config option defaults and types | `configuration.md` | Reference, do not repeat values |

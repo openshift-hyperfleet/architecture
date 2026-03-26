@@ -4,10 +4,6 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
-> Defines the required Prometheus metrics that all HyperFleet Adapters must expose for observability and monitoring. Lists each metric name, type, labels, and description, following the HyperFleet metrics naming standard. These metrics are used by the shared adapter dashboard and alerting rules.
-
----
-
 ## Overview
 
 This document defines the minimum set of metrics that all HyperFleet adapters must expose for observability. These metrics enable baseline measurement and identify areas for post-MVP improvement.
@@ -18,7 +14,7 @@ This document defines the minimum set of metrics that all HyperFleet adapters mu
 **Related Documentation:**
 - [HyperFleet Metrics Standard](../../../standards/metrics.md) - Cross-component metrics conventions
 - [Adapter Framework Design](./adapter-frame-design.md) - Framework architecture
-- [Adapter Observability Config](./adapter-observability-config-template.yaml) - Observability configuration template
+- `adapter-observability-config-template.yaml` - Observability configuration template
 - [Adapter Deployment Guide](./adapter-deployment.md) - Deployment and operations
 
 ---

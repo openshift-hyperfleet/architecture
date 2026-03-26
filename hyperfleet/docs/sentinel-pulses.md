@@ -4,9 +4,10 @@
 **Owner**: HyperFleet Architecture Team
 **Last Updated**: 2026-03-25
 
-> Proposes changes to the system design for how the API and adapters behave by introducing Sentinel pulses — a heartbeat mechanism that disambiguates resource status (new generation not reconciled vs. system error vs. healthy). Documents the new API resource root conditions and detailed adapter status reporting transitions.
 
 ---
+
+## Overview
 
 This document proposes changes to the current system design for how API and adapter behaves by introducing new API resource root conditions and detailing status reports by adapters and transitions.
 

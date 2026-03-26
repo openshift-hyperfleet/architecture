@@ -4,8 +4,6 @@
 **Owner**: HyperFleet Adapter Team
 **Last Updated**: 2026-03-25
 
-> Spike report exploring the integration patterns between HyperFleet Adapters and the Maestro orchestration service. Documents what was learned during the spike, integration options evaluated, and the recommended approach. This informed the final maestro-integration design.
-
 ---
 
 ## Table of Contents
