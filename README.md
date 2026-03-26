@@ -65,6 +65,7 @@ architecture/
     │   ├── broker/                # Message broker design
     │   ├── claude-code-plugin/    # Claude Code plugin spike
     │   └── sentinel/              # Sentinel reconciliation service
+    ├── adr/                       # Architecture Decision Records
     ├── docs/                      # Implementation guides and features
     │   └── templates/             # Document templates
     ├── standards/                 # Prescriptive engineering standards
@@ -274,6 +275,9 @@ All HyperFleet team developers have approve and merge access. **Goal**: Move fas
 
 **Look up a HyperFleet term or acronym**
 → See `hyperfleet/docs/glossary.md`
+
+**Find or record an architecture decision**
+→ See `hyperfleet/adr/` — follow the template in `hyperfleet/adr/README.md`
 
 ---
 

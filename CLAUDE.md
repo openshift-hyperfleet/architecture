@@ -18,6 +18,7 @@ All documents are **living documents** that evolve with design and implementatio
 │   │   ├── broker/                # Message broker design
 │   │   ├── claude-code-plugin/    # Claude Code plugin
 │   │   └── sentinel/              # Sentinel service design
+│   ├── adr/                       # Architecture Decision Records
 │   ├── deprecated/                # Archived documents (MVP, old adapters, deployment)
 │   ├── docs/                      # Implementation guides
 │   ├── standards/                 # Prescriptive standards (must follow)
