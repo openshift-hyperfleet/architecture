@@ -49,9 +49,6 @@ architecture/
 │   ├── docs/            # Implementation guides and operational docs
 │   │   └── glossary.md  # HyperFleet term definitions — consult before writing
 │   ├── standards/       # Prescriptive standards all HyperFleet repos must follow
-│   ├── deployment/      # Deployment guides (GKE, etc.)
-│   ├── e2e-testing/     # E2E testing strategy documents
-│   └── test-release/    # Test and release process documents
 ├── hack/                # Linting scripts (markdownlint.sh, yamllint.sh, linkcheck.sh)
 ├── README.md
 ├── CLAUDE.md            # AI-assisted workflow guidelines

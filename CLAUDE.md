@@ -19,11 +19,8 @@ All documents are **living documents** that evolve with design and implementatio
 │   │   ├── claude-code-plugin/    # Claude Code plugin
 │   │   └── sentinel/              # Sentinel service design
 │   ├── deprecated/                # Archived documents (MVP, old adapters, deployment)
-│   ├── deployment/                # Deployment configurations
 │   ├── docs/                      # Implementation guides
-│   ├── e2e-testing/               # End-to-end testing
 │   ├── standards/                 # Prescriptive standards (must follow)
-│   └── test-release/              # Test release configurations
 ```
 
 ## Document Status Values

@@ -60,44 +60,14 @@ architecture/
     │   ├── adapter/               # Adapter framework and implementations
     │   │   ├── framework/         # Core adapter design docs
     │   │   ├── maestro-integration/
-    │   │   ├── DNS-deprecated/    # Deprecated DNS adapter (GCP)
-    │   │   ├── PullSecret-deprecated/
-    │   │   ├── hypershift-deprecated/
-    │   │   ├── maestro-cli-deprecated/
-    │   │   └── validation-deprecated/
+    │   │   ├── deprecated/        # Deprecated adapters
     │   ├── api-service/           # HyperFleet API service design
     │   ├── broker/                # Message broker design
     │   ├── claude-code-plugin/    # Claude Code plugin spike
     │   └── sentinel/              # Sentinel reconciliation service
-    ├── deployment/                # Deployment guides
-    │   └── GKE/                   # GKE-specific deployment
     ├── docs/                      # Implementation guides and features
-    │   ├── documentation.md       # Documentation standard
-    │   ├── status-guide.md
-    │   ├── sentinel-pulses.md
-    │   ├── versioning-trade-offs.md
-    │   ├── hyperfleet-release-process.md
     │   └── templates/             # Document templates
-    ├── e2e-testing/               # End-to-end testing strategy
-    ├── mvp/                       # MVP scope and working agreements (historical)
     ├── standards/                 # Prescriptive engineering standards
-    │   ├── CLAUDE.md              # Standards document guidelines
-    │   ├── commit-standard.md
-    │   ├── configuration.md
-    │   ├── container-image-standard.md
-    │   ├── dependency-pinning.md
-    │   ├── directory-structure.md
-    │   ├── error-model.md
-    │   ├── generated-code-policy.md
-    │   ├── graceful-shutdown.md
-    │   ├── health-endpoints.md
-    │   ├── helm-chart-conventions.md
-    │   ├── linting.md
-    │   ├── logging-specification.md
-    │   ├── makefile-conventions.md
-    │   ├── metrics.md
-    │   └── tracing.md
-    └── test-release/              # Test and release process docs
 ```
 
 ---
