@@ -6,11 +6,10 @@ Last Updated: 2026-03-25
 
 # Contributing to HyperFleet Architecture
 
+## Overview
+
 > How to contribute architectural documents, standards, and design decisions to this repository. This is a documentation-only repository — there is no application code. Read this file before opening a PR.
 
----
-
-This repository is a **documentation-only** repository — there is no application code here.
 Contributing means adding or updating architectural documents, standards, and design decisions.
 
 ---
@@ -38,75 +37,22 @@ pip install yamllint                                    # YAML linting
 
 ## Repository Structure
 
-See [README.md](README.md) for the full directory layout. Key directories:
-
-```
-architecture/
-├── hyperfleet/
-│   ├── README.md        # System overview and architecture summary
-│   ├── components/      # Component design documents (design decisions, trade-offs)
-│   ├── deprecated/      # Archived documents (MVP, old adapters, deployment)
-│   ├── docs/            # Implementation guides and operational docs
-│   │   └── glossary.md  # HyperFleet term definitions — consult before writing
-│   ├── standards/       # Prescriptive standards all HyperFleet repos must follow
-├── hack/                # Linting scripts (markdownlint.sh, yamllint.sh, linkcheck.sh)
-├── README.md
-├── CLAUDE.md            # AI-assisted workflow guidelines
-└── CONTRIBUTING.md      # This file
-```
+See [README.md](README.md) for the full directory layout and navigation guide.
 
 ---
 
 ## Making Changes
 
-### Document Types
+### Where Things Go
 
-| What you're documenting | Where it goes |
-|------------------------|---------------|
-| System-level architecture | `hyperfleet/README.md` |
-| Component design (what/why/how/trade-offs) | `hyperfleet/components/<component>/` |
-| Implementation or operational guide | `hyperfleet/docs/` |
-| Engineering standards (must-follow rules) | `hyperfleet/standards/` |
-| Deployment procedures | `hyperfleet/deployment/` |
+See the [README.md Navigation Guide](README.md#navigation-guide) for the document-type routing table. When in doubt, check there first.
 
-When in doubt about where something belongs, check the [README.md Navigation Guide](README.md#navigation-guide).
+### Document Standards
 
-### Required Document Header
+All documents must follow the header format and summary requirements defined in [CLAUDE.md](CLAUDE.md#document-header-format).
 
-Every document **must** start with:
-
-```markdown
-# Document Title
-
----
-Status: Active
-Owner: Team Name
-Last Updated: YYYY-MM-DD
----
-
-> [2-4 sentence summary of what this document covers and the key decision or purpose]
-
----
-```
-
-Update `Last Updated` only for meaningful changes (design changes, new sections, trade-offs modified). Not for typos or formatting fixes.
-
-### Component Documents
-
-Every component design document **must** include:
-
-- **What & Why**: Purpose and problem it solves
-- **How**: Technical implementation with at least one Mermaid diagram
-- **Trade-offs**: What we gain vs. what we lose (REQUIRED — do not skip)
-- **Alternatives Considered**: What other approaches were considered and why rejected (REQUIRED)
-
-See `hyperfleet/components/sentinel/sentinel.md` for a reference example.
-See `hyperfleet/components/CLAUDE.md` for detailed section requirements.
-
-### Standards Documents
-
-Every standard document must follow the pattern: Overview → Standard → Examples → Enforcement → References.
-Use RFC 2119 language (MUST/SHOULD/MAY). See `hyperfleet/standards/CLAUDE.md` for guidelines.
+- **Component design documents**: See [components/CLAUDE.md](hyperfleet/components/CLAUDE.md) for required sections (What/Why/How/Trade-offs/Alternatives).
+- **Standards documents**: See [standards/CLAUDE.md](hyperfleet/standards/CLAUDE.md) for the required structure.
 
 ### Terminology
 
@@ -167,39 +113,6 @@ Use the scripts in `hack/` to run linting locally before pushing:
    - For major architectural changes, strongly consider waiting for at least one Technical Leader review
 
 8. **Merge** once approved with no objections
-
----
-
-## Commit Standards
-
-This repository follows the [HyperFleet Commit Standard](hyperfleet/standards/commit-standard.md).
-
-Format: `HYPERFLEET-XXX - <type>: <subject>`
-
-Common types for this repo: `docs`, `chore`, `ci`
-
-Examples:
-
-```
-HYPERFLEET-123 - docs: add broker component design document
-HYPERFLEET-456 - docs: update sentinel trade-offs section
-chore: fix broken links in hyperfleet/README.md
-```
-
----
-
-## Paying Down Technical Debt
-
-When a previously documented debt item is resolved, update the component document:
-
-```markdown
-### Technical Debt Incurred
-- ~~**No retry logic**: Adapters don't retry failed operations~~
-  - **Status**: Resolved in #123
-  - **Resolution**: Added exponential backoff retry logic
-```
-
-Then update the `Last Updated` date and include a note in your PR description.
 
 ---
 

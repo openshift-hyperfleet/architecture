@@ -1,15 +1,10 @@
 ---
 Status: Pending
+Owner: HyperFleet Architecture Team
+Last Updated: 2025-10-30
 ---
 
 # HyperFleet Versioning Trade-offs (Post-MVP)
-- **Status:** Post-MVP - Not enforced for initial release
-**Owner**: HyperFleet Architecture Team
-**Last Updated**: 2026-03-25
-- **Date:** 2025-10-30
-- **Related Jira(s):** [HYPERFLEET-65](https://issues.redhat.com/browse/HYPERFLEET-65), [HYPERFLEET-69](https://issues.redhat.com/browse/HYPERFLEET-69), [HYPERFLEET-70](https://issues.redhat.com/browse/HYPERFLEET-70)
-
----
 
 ## 1. Overview
 

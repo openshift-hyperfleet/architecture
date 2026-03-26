@@ -19,6 +19,3 @@ Last Updated: 2026-03-25
 | `components/adapter/deprecated-validation/` | GCP validation adapter spike report | 2025-12 | GCP-specific; superseded by current adapter framework | `components/adapter/framework/` + GCP team repo |
 | `mvp/` | MVP scope and working agreements | 2024-12 | MVP complete | `hyperfleet/README.md` |
 
----
-
-For the full reasoning behind this structure, see [Deprecated Docs Structure Proposal](../docs/deprecated-docs-structure-proposal.md).
