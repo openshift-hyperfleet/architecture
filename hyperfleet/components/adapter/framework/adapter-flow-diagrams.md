@@ -1,10 +1,10 @@
-# HyperFleet Reconciliation Flow
-
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Reconciliation Flow
 
 ## Overview
 

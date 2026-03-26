@@ -1,10 +1,10 @@
-# HyperFleet Pull Secret Service - Design Decision Record
-
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Pull Secret Service - Design Decision Record
 
 > Detailed Design Review (DDR) document for the HyperFleet pull secret management service. Covers the design decisions for how pull secrets are stored, distributed to adapter jobs, and rotated, including the security model and integration with GCP Secret Manager or Kubernetes Secrets.
 

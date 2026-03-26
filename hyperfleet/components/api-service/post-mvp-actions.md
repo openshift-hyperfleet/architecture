@@ -1,10 +1,10 @@
-# Post-MVP Tasks (Temporary Record)
-
 ---
 Status: Active
 Owner: HyperFleet API Team
 Last Updated: 2026-03-25
 ---
+
+# Post-MVP Tasks (Temporary Record)
 
 ## Overview
 

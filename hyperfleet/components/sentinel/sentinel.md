@@ -1,10 +1,10 @@
-# HyperFleet Sentinel
-
 ---
 Status: Active
 Owner: HyperFleet Sentinel Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Sentinel
 
 > Comprehensive design document for the HyperFleet Sentinel service — the central reconciliation loop that continuously polls the HyperFleet API, evaluates configurable CEL-based decision logic, and publishes CloudEvents to the message broker to trigger adapter processing. Covers the full architecture, configuration schema, decision algorithm, sharding strategy, and observability. The Sentinel is a generic pattern reusable for any HyperFleet resource type.
 

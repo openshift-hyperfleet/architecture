@@ -1,10 +1,10 @@
-# HyperFleet Repository Creation Guidelines
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Repository Creation Guidelines
 
 ---
 

@@ -1,10 +1,10 @@
-# HyperFleet API Versioning Strategy
-
 ---
 Status: Active
 Owner: HyperFleet API Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet API Versioning Strategy
 - **Date:** 2025-10-30
 - **Related Jira(s):** [HYPERFLEET-65](https://issues.redhat.com/browse/HYPERFLEET-65)
 

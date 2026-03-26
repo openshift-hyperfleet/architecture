@@ -1,10 +1,10 @@
-# Contributing to HyperFleet Architecture
-
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-03-25
 ---
+
+# Contributing to HyperFleet Architecture
 
 > How to contribute architectural documents, standards, and design decisions to this repository. This is a documentation-only repository — there is no application code. Read this file before opening a PR.
 

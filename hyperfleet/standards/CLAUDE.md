@@ -1,10 +1,10 @@
-# Claude Code Guidelines for HyperFleet Standards
-
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-03-25
 ---
+
+# Claude Code Guidelines for HyperFleet Standards
 
 ## What Standards Are
 

@@ -1,10 +1,10 @@
-# Proposed Structure for Deprecated Documents
-
 ---
 Status: Draft
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-03-25
 ---
+
+# Proposed Structure for Deprecated Documents
 
 > Proposal for a consistent, discoverable structure for deprecated documentation across the HyperFleet architecture repository. The current state has deprecation handled inconsistently — this document proposes a unified approach.
 

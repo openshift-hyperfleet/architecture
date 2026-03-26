@@ -1,10 +1,10 @@
-# HyperFleet Adapter Framework - Design Document
-
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Adapter Framework - Design Document
 
 ## Overview
 

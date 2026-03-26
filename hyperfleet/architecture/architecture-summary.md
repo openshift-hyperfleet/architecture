@@ -1,10 +1,10 @@
-# HyperFleet v2 Architecture Summary
-
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet v2 Architecture Summary
 
 > Overview document for the HyperFleet architecture describing its main components and purpose
 

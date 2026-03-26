@@ -1,10 +1,10 @@
-# Maestro Integration Spike
-
 ---
 Status: Deprecated
 Owner: HyperFleet Adapter Team
 Last Updated: 2026-03-25
 ---
+
+# Maestro Integration Spike
 
 
 ## Overview

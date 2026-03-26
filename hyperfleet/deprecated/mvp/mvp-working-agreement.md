@@ -1,10 +1,10 @@
-# HyperFleet MVP - Working Agreement
-
 ---
 Status: Historical
 Owner: HyperFleet MVP Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet MVP - Working Agreement
 
 > Defines the working agreements for the HyperFleet MVP development team of ~12 engineers across two global teams. Covers development process, code review norms, meeting cadence, and communication channels used during the MVP phase. This document is historical — the MVP is complete and team processes have evolved.
 

@@ -40,7 +40,7 @@ Unless asked explicitly otherwise, discard any document with "deprecated" in the
 
 ## Document Header Format
 
-All documents must start with metadata fields:
+All documents must start with metadata fields, at the beginning of the file
 
 ```markdown
 ---
@@ -48,6 +48,8 @@ Status: Active
 Owner: Team Name
 Last Updated: YYYY-MM-DD
 ---
+
+# Document Title
 ```
 
 Update "Last Updated" only for meaningful changes (design changes, new sections, trade-offs modified), not typos or formatting.

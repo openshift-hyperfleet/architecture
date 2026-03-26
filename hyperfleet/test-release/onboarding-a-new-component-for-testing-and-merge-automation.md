@@ -1,10 +1,10 @@
-# Onboarding a New Component for Testing and Merge Automation
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# Onboarding a New Component for Testing and Merge Automation
 
 > Step-by-step guide for onboarding a new HyperFleet component into the CI testing and merge automation system. Covers repository setup, Prow job configuration, tide merge automation, and the verification checklist for ensuring a new component is fully integrated with HyperFleet CI.
 

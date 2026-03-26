@@ -1,10 +1,10 @@
-# Dependency and Tool Version Pinning Standard
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# Dependency and Tool Version Pinning Standard
 
 > Prescribes how dependencies must be pinned for reproducible builds across all HyperFleet repositories. Covers Go module pinning, container image digest pinning, and tooling version management. Ensures that builds are deterministic and that supply chain risks from floating dependency versions are minimized.
 

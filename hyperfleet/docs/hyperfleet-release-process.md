@@ -1,10 +1,10 @@
-# HyperFleet Release Process
-
 ---
 Status: Draft
 Owner: HyperFleet Team
 Last Updated: 2026-03-20
 ---
+
+# HyperFleet Release Process
 
 ---
 

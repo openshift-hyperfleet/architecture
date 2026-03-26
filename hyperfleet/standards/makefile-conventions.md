@@ -1,10 +1,10 @@
-# HyperFleet Makefile Conventions
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Makefile Conventions
 
 > Defines the Makefile patterns and target naming conventions for all HyperFleet repositories. Covers required targets (build, test, lint, image, clean), variable naming, and help documentation format. Standardized Makefiles let developers use the same commands in any HyperFleet repo without reading repo-specific instructions.
 

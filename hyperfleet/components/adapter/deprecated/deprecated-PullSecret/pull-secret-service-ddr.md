@@ -1,10 +1,10 @@
-# Pull Secret Service for HyperFleet Architecture
-
 ---
 Status: Deprecated
 Owner: HyperFleet Adapter Team
 Last Updated: 2026-03-25
 ---
+
+# Pull Secret Service for HyperFleet Architecture
 
 ### Overview
 

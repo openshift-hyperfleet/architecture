@@ -1,10 +1,10 @@
-# Adding CI Configuration for New Repositories
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# Adding CI Configuration for New Repositories
 
 ## Overview
 

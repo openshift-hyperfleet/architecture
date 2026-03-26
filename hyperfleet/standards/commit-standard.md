@@ -1,10 +1,10 @@
-# HyperFleet Commit Message Standard
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Commit Message Standard
 
 > Defines the commit message format for all HyperFleet repositories, extending the Conventional Commits specification with a JIRA ticket prefix (`HYPERFLEET-XXX - <type>: <subject>`). Covers commit types, character limits, breaking change notation, and enforcement via CI linting. All HyperFleet repos — services, adapters, infrastructure, and this architecture repo — must follow this standard.
 

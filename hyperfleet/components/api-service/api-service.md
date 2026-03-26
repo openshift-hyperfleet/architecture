@@ -1,10 +1,10 @@
-# HyperFleet API Service
-
 ---
 Status: Active
 Owner: HyperFleet API Team
 Last Updated: 2026-03-26
 ---
+
+# HyperFleet API Service
 
 > The HyperFleet API is the data layer for the HyperFleet platform — a stateless REST service providing CRUD operations for clusters and node pools, adapter-based status reporting with Kubernetes-style conditions, and generation tracking. It contains no business logic and creates no events; all reconciliation is driven by Sentinel and Adapters.
 

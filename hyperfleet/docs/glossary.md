@@ -1,10 +1,10 @@
-# HyperFleet Glossary
-
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Glossary
 
 > Definitions for HyperFleet-specific terms, concepts, and abbreviations used across architecture documents, standards, and component designs. The **Applies To** column identifies which components use or are most closely associated with each term.
 

@@ -1,10 +1,10 @@
-# HyperFleet Architecture Repository
-
 ---
 Status: Active
 Owner: Architecture Team
 Last Updated: 2025-10-22
 ---
+
+# HyperFleet Architecture Repository
 
 ---
 

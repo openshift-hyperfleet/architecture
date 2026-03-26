@@ -1,10 +1,10 @@
-# HyperFleet Adapter Metrics - MVP
-
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Adapter Metrics - MVP
 
 ## Overview
 

@@ -1,10 +1,10 @@
-# HyperFleet Error Model and Codes Standard
-
 ---
 Status: Active
 Owner: HyperFleet Platform Team
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet Error Model and Codes Standard
 
 > Defines how errors are structured, propagated, and communicated across HyperFleet services. Covers API error response format, Go error wrapping conventions, and error classification (transient vs. permanent). Consistent error handling enables better observability, retry logic, and client-side error handling.
 

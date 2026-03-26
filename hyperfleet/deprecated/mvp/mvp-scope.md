@@ -1,10 +1,10 @@
-# HyperFleet MVP Scope
-
 ---
 Status: Historical
 Owner: HyperFleet Leadership
 Last Updated: 2026-03-25
 ---
+
+# HyperFleet MVP Scope
 
 > Documents the approved MVP scope for HyperFleet as of October 31, 2024, including the core components in scope, features explicitly excluded, and the success criteria for the MVP release. This document is historical — the MVP phase is complete. Use post-MVP planning documents and current JIRA epics for active scope.
 

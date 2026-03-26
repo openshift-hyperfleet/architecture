@@ -1,10 +1,10 @@
-# Maestro Integration Guide for HyperFleet Adapters
-
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
 Last Updated: 2026-03-25
 ---
+
+# Maestro Integration Guide for HyperFleet Adapters
 
 ## Overview
 
