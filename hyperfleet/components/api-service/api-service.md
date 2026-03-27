@@ -6,7 +6,9 @@ Last Updated: 2026-03-26
 
 # HyperFleet API Service
 
-The HyperFleet API is the data layer for the HyperFleet platform — a stateless REST service providing CRUD operations for clusters and node pools, adapter-based status reporting with Kubernetes-style conditions, and generation tracking. It contains no business logic and creates no events; all reconciliation is driven by Sentinel and Adapters.
+The HyperFleet API is the data layer for the HyperFleet platform — a stateless REST service providing CRUD operations for HyperFleet API resources (clusters and node pools, adapter-based status reporting with Kubernetes-style conditions), and generation tracking. 
+
+It contains no business logic other than the aggregation logic from adapter statuses to determine the reconciliation state of the resource.
 
 ---
 
@@ -101,10 +103,11 @@ Both resources support:
 
 ### Status Aggregation
 
-The API aggregates adapter status reports into the resource's `status.conditions` array. The `Ready` condition is computed:
+The API aggregates adapter status reports into the resource's `status.conditions` array. 
 
-- `Ready: True` — all registered adapters report `Available: True` with `observed_generation == resource.generation`
-- `Ready: False` — any adapter has not reconciled the current generation, or any adapter reports `Available: False`
+The `Ready` condition determines if the "state of the world" have been reconciled to match the desired state of the HyperFleet API resource.
+
+It is computed out of the different status reports coming from adapters that have to provide information about the their validity at current API resource `generation`
 
 This aggregated `Ready` condition is the primary signal consumed by Sentinel's CEL decision logic. The API performs this aggregation on every `POST /statuses` call so Sentinel always reads current state.
 

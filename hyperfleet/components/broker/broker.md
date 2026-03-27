@@ -11,15 +11,11 @@ This document describes the hyperfleet-broker library purpose and main design de
 
 ## What & Why
 
-HyperFleet is composed by a set of microservices with narrow responsibility, and as low coupling as possible.
+`hyperfleet-broker` is a golang library that abstracts the vendor-specific details to interact with a broker system. 
 
-The Sentinels are background job instances that watch API resource changes and publish messages for adapters to react and reconcile the intended state of the API resources.
+HyperFleet runs in different cloud providers, offering a different native service for messaging. There is no common protocol for these messaging products nor a widely product that is offered in every cloud (like it is for PostgreSQL as an example).
 
-Sentinels are unaware of consumers of the messages, which are fanned out to multiple adapters.
-
-Since HyperFleet will run in different cloud providers, it has to support multiple broker types, since each cloud provider will offer a native service and there is no cross-cloud product that can offer that.
-
-`hyperfleet-broker` is a golang library that abstracts away the communication with a broker to Publish/Subscribe to topics.
+To avoid having application code dealing with each one of the messaging products, the `broker-library` encapsulates these differences and offers a simpler interface.
 
 By changing configuration alone, the same application binary can use different brokers.
 
@@ -27,25 +23,17 @@ By changing configuration alone, the same application binary can use different b
 
 ## How
 
-### Topic and Subscription Model
+`hyperfleet-broker` offers two main interfaces for publish and subscribe which is the basics for every messaging system. Then, it implements each interface for every messaging system supported (currently Google Pub/Sub and RabbitMQ)
 
-This is a visualization of a Sentinel that watches the API for cluster changes and publishes a message to a topic. Then, one subscription per adapter will listen to this topic and receive its own copy of the message.
+The library contains code for all these implementations, and will be embedded in the final application.
 
-The `hyperfleet-broker` makes the Sentinel agnostic of the broker in use, it will use an interface to publish and the adapters will use an interface for subscribing.
+By using different configuration, only the selected implementation will be used at runtime.
 
-```mermaid
-graph LR
-    S[Sentinel] -->|watches|A[API]
-    S[Sentinel] -->|Publish CloudEvent| T[Topic<br/>hyperfleet.clusters.changed.v1]
-    T -->|Fan-out| V[validation-adapter-sub]
-    T -->|Fan-out| D[dns-adapter-sub]
-    T -->|Fan-out| P[placement-adapter-sub]
-    V --> VA[Validation Adapter]
-    D --> DA[DNS Adapter]
-    P --> PA[Placement Adapter]
-```
+Application code only deals with the decision of what topic/subscription to use, but not how to connect to these.
 
-Each adapter gets its own subscription to the shared topic, so every adapter receives every event independently. Adapters evaluate their own preconditions to decide whether to act on an event.
+For the concern to be completely abstracted away, the `hyperfleet-broker` library manages its own configuration, independently of the application configuration.
+
+The `hyperfleet-broker` also manages the overall format of the messages that go into the broker by leveraging CloudEvent standard.
 
 ### CloudEvent Format
 
@@ -187,6 +175,7 @@ And the same with environment variables since they are used to override settings
 
 - ⚠️ **Operational overhead**: Configuration is harder because of the required broker settings
 - ⚠️ **Debug complexity**: An extra library is involved when debugging an issue with publish/subscribe messages
+- ⚠️ **External dependency**: If there is any need for an specific broker detail not implemented in Watermill, we need to contribute to an external library.
 
 
 ---
@@ -200,6 +189,14 @@ And the same with environment variables since they are used to override settings
 **Why Rejected**:
 - Encapsulation of responsibilities
 - The broker library can be tested in isolation
+
+### Implement our own library instead of using Watermill
+
+What: Instead of using Watermill as the basis for `hyperfleet-broker`, build a library from scratch
+
+**Why Rejected**:
+- Watermill covers HyperFleet needs
+- We implemented a thin wrapper over Watermill to shield from hard dependency, it can be changed in the future
 
 ---
 
