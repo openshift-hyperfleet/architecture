@@ -169,7 +169,6 @@ helmDefaults:
 **Impact**:
 - ✅ `helmfile diff` shows drift between desired and actual state (bash has no equivalent)
 - ✅ Idempotent: running twice produces same result (bash scripts may not be)
-- ✅ Rollback: `helmfile rollback` uses same logic in all environments
 - ✅ Dependency management: Helmfile handles release ordering automatically
 - ✅ Parallel deployments: Helmfile can deploy independent releases concurrently
 
@@ -187,8 +186,11 @@ kubectl get pods -n hyperfleet
 $ helmfile diff
 # Shows EXACTLY what would change
 
+$ helmfile sync
+# Deploys differences
+
 $ helmfile apply
-# Deploys changes
+# Deploys everything
 
 $ helmfile diff
 # No diff = current state matches desired state ✅
@@ -371,7 +373,7 @@ graph TB
 
 The helmfile repo contains **only deployment logic**, not configuration data. Each consuming repo (infra, e2e) passes its own configs via Makefile parameters.
 
-**Helmfile configuration** (`architecture/helmfile/helmfile.yaml.gotmpl` or `hyperfleet-infra/helmfile/helmfile.yaml.gotmpl`):
+**Helmfile configuration** (`helmfile-repo/helmfile/helmfile.yaml.gotmpl` or `hyperfleet-infra/helmfile/helmfile.yaml.gotmpl`):
 ```yaml
 helmDefaults:
   createNamespace: true
@@ -379,29 +381,32 @@ helmDefaults:
   timeout: 300
   cleanupOnFail: true
 
-# Environments define structure, not specific config paths
 environments:
-  gcp:
-    values:
-    - projectId: hcm-hyperfleet
-      brokerType: googlepubsub
-    - environments/gcp/adapter-configs.yaml
-  
-  local:
-    values:
-    - brokerType: rabbitmq
-    - environments/local/adapter-configs.yaml
-  
   e2e:
     values:
-    - namespace: hyperfleet-e2e
-      brokerType: googlepubsub
-    - environments/e2e/adapter-configs.yaml
+    - environments/e2e/e2e-config.yaml.gotmpl
+
+commonLabels:
+  group: hyperfleet
+
 ---
+{{ if eq .Environment.Name "e2e" }}
+repositories:
+  - name: hyperfleet-api
+    url: git+https://github.com/{{ .Values.chartOrg }}/hyperfleet-api@charts?ref={{ .Values.charts.api.chartRef }}&sparse=0
+  - name: hyperfleet-sentinel
+    url: git+https://github.com/{{ .Values.chartOrg }}/hyperfleet-sentinel@charts?ref={{ .Values.charts.sentinel.chartRef }}&sparse=0
+  - name: hyperfleet-adapter
+    url: git+https://github.com/{{ .Values.chartOrg }}/hyperfleet-adapter@charts?ref={{ .Values.charts.adapter.chartRef }}&sparse=0
+{{ end }}
+
 releases:
+  # HyperFleet API
   - name: hyperfleet-api
     namespace: {{ .Values.namespace }}
-    chart: hyperfleet-api/hyperfleet-api
+    chart: hyperfleet-api/hyperfleet-api 
+    labels:
+      component: api
     values:
       - values/base-api.yaml.gotmpl
 
@@ -409,19 +414,28 @@ releases:
   - name: sentinel-{{ .name }}
     namespace: {{ $.Values.namespace }}
     chart: hyperfleet-sentinel/hyperfleet-sentinel
+    labels:
+      component: sentinel
     values:
-      - values/base-sentinel.yaml.gotmpl
-    set:
-      - name: config.yaml
-        file: {{ .configYamlPath }}
+      - ./values/base-sentinel.yaml.gotmpl
+      {{- range .values }}
+      - {{ toYaml . | nindent 8 }}
+      {{- end }}
+
 {{ end }}
+
 
 {{ range .Values.adapters }}
   - name: {{ .name }}
     namespace: {{ $.Values.namespace }}
     chart: hyperfleet-adapter/hyperfleet-adapter
+    labels:
+      component: adapter
     values:
-      - values/base-adapter.yaml.gotmpl
+      - ./values/base-adapter.yaml.gotmpl
+      {{- range .values }}
+      - {{ toYaml . | nindent 8 }}
+      {{- end }}
     set:
       - name: adapterConfig.yaml
         file: {{ .configYamlPath }}
