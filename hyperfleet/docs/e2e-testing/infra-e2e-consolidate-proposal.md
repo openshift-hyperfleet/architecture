@@ -94,7 +94,14 @@ graph TB
 - **Result**: When we update deployment logic in infra, E2E doesn't get the change automatically
 
 **Helmfile Solution**: ONE helmfile.yaml defines ALL releases:
+
 ```yaml
+# potential example
+environments:
+  e2e:
+    values:
+    - environments/e2e/e2e-config.yaml.gotmpl # e2e specific implementation
+
 {{ range .Values.adapters }}
   - name: {{ .name }}
     chart: hyperfleet-adapter/hyperfleet-adapter
@@ -105,6 +112,7 @@ graph TB
         file: {{ .configYamlPath }}
       - name: adapterTaskConfig.yaml
         file: {{ .taskYamlPath }}
+      ....
 {{ end }}
 ```
 
@@ -136,10 +144,12 @@ adapters:
     resourceType: clusters
     configYamlPath: configs/adapters/adapter1/config.yaml
     taskYamlPath: configs/adapters/adapter1/task-config.yaml
+    ...
   - name: adapter4  # <- Add this line with its config paths
     resourceType: clusters
     configYamlPath: configs/adapters/adapter4/config.yaml
     taskYamlPath: configs/adapters/adapter4/task-config.yaml
+    ...
 ```
 
 **Key benefit**: The helmfile repo contains ZERO adapter-specific configs. Each repo owns its configs and passes them via Makefile:
@@ -206,22 +216,16 @@ $ helmfile diff
 **Helmfile Solution**: ONE codebase, environment-specific values
 ```yaml
 environments:
-  gcp:
-    values:
-    - projectId: hcm-hyperfleet
-      brokerType: googlepubsub
-    - environments/gcp/adapter-configs.yaml
-  
-  local:
-    values:
-    - brokerType: rabbitmq
-    - environments/local/adapter-configs.yaml
-  
   e2e:
     values:
-    - namespace: hyperfleet-e2e
-      brokerType: googlepubsub
-    - environments/e2e/adapter-configs.yaml
+    - environments/e2e/e2e-config.yaml.gotmpl # e2e specific implementation
+  gcp: # gcp - dev clusters
+    values:
+    - environments/gcp/gcp-config.yaml.gotmpl
+  local: # kind
+    values:
+      - environments/gcp/gcp-config.yaml.gotmpl
+
 ```
 
 **Impact**:
@@ -385,7 +389,7 @@ environments:
   e2e:
     values:
     - environments/e2e/e2e-config.yaml.gotmpl
-
+  ...
 commonLabels:
   group: hyperfleet
 
@@ -441,16 +445,36 @@ releases:
         file: {{ .configYamlPath }}
       - name: adapterTaskConfig.yaml
         file: {{ .taskYamlPath }}
+      ...
 {{ end }}
 ```
 
-**Base environment config** (`helmfile/environments/gcp/base.yaml`):
+**Base environment E2E config** (`helmfile/environments/e2e/e2e-config.yaml.gotmpl`):
 ```yaml
-# Only base values, NO config paths
-namespace: hyperfleet
-projectId: hcm-hyperfleet
-brokerType: googlepubsub
-chartOrg: openshift-hyperfleet
+{{- $namespace := env "NAMESPACE" | default "mahill-e2e" -}}
+
+{{- $adapterConfigs := readFile .Values.adapterConfigDir | fromYaml -}} <-- Here is where we include the adapter configs
+{{- $sentinelConfigs := readFile .Values.sentinelConfigDir | fromYaml -}} <-- Here is where we include the sentinel configs
+
+chartOrg: {{ env "CHART_ORG" | default "openshift-hyperfleet" }}
+namespace: {{ $namespace }}
+projectId: {{ env "PROJECT_ID" | default "hcm-hyperfleet" }}
+brokerType: {{ env "BROKER_TYPE" | default "googlepubsub" }}
+
+charts:
+  api:
+    chartRef: {{ env "API_CHART_REF" | default "main" }}
+    chartName: {{ env "API_CHART" | default "hyperfleet-api" }}
+  sentinel:
+    chartRef: {{ env "SENTINEL_CHART_REF" | default "main" }}
+    chartName: {{ env "SENTINEL_CHART" | default "hyperfleet-sentinel" }}
+  adapter:
+    chartRef: {{ env "ADAPTER_CHART_REF" | default "main" }}
+    chartName: {{ env "ADAPTER_CHART" | default "hyperfleet-sentinel" }}
+
+# Specify changes to adapterConfigs or sentinelConfigs
+...
+
 ```
 
 **Makefile in hyperfleet-infra** (passes infra-specific configs):
@@ -459,17 +483,15 @@ chartOrg: openshift-hyperfleet
 
 HELMFILE_ENV ?= gcp
 NAMESPACE ?= hyperfleet
-ADAPTER_CONFIGS_DIR ?= $(PWD)/configs/adapters
-SENTINEL_CONFIGS_DIR ?= $(PWD)/configs/sentinels
+ADAPTER_CONFIGS_DIR ?= $(PWD)/configs/adapters/
+SENTINEL_CONFIGS_DIR ?= $(PWD)/configs/sentinels/
 
 .PHONY: install-all
 install-all: check-helmfile
 	cd helmfile && helmfile --environment $(HELMFILE_ENV) \
 		--state-values-set namespace=$(NAMESPACE) \
-		--state-values-set adapterConfigsDir=$(ADAPTER_CONFIGS_DIR) \
-		--state-values-set sentinelConfigsDir=$(SENTINEL_CONFIGS_DIR) \
-		--state-values-file $(ADAPTER_CONFIGS_DIR)/adapters.yaml \
-		--state-values-file $(SENTINEL_CONFIGS_DIR)/sentinels.yaml \
+    --state-values-set adapterConfigDir=$(ADAPTER_CONFIGS_DIR)
+		--state-values-set sentinelConfigDir=$(SENTINEL_CONFIGS_DIR) \
 		sync
 ```
 
@@ -525,13 +547,13 @@ adapters:
 **Repository Structure**:
 
 ```
-architecture/ (or hyperfleet-infra/)
+(In helmfile repo or hyperfleet-infra repo)
 └── helmfile/
     ├── helmfile.yaml.gotmpl        # Deployment logic only
     ├── environments/
-    │   ├── gcp/base.yaml           # Base values, no paths
-    │   ├── e2e/base.yaml
-    │   └── local/base.yaml
+    │   ├── e2e-config.yaml.gotmpl
+    │   ├── gcp-config.yaml.gotmpl
+    │   └── local-config.yaml.gotmpl
     └── values/
         ├── base-api.yaml.gotmpl
         ├── base-sentinel.yaml.gotmpl
@@ -543,7 +565,7 @@ hyperfleet-infra/
     ├── adapters/
     │   ├── adapters.yaml          # Infra adapter list
     │   ├── adapter1/
-    │   │   ├── config.yaml
+    │   │   ├── adapter-config.yaml
     │   │   └── task-config.yaml
     │   ├── adapter2/
     │   └── adapter3/
