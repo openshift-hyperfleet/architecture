@@ -18,7 +18,7 @@ Last Updated: 2026-07-13
 - [The Adapter Status Contract](#the-adapter-status-contract)
   - [Reporting Status: Always PUT](#reporting-status-always-put)
   - [CRITICAL: Always Update `observed_time`](#critical-always-update-observed_time)
-  - [Implementation via Adapter Configuration (PR #18)](#implementation-via-adapter-configuration-pr-18)
+  - [Building Status Payloads via Adapter Configuration](#building-status-payloads-via-adapter-configuration)
   - [Status Response Structure](#status-response-structure)
   - [ClusterStatus Fields (aggregated, embedded in Cluster resource)](#clusterstatus-fields-aggregated-embedded-in-cluster-resource)
   - [AdapterStatus Fields (returned by GET /statuses)](#adapterstatus-fields-returned-by-get-statuses)
@@ -60,13 +60,6 @@ Last Updated: 2026-07-13
 - [Best Practices](#best-practices)
   - [DO](#do)
   - [DON'T](#dont)
-- [Adapter Configuration System (PR #18)](#adapter-configuration-system-pr-18)
-  - [Overview](#overview-1)
-  - [Key Components](#key-components)
-  - [Message Broker Configuration](#message-broker-configuration)
-  - [Benefits](#benefits)
-  - [Integration with Status Contract](#integration-with-status-contract)
-  - [Example: Complete Validation Adapter Config](#example-complete-validation-adapter-config)
 - [Summary](#summary)
   - [Architecture Overview](#architecture-overview)
   - [Timestamp Fields Explained](#timestamp-fields-explained)
@@ -119,7 +112,7 @@ HyperFleet uses a **condition-based status reporting contract** where adapters r
 | **GET** | `/v1/clusters/{clusterId}/statuses` | Get paginated `AdapterStatusList` with detailed per-adapter statuses |
 | **PUT** | `/v1/clusters/{clusterId}/statuses` | Adapter reports status (API handles upsert internally) |
 
-> **Note**: This document will be updated with references to the Adapter Configuration Framework from [PR #18](https://github.com/openshift-hyperfleet/architecture/pull/18) once it is merged. The PR introduces a declarative YAML-based system for adapter configuration, event handling, and status reporting.
+> **Note**: For how adapters build these payloads from declarative configuration (CEL-expression-based condition rules, event handling, and status reporting), see the [Adapter Status Contract](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/components/adapter/framework/adapter-status-contract.md) in the adapter framework component docs.
 
 ### Adapter Status Reporting Flow
 
@@ -270,17 +263,17 @@ Adapters **always PUT** to report status. The API handles upsert internally (INS
 
 **Why This Matters**:
 
-The Sentinel uses `observed_time` (stored as `last_report_time` on the API side) to calculate max age intervals for publishing reconciliation events. If adapters do not report status when they skip work (e.g., preconditions not met), the Sentinel will create an infinite event loop:
+Sentinel's decision logic reads the resource's single aggregated `Reconciled` condition and republishes a reconciliation event when the resource isn't yet reconciled and `Reconciled.last_updated_time` hasn't advanced recently (see [How Sentinel Actually Detects Staleness](#how-sentinel-actually-detects-staleness)) — it does not track any individual adapter's `last_report_time`. `Reconciled.last_updated_time` only advances when an adapter's PUT causes the API to recompute it. If an adapter never reports at all — even when it has no work to do — the resource can never reach `Reconciled: True`, so Sentinel keeps republishing on its debounce window, and *every* subscribed adapter (not just the one that stopped reporting) keeps re-evaluating its own preconditions for no reason:
 
 ```text
 Time 10:00 - DNS adapter receives reconciliation event
 Time 10:00 - DNS checks preconditions: Validation adapter not complete
 Time 10:00 - DNS does NOT update status (skips work)
-            ❌ adapter's last_report_time remains at 09:50
-Time 10:10 - Sentinel sees stale report time, max age expired (10s)
-Time 10:10 - Sentinel publishes ANOTHER event
-Time 10:10 - DNS receives event AGAIN, checks preconditions AGAIN...
-            ↻ INFINITE LOOP until validation completes
+            ❌ Reconciled has no new report to recompute from — stays False
+Time 10:10 - Reconciled is still False and last_updated_time is >10s old (debounce window)
+Time 10:10 - Sentinel publishes ANOTHER event for the resource
+Time 10:10 - DNS (and every other subscribed adapter) receives the event AGAIN, checks preconditions AGAIN...
+            ↻ Repeats every debounce window until validation completes and DNS starts reporting
 ```
 
 **Correct Behavior - Update Status Even When Skipping Work**:
@@ -321,49 +314,15 @@ Integration tests for adapters MUST verify:
 
 - ✅ Adapter sets `observed_time` to current time when preconditions are met and work is performed
 - ✅ Adapter sets `observed_time` to current time when preconditions are NOT met and work is skipped
-- ✅ Sentinel correctly calculates max age from adapter report timestamps
+- ✅ The resource's `Reconciled` condition recomputes (and its `last_updated_time` advances) whenever this adapter reports, even if the adapter's own status hasn't changed
 
 **Reference**: See the Sentinel architecture documentation for details on the max age strategy and reconciliation loop.
 
 ---
 
-### Implementation via Adapter Configuration (PR #18)
+### Building Status Payloads via Adapter Configuration
 
-> **Note**: Once [PR #18](https://github.com/openshift-hyperfleet/architecture/pull/18) is merged, this section will be expanded with configuration examples.
-
-Adapters generate this status payload using declarative configuration that defines:
-
-1. **Status Evaluation Rules** - How to calculate each condition (Applied, Available, Health) based on resource state
-2. **Payload Templates** - How to construct the JSON payload with dynamic data
-3. **API Reporting Actions** - When and how to PUT to the HyperFleet API
-
-#### Example Configuration Snippet
-
-```yaml
-postProcessing:
-  statusEvaluation:
-    available:
-      status:
-        allOf:
-          - field: "resources.validationJob.status.succeeded"
-            operator: "eq"
-            value: 1
-      templates:
-        true:
-          reason: "JobSucceeded"
-          message: "Job completed successfully"
-        false:
-          reason: "JobFailed"
-          message: "Validation Job failed"
-
-  actions:
-    - type: "api_call"
-      method: "PUT"
-      endpoint: "{{.hyperfleetApi}}/api/{{.version}}/clusters/{{.clusterId}}/statuses"
-      body: "{{.clusterStatusPayload}}"
-```
-
-This configuration-driven approach ensures consistent status reporting across all adapters without requiring code changes.
+Adapters built on the [Adapter Framework](../components/adapter/framework/adapter-frame-design.md) generate this status payload declaratively rather than via custom code: a CEL-expression-based configuration evaluates resource state to compute each condition (`Applied`, `Available`, `Health`), and a reporting action PUTs the resulting payload to the HyperFleet API. See [Configuration-Based Status Building](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/components/adapter/framework/adapter-status-contract.md#configuration-based-status-building) in the Adapter Status Contract for the current schema and worked examples.
 
 ### Status Response Structure
 
@@ -957,7 +916,7 @@ If `Health: False`, examine the `message` and `data` fields for debugging detail
 
 The following examples show **individual adapter status payloads** that adapters send. These become individual `AdapterStatus` items retrievable via `GET /statuses`.
 
-> **Implementation Note**: Once [PR #18](https://github.com/openshift-hyperfleet/architecture/pull/18) is merged, adapters will generate these payloads using declarative configuration. The `postProcessing.statusEvaluation` section in the adapter config defines how to calculate condition states (Applied, Available, Health) by evaluating resource state, and the `actions` section defines when to PUT these payloads to the HyperFleet API.
+> **Implementation Note**: Adapters generate these payloads using the declarative configuration described in [Building Status Payloads via Adapter Configuration](#building-status-payloads-via-adapter-configuration).
 
 ### 1. Adapter Started (Job Created)
 
@@ -2018,182 +1977,6 @@ nodepool - pending (gen 0)
 
 ---
 
-## Adapter Configuration System (PR #18)
-
-> **Note**: This section provides a preview of the Adapter Configuration Framework from [PR #18](https://github.com/openshift-hyperfleet/architecture/pull/18). Once merged, this document will be updated with complete implementation details and additional examples.
-
-The Adapter Configuration System provides a **declarative YAML-based framework** for building adapters without writing code. Adapters are defined through configuration files that specify the complete adapter lifecycle: event handling, resource management, and status reporting.
-
-### Overview
-
-The configuration system introduces:
-
-1. **Adapter Configuration Template** - Defines adapter behavior through YAML
-2. **Message Broker Abstraction** - Broker-agnostic configuration via ConfigMaps
-3. **Declarative Status Evaluation** - Rules-based condition calculation
-4. **Automated API Integration** - Automatic status reporting to HyperFleet API
-
-### Key Components
-
-#### 1. Event Handling
-
-Adapters extract parameters from CloudEvents and check preconditions before executing:
-
-```yaml
-eventHandlers:
-  - eventType: "cluster.created"
-    parameters:
-      - name: "clusterId"
-        source: "event.clusterId"
-        required: true
-      - name: "generation"
-        source: "event.generation"
-        required: true
-
-    preconditions:
-      - type: "api_call"
-        method: "GET"
-        endpoint: "{{.hyperfleetApi}}/api/{{.version}}/clusters/{{.clusterId}}"
-        storeResponseAs: "clusterDetails"
-```
-
-#### 2. Resource Management
-
-Adapters create and track Kubernetes resources (Jobs, Deployments, etc.):
-
-```yaml
-resources:
-  - apiVersion: "batch/v1"
-    kind: "Job"
-    metadata:
-      name: "validation-{{.clusterId}}-gen{{.generation}}"
-      labels:
-        hyperfleet.io/cluster-id: "{{.clusterId}}"
-        hyperfleet.io/generation: "{{.generation}}"
-    spec:
-      template:
-        spec:
-          containers:
-            - name: validator
-              image: "quay.io/hyperfleet/validator:{{.adapterVersion}}"
-```
-
-#### 3. Status Evaluation
-
-Declarative rules determine condition states by evaluating resource status:
-
-```yaml
-postProcessing:
-  statusEvaluation:
-    # Applied: Was the resource created?
-    applied:
-      status:
-        allOf:
-          - field: "resources.validationJob.metadata.creationTimestamp"
-            operator: "exists"
-      templates:
-        true:
-          reason: "JobLaunched"
-          message: "Validation Job created successfully"
-        false:
-          reason: "JobCreationFailed"
-          message: "Failed to create validation Job"
-
-    # Available: Did the work complete successfully?
-    available:
-      status:
-        allOf:
-          - field: "resources.validationJob.status.succeeded"
-            operator: "eq"
-            value: 1
-      templates:
-        true:
-          reason: "JobSucceeded"
-          message: "Validation completed successfully"
-        false:
-          reason: "JobFailed"
-          message: "Validation Job failed"
-
-    # Health: Any unexpected errors?
-    health:
-      status:
-        allOf:
-          - field: "resources.validationJob.status.failed"
-            operator: "eq"
-            value: 0
-      templates:
-        true:
-          reason: "NoErrors"
-          message: "Adapter is healthy"
-        false:
-          reason: "UnexpectedError"
-          message: "Unexpected errors occurred"
-```
-
-#### 4. Status Reporting
-
-Automated API calls to report status using the contract defined in this document:
-
-```yaml
-actions:
-  - type: "api_call"
-    method: "PUT"
-    endpoint: "{{.hyperfleetApi}}/api/{{.version}}/clusters/{{.clusterId}}/statuses"
-    body: "{{.clusterStatusPayload}}"
-```
-
-The `clusterStatusPayload` is automatically constructed from the status evaluation results, following the adapter status contract.
-
-### Message Broker Configuration
-
-The broker configuration is separate from adapter configuration, provided via ConfigMaps:
-
-```yaml
-# broker-configmap-template.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: hyperfleet-message-broker-config
-  namespace: hyperfleet-system
-data:
-  BROKER_TYPE: "pubsub"  # or "awsSns", "rabbitmq"
-  BROKER_PROJECT_ID: "my-gcp-project"
-  BROKER_SUBSCRIPTION_QUEUE: "validation-adapter-sub"
-```
-
-This broker-agnostic approach allows the same adapter configuration to work with:
-
-- Google Cloud Pub/Sub
-- AWS SNS/SQS
-- RabbitMQ
-- Other message brokers
-
-### Benefits
-
-The configuration-driven approach provides:
-
-1. **No Code Changes** - New adapters created by writing YAML configuration
-2. **Consistent Behavior** - All adapters follow the same lifecycle
-3. **Testable** - Configuration can be validated without deployment
-4. **Maintainable** - Changes to adapter logic done through configuration updates
-5. **Contract Compliance** - Framework ensures adapters follow the status contract
-
-### Integration with Status Contract
-
-The adapter configuration system implements the status contract defined in this document:
-
-- **Three Required Conditions** - `applied`, `available`, `health` are explicit sections in `statusEvaluation`
-- **Simple PUT Pattern** - Framework automatically PUTs status reports (API handles upsert)
-- **observed_generation** - Automatically included in status payloads from event parameters
-- **Condition Structure** - Templates generate proper `type`, `status`, `reason`, `message` fields
-- **Data Field** - Custom data can be included via configuration templates
-
-### Example: Complete Validation Adapter Config
-
-For a complete example of an adapter configuration that implements this status contract, see [PR #18 - adapter-config-template.yaml](https://github.com/openshift-hyperfleet/architecture/pull/18/files).
-
----
-
 ## Summary
 
 ### Architecture Overview
@@ -2227,11 +2010,18 @@ Understanding when and how timestamps are set is critical for Sentinel's stalene
 | `ResourceCondition.last_updated_time` | **API** | When this aggregated condition was last recomputed | API-managed; copied from the `last_report_time` of the adapter whose PUT triggered the recomputation |
 | PUT payload `observed_time` | **Adapter** | When the adapter observed the resource state it's reporting on | The one genuinely adapter-supplied timestamp; validated against a skew tolerance, then used to set both `created_time` and `last_report_time` |
 
-There is no aggregated status timestamp inside `ClusterStatus` — it contains only `conditions` (see [ClusterStatus Fields](#clusterstatus-fields-aggregated-embedded-in-cluster-resource)); the parent `Cluster` resource still has its own `updated_time`. Sentinel does not compute a `min()` across adapters at the cluster level; it doesn't need to, because it evaluates staleness **per adapter, independently**.
+There is no aggregated status timestamp inside `ClusterStatus` — it contains only `conditions` (see [ClusterStatus Fields](#clusterstatus-fields-aggregated-embedded-in-cluster-resource)); the parent `Cluster` resource still has its own `updated_time`. Sentinel does not evaluate individual adapters or their `AdapterStatus.last_report_time` at all — it never calls the `/statuses` endpoints. Instead, it evaluates one CEL-based decision per resource against the resource's own aggregated conditions.
 
 #### How Sentinel Actually Detects Staleness
 
-Sentinel's decision logic tracks each required adapter's `last_report_time` on `AdapterStatus` directly. An adapter is stale if too much time has passed since its `last_report_time` relative to the current `generation` — regardless of whether other adapters are reporting freshly. This is exactly why the [CRITICAL: Always Update `observed_time`](#critical-always-update-observed_time) rule exists: if an adapter skips reporting when it has no work to do, its `last_report_time` goes stale and Sentinel re-publishes a reconciliation event for it specifically, while adapters that are actively reporting are left alone. There's no "confidence" concept and no `min()`/`max()` trick needed — each adapter's liveness is judged on its own `last_report_time`, not blended into a single cluster-wide number.
+Sentinel's default decision config reads the resource's aggregated `Reconciled` condition via a `condition("Reconciled")` lookup and uses its `last_updated_time` as a reference point (`ref_time`). This feeds a small set of independent triggers, evaluated once per resource on every poll:
+
+- **New resource**: `generation == 1` and not yet reconciled — always publish.
+- **Generation mismatch**: `resource.generation > condition("Reconciled").observed_generation` — the spec changed since the last reconciliation attempt.
+- **Reconciled but stale**: already `Reconciled: True`, but `now - ref_time` exceeds a safety-net threshold (30 minutes by default) — an eventual-consistency re-check, not a failure signal.
+- **Not reconciled and debounced**: not yet `Reconciled: True`, and `now - ref_time` exceeds a short debounce window (10 seconds by default) — this is the trigger the [CRITICAL: Always Update `observed_time`](#critical-always-update-observed_time) rule protects against.
+
+Because `Reconciled.last_updated_time` only advances when an adapter's PUT causes the API to recompute it (see the table above), an adapter that stops reporting — even though it has no work to do — can leave `Reconciled` stuck at `False` with a stale `last_updated_time`. Once the 10-second debounce window passes, Sentinel republishes a reconciliation event for the *whole resource* (not a specific adapter, since Sentinel has no concept of "which adapter" — every adapter subscribed to the resulting event re-evaluates its own preconditions independently).
 
 ### The Contract
 
