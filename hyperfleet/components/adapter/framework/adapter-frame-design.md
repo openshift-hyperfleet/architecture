@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-05-25
+Last Updated: 2026-07-14
 ---
 
 # HyperFleet Adapter Framework - Design Document
@@ -11,7 +11,6 @@ Last Updated: 2026-05-25
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [Components](#components)
-  - [Code Structure](#code-structure)
   - [1. Config Loader and Criteria Evaluator](#1-config-loader-and-criteria-evaluator)
   - [2. HyperFleet API Client](#2-hyperfleet-api-client)
   - [3. Message Broker Consumer and Event Handler](#3-message-broker-consumer-and-event-handler)
@@ -37,6 +36,9 @@ Last Updated: 2026-05-25
   - [Best Practices](#best-practices)
   - [Memory Safety Characteristics](#memory-safety-characteristics)
 - [Error Handling Strategy](#error-handling-strategy)
+  - [Startup Errors (Fail Fast)](#startup-errors-fail-fast)
+  - [Runtime Errors (Per-Event Classification)](#runtime-errors-per-event-classification)
+  - [Infrastructure Errors](#infrastructure-errors)
 - [Observability](#observability)
   - [Configuration](#configuration)
   - [Metrics (Prometheus)](#metrics-prometheus)
@@ -62,8 +64,6 @@ This document describes the design of the HyperFleet Adapter Framework, a config
 **Related Documentation:**
 
 - [Adapter Flow Diagrams](./adapter-flow-diagrams.md) - **Complete system workflow, adapter lifecycle sequence, and event flow patterns**
-- `adapter-config-template-MVP.yaml` - MVP configuration template
-- `adapter-config-template-post-MVP.yaml` - Post-MVP configuration template with advanced features
 - [Adapter Status Contract](./adapter-status-contract.md) - Status reporting contract
 - [Adapter Metrics](./adapter-metrics.md) - Required metrics for observability and monitoring
 - [Adapter Design Decisions](./adapter-design-decisions.md) - Architecture decisions and trade-offs
@@ -79,95 +79,90 @@ graph TB
         direction TB
 
         subgraph Components["Core Components"]
-            ConfigLoader["Config Loader<br/>(internal/config_loader)"]
-            BrokerConsumer["Broker Consumer<br/>(internal/broker_consumer)"]
-            K8sClient["Kubernetes Client<br/>(internal/k8s_objects)"]
-            Evaluator["Criteria Evaluator<br/>(internal/criteria)<br/>CEL engine"]
-            APIClient["API Client<br/>(internal/hyperfleet_api)"]
-            Reporter["Status Reporter<br/>(integrated in API client)"]
+            ConfigLoader["Config Loader<br/>startup only"]
+            Handler["Event Handler<br/>WithMetrics · AlwaysAck"]
+            Executor["Event Executor<br/>params→preconditions→resources→post"]
+            Evaluator["Criteria Evaluator<br/>CEL engine"]
+            TransportClient["Transport Client<br/>routes by resource config"]
+            APIClient["API Client<br/>JWT bearer token auth"]
         end
 
         subgraph Support["Supporting Packages"]
-            Logger["Logger<br/>(pkg/logger)"]
-            Errors["Error Handler<br/>(pkg/errors)"]
+            Logger["Logger"]
+            Errors["Error Handler"]
+            Metrics["Metrics server"]
+            Health["Health server"]
         end
     end
 
-    subgraph External["External Systems"]
-        ConfigYAML["Adapter Config<br/>(adapter-config.yaml)"]
-        BrokerLib["HyperFleet Broker Library<br/>(github.com/openshift-hyperfleet/hyperfleet-broker)"]
-        MessageBroker["Message Broker<br/>(Pub/Sub, SQS, RabbitMQ)"]
-        K8sAPI["Kubernetes API"]
-        HyperFleetAPI["HyperFleet API"]
-    end
+    ConfigLoader -->|reads at startup| ConfigYAML
+    BrokerLib -->|connects to| MessageBroker
+    BrokerLib -->|delivers events| Handler
+    Handler -->|dispatches| Executor
+    Executor -->|evaluates conditions| Evaluator
+    Executor -->|applies resources| TransportClient
+    Executor -->|API calls & status| APIClient
+    TransportClient -->|direct apply| K8sAPI
+    TransportClient -->|ManifestWork| Maestro
+    APIClient -->|REST calls| HyperFleetAPI
 
-    ConfigLoader -->|Reads| ConfigYAML
-    BrokerConsumer -->|Imports & Uses| BrokerLib
-    BrokerLib -->|Connects| MessageBroker
-    K8sClient -->|CRUD Operations| K8sAPI
-    APIClient -->|REST Calls| HyperFleetAPI
-    Reporter -->|PUT Status| HyperFleetAPI
+    Logger -.->|used by| Executor
+    Logger -.->|used by| APIClient
+    Logger -.->|used by| TransportClient
+    Errors -.->|used by| Executor
+    Errors -.->|used by| APIClient
 
-    Logger -.->|Used by| Components
-    Errors -.->|Used by| Components
+    ConfigYAML["Adapter Config<br/>(adapter-config.yaml +<br/>adapter-task-config.yaml +<br/>adapter-broker-config)"]
+    BrokerLib["HyperFleet Broker Library<br/>(github.com/openshift-hyperfleet/hyperfleet-broker)"]
+    MessageBroker["Message Broker<br/>(Pub/Sub, RabbitMQ)"]
+    K8sAPI["Kubernetes API"]
+    Maestro["Maestro<br/>(ManifestWork)"]
+    HyperFleetAPI["HyperFleet API"]
 
-    style MainService fill:#e1f5ff,stroke:#0066cc,stroke-width:3px
-    style Components fill:#fff,stroke:#0066cc,stroke-width:2px
-    style Support fill:#f0f0f0,stroke:#666,stroke-width:1px
-    style External fill:#ffe1e1,stroke:#cc0000,stroke-width:2px
-    style ConfigYAML fill:#e1ffe1
-    style BrokerLib fill:#fff4e1
-    style MessageBroker fill:#ffe1e1
-    style K8sAPI fill:#ffe1e1
-    style HyperFleetAPI fill:#ffe1e1
+    style MainService fill:#e1f5ff,stroke:#0066cc,stroke-width:3px,color:#333
+    style Components fill:#fff,stroke:#0066cc,stroke-width:2px,color:#333
+    style Support fill:#f0f0f0,stroke:#666,stroke-width:1px,color:#333
+    style ConfigYAML fill:#e1ffe1,stroke:#00aa00,stroke-width:1px,color:#333
+    style BrokerLib fill:#fff4e1,stroke:#cc8800,stroke-width:1px,color:#333
+    style MessageBroker fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
+    style K8sAPI fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
+    style Maestro fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
+    style HyperFleetAPI fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
 ```
 
 ## Components
 
-### Code Structure
-
-```text
-hyperfleet-adapter/
-├── cmd/
-│   └── adapter/          # Main application entry point
-│       └── main.go       # Service initialization and startup
-├── pkg/
-│   ├── errors/           # Error handling utilities
-│   │   └── error.go      # Structured error types and codes
-│   └── logger/           # Structured logging with context
-│       └── logger.go     # Context-aware logging
-├── internal/
-│   ├── config_loader/    # Configuration loading logic
-│   ├── criteria/         # Precondition evaluation (CEL)
-│   ├── broker_consumer/  # Message broker consumer implementations
-│   ├── hyperfleet_api/   # HyperFleet API client
-│   └── k8s_objects/      # Kubernetes object management
-├── data/
-│   └── adapter-config-template.yaml  # Configuration template
-├── charts/               # Helm chart for deployment
-└── test/                 # Integration tests
-```
+See [hyperfleet-adapter repository](https://github.com/openshift-hyperfleet/hyperfleet-adapter) for current implementation details. The sections below describe each component's role and design.
 
 ### 1. Config Loader and Criteria Evaluator
 
 #### Purpose
 
-- Load and parse adapter configuration from YAML files
-- Validate configuration structure and required fields
+- Load and merge two config files at startup into a single `Config` struct
+- Validate configuration structure and CEL expressions at load time
 - Extract parameters from environment variables and CloudEvent data
 - Compile and evaluate CEL expressions for filtering, preconditions, and status evaluation
 
+#### Two Config Files
+
+The adapter loads **two separate YAML files** merged at startup:
+
+| File | Purpose | Override rules |
+|------|---------|----------------|
+| `adapter-config.yaml` | Deployment config: infra, clients, logging, broker | Env vars / CLI flags via Viper |
+| `adapter-task-config.yaml` | Task config: params, preconditions, resources, post-actions | Pure YAML — env vars do **not** override |
+
 #### Design
 
-**Config Loader (`internal/config_loader/`)**
+##### Config Loader
 
-- **Load(path string)**: Reads YAML configuration file and unmarshals into `Config` struct (called once at startup)
-- **Validate()**: Validates required fields and configuration consistency
+- **Load(deploymentConfigPath, taskConfigPath string)**: Reads and merges both YAML files into `Config` struct (called once at startup)
+- **Validate()**: Validates required fields, CEL expressions, and Go templates at load time
 - **GetParameterValue(name, env, eventData)**: Extracts parameter values from environment or event data based on source specification
 
 **Key Structures:**
 
-- `Config`: Root configuration structure matching adapter-config-template-MVP.yaml
+- `Config`: Root configuration structure
 - `ParamConfig`: Defines parameter extraction rules (env.*or event.* sources)
 - `PreconditionConfig`: Defines API calls with `apiCall`, `capture`, `conditions`/`expression`
 - `ResourceConfig`: Defines resources with `manifest`, `discovery`, `recreateOnChange`
@@ -223,38 +218,48 @@ Configuration is deployed and managed via Helm charts with **multiple Kubernetes
 
 **Configuration Layers:**
 
-1. **Adapter Logic ConfigMap** (`adapter-config`): Business logic, resource templates, preconditions
-2. **Broker ConfigMap** (`adapter-broker-config`): Message broker settings
-3. **Environment ConfigMap** (`adapter-env-config`): Environment-specific settings (API URLs, timeouts)
-4. **Observability ConfigMap** (`adapter-observability`): Logging, metrics, health checks, tracing
-
-**Implementation:**
-
-```go
-config, err := config.Load("/etc/adapter/config/adapter-config.yaml", log)
-```
+1. **Deployment Config ConfigMap** (`adapter-config`): Infra, clients, logging, broker — maps to `adapter-config.yaml`
+2. **Task Config ConfigMap** (`adapter-task-config`): Params, preconditions, resources, post-actions — maps to `task-config.yaml` (the ConfigMap is named `adapter-task-config`; the key inside it is `task-config.yaml`, which is the filename it mounts as at `/etc/adapter/task-config.yaml`)
+3. **Broker ConfigMap** (`adapter-broker-config`): Message broker settings - mounted as `broker.yaml` at `/etc/broker/broker.yaml`, read by the broker library via `BROKER_CONFIG_FILE`
 
 **Deployment:**
+
+All three ConfigMaps are required. The Helm chart projects all three — `adapter-config`, `adapter-task-config`, and `adapter-broker-config` — into a single volume at `/etc/adapter`, and additionally mounts `adapter-broker-config` separately at `/etc/broker/broker.yaml` for the broker library:
 
 ```yaml
 spec:
   containers:
     - name: adapter
+      args:
+        - serve
+        - --config
+        - /etc/adapter/adapter-config.yaml
+        - --task-config
+        - /etc/adapter/task-config.yaml
       volumeMounts:
         - name: adapter-config
-          mountPath: /etc/adapter/config
+          mountPath: /etc/adapter
           readOnly: true
-      envFrom:
-        - configMapRef:
-            name: validation-adapter-broker-config
-        - configMapRef:
-            name: validation-adapter-env-config
-        - configMapRef:
-            name: adapter-observability
+        - name: broker-config
+          mountPath: /etc/broker/broker.yaml
+          subPath: broker.yaml
+          readOnly: true
   volumes:
     - name: adapter-config
+      projected:
+        sources:
+          - configMap:
+              name: adapter-config        # deployment config (clients, broker, logging)
+          - configMap:
+              name: adapter-task-config   # task config (params, preconditions, resources, post-actions)
+          - configMap:
+              name: adapter-broker-config # broker connection settings
+    - name: broker-config
       configMap:
-        name: validation-adapter-config
+        name: adapter-broker-config
+        items:
+          - key: broker.yaml
+            path: broker.yaml
 ```
 
 **Characteristics:**
@@ -268,7 +273,7 @@ spec:
 - Version-controlled through Helm chart versioning
 - Layered architecture for flexibility and reusability
 
-**Criteria Evaluator (`internal/criteria/`)**
+##### Criteria Evaluator
 
 - **New(strictTypes, log)**: Creates evaluator instance with CEL engine
 - **Compile(name, expression, env)**: Compiles CEL expressions at startup for performance
@@ -279,8 +284,20 @@ spec:
 
 **Variable Building:**
 
-- `BuildVariables(env, eventData, resources, parameters)`: Constructs variable map for expression evaluation
-- Variables include: `event`, `resources.*` (tracked), `env.*`, and custom parameters
+- `GetCELVariables()` on `ExecutionContext`: Constructs variable map for expression evaluation
+- Variables injected into every CEL evaluation:
+
+| Namespace | Type | Description |
+|-----------|------|-------------|
+| *(param names)* | any | Top-level: extracted params, API call results, env-derived and event-derived values |
+| *(capture names)* | any | Named captures from `precondition.capture` - stored in params and available as top-level names in all downstream contexts (resources, post payloads, post_action when); not available during preconditions |
+| `adapter.*` | map | Execution metadata: `executionStatus`, `errorReason`, `errorMessage`, `executionError`, `resourceErrors`, `resourcesSkipped`, `skipReason` |
+| `resources.*` | map | Discovered K8s resources by alias (empty during preconditions) |
+| `env.*` | map | All OS environment variables accessible to the process |
+| `event.*` | map | CloudEvent data payload fields (id, kind, href, generation, etc.) |
+| `config.*` | map | Full adapter deployment config as nested map |
+
+> **Reserved names:** `adapter`, `resources`, `env`, `event` are overwritten by the runtime regardless of any param with the same name. `config` can be shadowed by a param with the same name.
 
 **Expression Compilation:**
 
@@ -436,56 +453,55 @@ when:
 
 - Make HTTP requests to HyperFleet API for fetching cluster details and reporting status
 - Support retry logic with configurable backoff strategies
-- Handle authentication (future: Service Account tokens)
+- Handle JWT bearer token authentication
 - Template variable substitution in endpoints
 
 #### Design
 
-**API Client (`internal/hyperfleet_api/`)**
+##### API Client
 
-- **NewClient(config, log)**: Creates API client with base URL and timeout
-- **Get(ctx, endpoint, headers)**: Performs GET request
-- **Post(ctx, endpoint, body, headers)**: Performs POST request
-- **Put/Delete**: Additional HTTP methods as needed
+- **NewClient(config, log)**: Creates API client with base URL, timeout, and JWT token source
+- **Get(ctx, endpoint, opts...)**: Performs GET request
+- **Post(ctx, endpoint, body, opts...)**: Performs POST request
+- **Put/Patch/Delete**: Additional HTTP methods
 
 **Features:**
 
+- JWT bearer token authentication: token fetched from a configured token source and sent as `Authorization: Bearer <token>` on every request
 - Configurable timeout from `hyperfleetApi.timeout`
-- Retry logic with exponential/linear/constant backoff (post-MVP)
+- Retry logic with exponential/linear/constant backoff (configurable per API call)
 - Template variable substitution in endpoints (e.g., `{{ .hyperfleetApiBaseUrl }}/api/hyperfleet/{{ .hyperfleetApiVersion }}/clusters/{{ .clusterId }}`)
-- JSON request/response handling
+- JSON request/response handling with structured `APIError` on failure
 - Error handling with status code checking
 
 **Configuration:**
 
 - Base URL from `HYPERFLEET_API_BASE_URL` environment variable
 - API version from `HYPERFLEET_API_VERSION` environment variable
-- Token from `HYPERFLEET_API_TOKEN` environment variable (for Authorization header)
+- JWT token source configured in adapter deployment config (`clients.hyperfleetApi.auth`)
 
 ### 3. Message Broker Consumer and Event Handler
 
 #### Purpose
 
-- Consume CloudEvents from message broker (Pub/Sub, SQS, RabbitMQ)
+- Consume CloudEvents from message broker (Pub/Sub, RabbitMQ)
 - Import and use HyperFleet broker library for Publish/Subscribe operations
 - Handle message acknowledgment and error handling
 - Parse CloudEvents and route to event handlers
 
 #### Design
 
-**Broker Consumer (`internal/broker_consumer/`)**
-
-The adapter framework **imports and uses** the HyperFleet broker library rather than implementing broker clients directly.
+The broker subscription is wired at service startup, and incoming events are dispatched through the event handler middleware (metrics recording, ack wrapping) before reaching the executor. The adapter framework **imports and uses** the HyperFleet broker library rather than implementing broker clients directly.
 
 **Architecture:**
 
 ```mermaid
 graph TB
-    subgraph AdapterFramework["Adapter Framework (This Component)"]
-        BrokerConsumer["internal/broker_consumer/<br/><br/>- Imports broker library<br/>- Uses Publish/Subscribe interfaces<br/>- Handles CloudEvents<br/>- Routes to event handlers"]
+    subgraph AdapterFramework["Adapter Framework"]
+        Handler["cmd/adapter/main.go<br/><br/>- AlwaysAck(WithMetrics(exec.CreateHandler()))<br/>- subscriber.Subscribe(ctx, topic, handler)<br/>- Dispatches to Executor"]
     end
 
-    subgraph BrokerLibrary["HyperFleet Broker Library<br/>github.com/openshift-hyperfleet/hyperfleet-broker"]
+    subgraph BrokerLibrary["HyperFleet Broker Library<br/>github.com/openshift-hyperfleet/hyperfleet-broker/broker"]
         direction TB
         Interface["Broker Interfaces (Pub/Sub)"]
 
@@ -493,18 +509,18 @@ graph TB
 
         Publisher["type Publisher interface {<br/>  Publish(ctx, topic, event)<br/>}"]
 
-        Implementations["Implementations:<br/>• PubSubClient (Google Cloud Pub/Sub)<br/>• SQSClient (AWS SQS)<br/>• RabbitMQClient (RabbitMQ)"]
+        Implementations["Implementations:<br/>• PubSubClient (Google Cloud Pub/Sub)<br/>• RabbitMQClient (RabbitMQ)"]
 
         Interface --> Subscriber
         Interface --> Publisher
         Interface --> Implementations
     end
 
-    BrokerConsumer -->|import & use| Interface
+    Handler -->|import & use| Interface
 
     style AdapterFramework fill:#e1f5ff,stroke:#0066cc,stroke-width:3px
     style BrokerLibrary fill:#fff4e1,stroke:#cc8800,stroke-width:3px
-    style BrokerConsumer fill:#fff,stroke:#0066cc,stroke-width:2px
+    style Handler fill:#fff,stroke:#0066cc,stroke-width:2px
     style Interface fill:#ffe1e1,stroke:#cc0000,stroke-width:2px
     style Subscriber fill:#f0f0f0
     style Publisher fill:#f0f0f0
@@ -513,13 +529,13 @@ graph TB
 
 **Broker Library Responsibilities:**
 
-- ✅ **Broker configuration loading** (reads from environment variables/ConfigMap)
+- ✅ **Broker configuration loading** (file-based config with env var overrides)
 - ✅ Connection management (connect, reconnect, backoff)
 - ✅ Message delivery (publish, subscribe)
 - ✅ Acknowledgment handling (ack, nack)
 - ✅ Retry logic (exponential backoff)
 - ✅ Error handling and circuit breakers
-- ✅ Multiple broker implementations (Pub/Sub, SQS, RabbitMQ)
+- ✅ Multiple broker implementations (Pub/Sub, RabbitMQ)
 
 **Adapter Framework Responsibilities:**
 
@@ -532,31 +548,29 @@ graph TB
 
 ##### Broker Configuration (Handled by Broker Library)
 
-The broker library reads configuration directly from environment variables (set by ConfigMap):
+The broker library reads configuration from `broker.yaml` (path set via `BROKER_CONFIG_FILE`), with individual settings overridable via environment variables. The `adapter-broker-config` ConfigMap is mounted at `/etc/broker/broker.yaml`:
 
 ```go
-import "github.com/openshift-hyperfleet/hyperfleet-broker/pkg/broker"
-
-// Adapter initializes broker client
-// Broker library handles config loading internally
-subscriber, err := broker.NewSubscriber()  // Reads from env vars
-if err != nil {
-    return err
-}
+import "github.com/openshift-hyperfleet/hyperfleet-broker/broker"
 
 // Adapter uses the subscriber
-subscriber.Subscribe(ctx, handler)
+brokerMetrics := broker.NewMetricsRecorder(config.Adapter.Name, version.Version, nil)
+subscriber, err := broker.NewSubscriber(log, subscriptionID, brokerMetrics)
+if err != nil {
+    return fmt.Errorf("failed to create subscriber: %w", err)
+}
+
+subscriber.Subscribe(ctx, topic, handler)
 ```
 
-**Environment Variables (Set by validation-adapter-broker-config ConfigMap):**
-
-- Required: `BROKER_TYPE` (pubsub, awsSqs, rabbitmq)
-- Broker-specific variables:
-  - **Pub/Sub**: `BROKER_PROJECT_ID`, `BROKER_SUBSCRIPTION_ID`
-  - **SQS**: `BROKER_REGION`, `BROKER_QUEUE_URL`
-  - **RabbitMQ**: `BROKER_HOST`, `BROKER_PORT`, `BROKER_QUEUE_NAME`, `BROKER_USERNAME`, `BROKER_PASSWORD`
-
 The adapter framework does **not** need to implement broker config loading logic - it's all handled by the broker library.
+
+**Environment Variables (Set by Helm chart in Deployment):**
+
+- Always set: `BROKER_CONFIG_FILE=/etc/broker/broker.yaml`
+- Broker-specific variables:
+  - **Pub/Sub**: `HYPERFLEET_BROKER_SUBSCRIPTION_ID`, `HYPERFLEET_BROKER_TOPIC`
+  - **RabbitMQ**: `BROKER_URL`, `BROKER_QUEUE`
 
 **Event Processing:**
 
@@ -587,7 +601,9 @@ messageBroker:
 // Adapter controls concurrency with semaphore/worker pool
 semaphore := make(chan struct{}, config.MessageBroker.MaxConcurrency)
 
-subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
+handler := executor.AlwaysAck(executor.WithMetrics(exec.CreateHandler(), metricsRecorder, log), log)
+
+subscriber.Subscribe(ctx, topic, func(ctx context.Context, evt *event.Event) error {
     // Acquire semaphore (blocks if maxConcurrency reached)
     semaphore <- struct{}{}
 
@@ -595,8 +611,9 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
         defer func() { <-semaphore }() // Release semaphore
 
         // Process event (preconditions, resources, status)
-        processEvent(ctx, msg)
+        handler(ctx, evt)
     }()
+    return nil
 })
 ```
 
@@ -624,14 +641,14 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 
 #### Design
 
-**Kubernetes Client (`internal/k8s_objects/`)**
+##### Kubernetes Client
 
-- **NewClient(config, log)**: Creates Kubernetes client (in-cluster or kubeconfig)
-- **CreateResource(ctx, resourceConfig, variables)**: Creates a Kubernetes resource
-- **GetResource(ctx, namespace, kind, name)**: Gets a resource by name
-- **ListResources(ctx, namespace, kind, selector)**: Lists resources by label selector
-- **UpdateResource(ctx, resource)**: Updates an existing resource
-- **DeleteResource(ctx, namespace, kind, name)**: Deletes a resource
+- **NewClientFromConfig(ctx, restConfig, log)**: Creates Kubernetes client (in-cluster or from rest.Config)
+- **CreateResource(ctx, obj)**: Creates a Kubernetes resource
+- **GetResource(ctx, namespace, gvk, name)**: Gets a resource by name
+- **ListResources(ctx, namespace, gvk, labelSelector)**: Lists resources by label selector
+- **UpdateResource(ctx, obj)**: Updates an existing resource (server-side apply)
+- **DeleteResource(ctx, namespace, gvk, name)**: Deletes a resource
 
 **Resource Creation:**
 
@@ -667,6 +684,15 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 - Convert to map[string]interface{} for expression evaluation
 - Handle different resource types (Namespace, Deployment, Service, etc.)
 
+##### Transport Client
+
+The transport client is the unified apply interface used by the executor to apply resources. It abstracts the delivery mechanism so the rest of the pipeline is transport-agnostic:
+
+- **Kubernetes direct** (`client: kubernetes`): Applies resources directly to the cluster using `k8sclient`
+- **Maestro ManifestWork** (`client: maestro`): Wraps resources in a Maestro `ManifestWork` object and applies via `maestroclient`, enabling multi-cluster delivery through the Maestro control plane
+
+Each `Resource` in the task config selects its transport via `transport.client` (defaults to `kubernetes`).
+
 ### 5. Status Reporter Utilities
 
 #### Purpose
@@ -679,11 +705,9 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 
 #### Design
 
-**Status Reporter (integrated in `internal/hyperfleet_api/`)**
+##### Status Reporter
 
-- **NewReporter(apiClient, evaluator, log)**: Creates status reporter
-- **EvaluateStatus(ctx, trackedResources, config)**: Evaluates status from tracked resources
-- **ReportStatus(ctx, endpoint, payload, headers)**: Reports status to API
+Status reporting is implemented as post-actions in the executor pipeline. Post-actions are configured in `post.post_actions` and executed unconditionally after resource processing.
 
 **Status Evaluation:**
 
@@ -729,33 +753,40 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 
 #### Purpose
 
+- Cobra CLI with subcommands: `adapter serve`, `adapter config-dump`, `adapter version`
 - Orchestrate all components and implement the main adapter workflow
-- Handle event processing pipeline
+- Handle event processing pipeline via the executor component
 - Manage lifecycle and graceful shutdown
 - Provide health check and metrics endpoints
+- Dry-run mode: `adapter serve --dry-run-event event.json` processes a single event with mock clients (no broker or cluster needed)
 
 #### Design
 
 **Main Service (`cmd/adapter/main.go`)**
 
-- **main()**: Entry point - initializes service, sets up signal handling
-- **initializeService()**: Creates service instance, loads config, initializes components
-- **startService(ctx)**: Starts the service (subscribes to broker, starts HTTP servers)
-- **shutdown(ctx)**: Gracefully shuts down the service
+- **main()**: Entry point — sets up Cobra CLI, signal handling
+- **serve command**: Loads both config files, initializes all components, subscribes to broker
+- **config-dump command**: Prints the merged resolved config as YAML; redaction is always applied (TLS cert/key paths replaced with `**REDACTED**`), same representation used for terminal output and startup logs
+- **version command**: Prints build version info
 
-**Supporting Packages:**
+Config paths specified via `-c`/`HYPERFLEET_ADAPTER_CONFIG` (deployment config) and `-t`/`HYPERFLEET_TASK_CONFIG` (task config). All flags have env var equivalents.
 
-- `pkg/logger`: Context-aware structured logging with operation IDs
-- `pkg/errors`: Structured error handling with error codes and references
+**Supporting Components:**
+
+- **Logger**: Context-aware structured logging; every call takes `context.Context`
+- **Error Handler**: Structured error types (`ServiceError`, `APIError`) with numeric codes and HTTP status
+- **Metrics server**: Prometheus metrics registration and HTTP endpoint
+- **Health server**: HTTP liveness and readiness endpoints
+- **Telemetry**: OpenTelemetry tracing setup
 
 **Component Initialization:**
 
-1. Load adapter configuration from YAML file
-2. Create evaluator and compile expressions (if `compileOnStartup: true`)
-3. Create API client with config
-4. Initialize broker consumer (broker library loads config from env vars)
-5. Create Kubernetes client (in-cluster or kubeconfig)
-6. Create status reporter
+1. Load and merge both config files
+2. Validate config and compile CEL expressions at startup
+3. Create API client with JWT token source
+4. Create transport client (K8s direct or Maestro, per resource config)
+5. Create executor — wires params, preconditions, resources, post-actions
+6. Subscribe to broker — only after executor and handler are fully wired
 
 ### Event Processing Flow
 
@@ -764,13 +795,14 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 **High-Level Processing Steps:**
 
 1. Receive CloudEvent from broker
-2. Extract parameters from event and environment
+2. Extract parameters from event and environment - early exit if extraction fails (post-actions skipped)
 3. Fetch full cluster object from HyperFleet API (anemic events pattern)
-4. Evaluate preconditions (execute API calls, extract fields, evaluate expressions)
-5. **Decision:** If preconditions NOT met → Report `Applied=False`, acknowledge, exit
-6. **Decision:** If preconditions MET → Check if resources already exist
-7. **Decision:** If resources do NOT exist → Create resources, report `Applied=True`, acknowledge, exit
-8. **Decision:** If resources EXIST → Evaluate post conditions/data, report status, acknowledge, exit
+4. Evaluate preconditions (execute API calls, extract fields, evaluate expressions) - early exit on `ResourceNotFound` (post-actions skipped)
+5. **Decision:** If preconditions NOT met → skip resources, continue to post-actions (report `Applied=False`)
+6. **Decision:** If preconditions MET → check if resources already exist
+7. **Decision:** If resources do NOT exist → create resources, continue to post-actions
+8. **Decision:** If resources EXIST → skip creation, continue to post-actions
+9. **Post-actions:** evaluate post conditions/data, report status, acknowledge, exit
 
 **Precondition Evaluation:**
 
@@ -789,7 +821,7 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
   - `namespace`: Target namespace for resource lookup
   - `bySelectors.labelSelector`: Label selector to find matching resources
 - If resources exist: Skip creation, proceed to post-processing (evaluate post conditions/data and report)
-- If resources don't exist: Create new resources, then report
+- If resources don't exist: Create new resources, then proceed to post-processing (same as when resources exist)
 
 **Resource Creation:**
 
@@ -799,12 +831,11 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 - Create resource in Kubernetes
 - Track resource if `track` configuration exists
 - Handle errors and retries
-- After creation: Report status `Applied=True, Available=False, Health=True` to HyperFleet API
-- Acknowledge message and exit (no post-processing needed for newly created resources)
+- After creation, post-actions execute as normal (same as when resources already exist)
 
-**Post-Processing (When Resources Exist):**
+**Post-Processing:**
 
-- **Only executes when preconditions are met AND resources already exist**
+- **Always executes** after the resources phase, regardless of whether resources were created, already existed, or were skipped due to preconditions — with two exceptions that cause an early exit before post-actions: (1) parameter extraction failure, and (2) `ResourceNotFound` error during precondition evaluation
 - Discover tracked resources using resource `discovery` configuration:
   - Look up resources by namespace and label selectors
   - Fetch resource status from Kubernetes API
@@ -831,10 +862,9 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 - **Preconditions NOT met**: `Applied=False, Available=False, Health=True`
   - Adapter cannot act yet (dependencies not satisfied)
   - Report immediately, acknowledge message, exit
-- **Resources created** (resources didn't exist): `Applied=True, Available=False, Health=True`
-  - Resources created, but outcome not yet known
-  - Report immediately after creation, acknowledge message, exit
-  - Post-processing will happen on next event when resources exist
+- **Resources created** (resources didn't exist): post-actions run immediately after creation, same as when resources already exist
+  - Evaluate post conditions and data
+  - Report status based on evaluated conditions (typically `Applied=True, Available=False, Health=True` until workload is ready)
 - **Resources exist** (preconditions met, resources already exist):
   - Evaluate post conditions and data
   - Report status based on evaluated conditions:
@@ -851,9 +881,9 @@ subscriber.Subscribe(ctx, func(ctx context.Context, msg []byte) error {
 
 **Key Workflow Points:**
 
-- When preconditions meet AND resources don't exist: Create resources → Report → Exit
-- When preconditions meet AND resources exist: Evaluate post conditions/data → Report → Exit
-- Post-processing (evaluating post conditions and data) only happens when resources already exist
+- Post-actions always run after the resources phase (whether resources were created, already existed, or skipped due to unmet preconditions)
+- Early exits before post-actions: parameter extraction failure, or `ResourceNotFound` during preconditions
+- Each path (created / existed / precondition-skipped) converges at post-actions for evaluation and reporting
 - Each event triggers a fresh evaluation of resource status
 
 **HTTP Servers:**
@@ -891,12 +921,12 @@ sequenceDiagram
     participant Pod as Pod Startup
     participant Config as Config Loader
     participant Evaluator as CEL Evaluator
-    participant Broker as Broker Library
-    participant K8s as Kubernetes Client
     participant API as HyperFleet API Client
+    participant Transport as Transport Client
+    participant Broker as Broker Library
 
     Pod->>Config: Load Adapter Configuration (ONE TIME)
-    Config->>Config: Read /etc/adapter/config/adapter-config.yaml
+    Config->>Config: Read adapter-config.yaml + adapter-task-config.yaml
     Config->>Config: Parse YAML structure
     Config->>Config: Validate configuration
 
@@ -910,11 +940,14 @@ sequenceDiagram
     Pod->>API: Initialize API Client
     API-->>Pod: Ready
 
-    Pod->>K8s: Initialize K8s Client
-    K8s-->>Pod: Ready
+    Pod->>Transport: Initialize Transport Client
+    Note over Transport: Routes by resource config:<br/>• Kubernetes API (direct apply)<br/>• Maestro (ManifestWork)
+    Transport-->>Pod: Ready
 
-    Pod->>Broker: Initialize Broker Consumer
-    Note over Broker: Broker library loads config<br/>from environment variables
+    Note over Pod: Create executor and wire handler<br/>(must complete before subscribing)
+
+    Pod->>Broker: Subscribe to broker
+    Note over Broker: Broker library loads config<br/>from broker.yaml (file-based, env var overrides)<br/>Subscription starts only after<br/>executor is fully initialized
     Broker->>Broker: Connect to message broker
     Broker->>Broker: Subscribe to topic/queue
     Broker-->>Pod: Ready to receive events
@@ -982,9 +1015,9 @@ graph TB
 - Adapters always fetch full cluster object from HyperFleet API (anemic events pattern)
 - Preconditions determine if adapter can act (evaluated with event-specific data)
 - **Resource existence check only happens when preconditions are met**
-- **Post-processing (evaluating post conditions/data) only happens when resources already exist**
-- If resources don't exist: Create → Report → Exit (no post-processing)
-- If resources exist: Discover → Evaluate post conditions/data → Report → Exit
+- **Post-processing always runs** after the resources phase — whether resources were created, already existed, or were skipped due to unmet preconditions; exceptions are parameter extraction failure and `ResourceNotFound` during preconditions, both of which cause an early exit before post-actions
+- If resources don't exist: Create → Post-actions (evaluate conditions/data → report)
+- If resources exist: Discover → Post-actions (evaluate conditions/data → report)
 - Each event triggers a fresh evaluation of resource status
 - Status reporting follows specific patterns based on workflow state
 
@@ -1041,8 +1074,8 @@ These patterns align with the workflow described in [Adapter Flow Diagrams](./ad
 
 - Adapters check if resources already exist before creating (GET by name/labels)
 - Resource naming convention: `{adapter-name}-{clusterId-short}-gen{generation}`
-- If resources exist: Check postconditions to determine current state
-- If resources don't exist: Create new resources
+- If resources exist: Create skipped, post-processing evaluates postconditions and reports
+- If resources don't exist: Create new resources, post-processing runs immediately after
 - Handles adapter restarts and duplicate events gracefully
 - Each event triggers a fresh evaluation of resource status
 
@@ -1068,22 +1101,26 @@ These patterns align with the workflow described in [Adapter Flow Diagrams](./ad
 
 ### Expression Evaluation Context
 
-Expressions have access to different variables depending on the stage:
+CEL expressions have access to different namespaces depending on the evaluation stage. See [CEL Conventions](https://github.com/openshift-hyperfleet/hyperfleet-adapter/blob/main/docs/conventions/cel.md) for the full reference.
 
-**Preconditions Stage:**
+| Variable | Available in |
+|----------|-------------|
+| *(param names)* | all stages |
+| `event.*` | all stages — CloudEvent data payload (id, kind, href, generation, …) |
+| `env.*` | all stages — OS environment variables |
+| `config.*` | all stages — adapter deployment config |
+| `adapter.*` | all stages (meaningful in post phase only) — execution metadata |
+| `resources.*` | resources phase, post payloads, post_action when — empty during preconditions |
 
-- `event`: CloudEvent object (Type, Source, Data)
-- `env`: Environment variables map
-- Custom parameters: All extracted parameters
-- Cluster data: Full cluster object from HyperFleet API
+`adapter.*` fields available in post-action `when` expressions:
 
-**Post-Processing Stage:**
+- `adapter.executionStatus` — `"success"` or `"failed"`
+- `adapter.resourcesSkipped` — `true` when resources were intentionally skipped
+- `adapter.skipReason` / `adapter.errorReason` / `adapter.errorMessage`
+- `adapter.executionError` — `{phase, step, message}` for the first failure, nil otherwise
+- `adapter.resourceErrors` — per-resource error maps keyed by resource name
 
-- `event`: CloudEvent object (Type, Source, Data)
-- `env`: Environment variables map
-- `resources.*`: Tracked Kubernetes resources created by adapter (by alias)
-- Custom parameters: All extracted and built parameters
-- Cluster data: Full cluster object from HyperFleet API
+> **Go templates vs CEL:** `env` and `event` are **CEL-only** namespaces. Go templates used in manifests and URL fields do NOT have `.env` or `.event` — only extracted params are available there.
 
 ## Memory Management
 
@@ -1404,37 +1441,23 @@ Handlers classify errors using the `IsTransient(err error) bool` helper. See the
 
 ### Configuration
 
-Observability settings are managed via the **Observability ConfigMap** (`adapter-observability`), which provides environment-specific configuration for:
+Observability settings are configured via environment variables and the deployment config, providing:
 
 - Logging (level, format)
 - Metrics (enabled, port, path)
 - Health checks (enabled, port, paths)
 - Tracing (enabled, endpoint, sample rate)
 
-**See:** `adapter-observability-config-template.yaml`
-
-**Environment Variables (from ConfigMap):**
+**Environment Variables:**
 
 ```yaml
 # Logging
 LOG_LEVEL: "info"           # debug, info, warn, error
 LOG_FORMAT: "json"          # json, console
-
-# Metrics
-METRICS_ENABLED: "true"
-METRICS_PORT: "9090"
-METRICS_PATH: "/metrics"
-
-# Health Checks
-HEALTH_ENABLED: "true"
-HEALTH_PORT: "8080"
-HEALTH_LIVENESS_PATH: "/healthz"
-HEALTH_READINESS_PATH: "/readyz"
+LOG_OUTPUT: "stdout"        # stdout, stderr
 
 # Tracing
-TRACE_ENABLED: "true"
-TRACE_ENDPOINT: "http://otel-collector.hyperfleet-system.svc.cluster.local:4318/v1/traces"
-TRACE_SAMPLE_RATE: "0.1"    # 10% sampling in production
+HYPERFLEET_TRACING_ENABLED: "true"
 ```
 
 ### Metrics (Prometheus)
@@ -1484,8 +1507,9 @@ TRACE_SAMPLE_RATE: "0.1"    # 10% sampling in production
 
 ### Logging
 
-- Structured logging with zap
-- Log level from `LOG_LEVEL` environment variable
+- Structured logging with a context-aware logger
+- Every log call takes `context.Context` as first argument; structured fields carried on context
+- Log level from `LOG_LEVEL` environment variable (debug, info, warn, error)
 - Log format from `LOG_FORMAT` environment variable (json, console)
 - Contextual fields: event ID, cluster ID, adapter name, processing time
 - Error classification fields ([Error Handling Guide](./adapter-error-handling.md)): `error_classification` (transient/terminal), `error_type` (e.g., InvalidManifest), `action` (e.g., ack_and_report, nack_for_retry)
@@ -1507,9 +1531,12 @@ TRACE_SAMPLE_RATE: "0.1"    # 10% sampling in production
 
 ### Tracing (OpenTelemetry)
 
-- Distributed tracing when `TRACE_ENABLED: "true"`
-- Trace endpoint from `TRACE_ENDPOINT` environment variable
-- Sample rate from `TRACE_SAMPLE_RATE` environment variable
+- Distributed tracing enabled via `HYPERFLEET_TRACING_ENABLED=true` (default: true)
+- Endpoint from `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`
+- Protocol from `OTEL_EXPORTER_OTLP_PROTOCOL` or `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` (default: `grpc`)
+- Sampler from `OTEL_TRACES_SAMPLER` (default: `parentbased_traceidratio`)
+- Sample rate from `OTEL_TRACES_SAMPLER_ARG` (default: `1.0`)
+- Service name from `OTEL_SERVICE_NAME`
 - Trace spans for:
   - Event processing
   - API calls
@@ -1564,19 +1591,19 @@ readinessProbe:
 - `k8s.io/api`: Kubernetes API types
 - `k8s.io/apimachinery`: Kubernetes API machinery
 - `gopkg.in/yaml.v3`: YAML parsing
-- Custom template functions (`pkg/utils/template.go`): string manipulation (`lower`, `upper`, `trim`, `replace`), type conversion (`int`, `float`, `string`), date formatting (`now`, `date`), and utility (`default`, `quote`)
+- Custom template functions: string manipulation (`lower`, `upper`, `trim`, `replace`), type conversion (`int`, `float`, `string`), date formatting (`now`, `date`), and utility (`default`, `quote`)
 
 **Logging and Observability:**
 
-- `go.uber.org/zap`: Structured logging (implemented in `pkg/logger`)
-- Custom error handling (`pkg/errors`)
+- Structured logging with context-aware API (`log/slog`)
+- Custom error handling: `ServiceError` and `APIError` with numeric codes
 
 **Message Broker:**
 
 - `github.com/openshift-hyperfleet/hyperfleet-broker`: HyperFleet broker library (Publish/Subscribe interfaces)
   - **Imported and used by adapter framework**
   - Provides broker-agnostic Pub/Sub interfaces
-  - Supports multiple broker implementations (Pub/Sub, SQS, RabbitMQ)
+  - Supports multiple broker implementations (Pub/Sub, RabbitMQ)
   - Handles connection management, retries, acknowledgments
 
 **Testing:**
@@ -1611,7 +1638,9 @@ readinessProbe:
 - ✅ Create resources based on preconditions
 - ✅ Track resources for status evaluation
 - ✅ Discover resources by name or label selectors
-- ✅ Delete resources in `onTerminating` handler
+- ✅ Per-resource conditional creation (`lifecycle.create.when`)
+- ✅ Per-resource conditional deletion (`lifecycle.delete.when`)
+- ✅ Maestro ManifestWork transport for multi-cluster delivery
 
 **Status Reporting:**
 
@@ -1678,8 +1707,8 @@ readinessProbe:
 - Config loading and validation
 - Expression compilation and evaluation
 - Template rendering
-- Error handling (`pkg/errors/error.go`)
-- Logger functionality (`pkg/logger/logger.go`)
+- Error handling
+- Logger functionality
 
 **Run:**
 
