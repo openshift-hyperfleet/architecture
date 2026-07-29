@@ -215,9 +215,13 @@ Options:
 
 **Recommendation:** Use implicit filtering at the DAO layer. It prevents accidental cross-tenant data leaks because developers can't forget the WHERE clause. Internal services that need cross-tenant access (Sentinel, Adapter) would use a bypass mechanism (see Sentinel/Adapter Identity section). RLS can be layered on top as defense-in-depth but should not be the sole mechanism.
 
+**Conjunctive matching invariant:** With multi-dimensional tenancy, all of the caller's enrichment key/value pairs must match exactly for a resource to be authorized. A filter that matches on any single dimension (e.g., `org` alone) would let a caller scoped to `org=acme, project=platform` read resources scoped to `org=acme, project=other`. DAO filtering and its integration tests must treat missing, mismatched, or extra dimensions as denied, not just the exact-match case.
+
 **Write-path enforcement:** Tenant fields are never accepted from the request body. On resource creation, the API derives enrichment key/value pairs from the caller's JWT token (using the `tenant_claims` mapping) and writes them to the enrichment table. These values are immutable after creation; update requests that attempt to modify them are rejected.
 
 **System-identity writes:** System identities (Sentinel, Adapter) do not create new tenant-scoped resources. They update existing resources where tenant fields are already set and immutable. The system identity write contract is: update status and conditions only, never modify or set tenant ownership fields.
+
+**Enforcement:** This rule must be enforced in code, not just documented as a policy. Tenant fields must be excluded from the writable field set for every caller, regardless of identity type. For system identities specifically, the update handler must further restrict the writable set to only `status` and `conditions`, so no code path, even for a compromised or misused system token, is able to modify tenant fields or any other resource field.
 
 ---
 
@@ -360,7 +364,7 @@ Cons:
 Phasing:
 
 - **Phase 1**: Ship multi-tenancy with app middleware (enrichment table, `tenant_claims`, DAO filtering, system identity). The middleware performs full JWT validation: signature verification via JWKS, issuer matching, audience validation, expiration checks, and algorithm allowlist (RS256).
-- **Phase 2**: Adopt service mesh and move JWT validation to sidecar/proxy. The DAO layer and enrichment model remain unchanged; only where JWT validation runs moves.
+- **Phase 2**: Adopt service mesh and move JWT validation to sidecar/proxy. The DAO layer and enrichment model remain unchanged; only where JWT validation runs moves. Phase 2 is not viable until it defines a trusted identity-propagation boundary: the application must strip any client-supplied tenant identity headers, accept tenant identity only via the sidecar-set header, refuse direct access to the pod that bypasses the sidecar, and authenticate the sidecar-to-application channel. The specific mechanism (mTLS, loopback-only binding, etc.) is TBD pending mesh selection in the Phase 2 spike (see Sizing Estimate).
 
 Why phased: deploying a service mesh and building a new data model at the same time introduces two unknowns. Phasing lets the team validate tenancy on a working system before layering infrastructure changes on top.
 
@@ -403,7 +407,7 @@ Preliminary estimates. Caller identity context plumbing already exists ([HYPERFL
 | Phase | Description | Estimate |
 |------|-------------|----------|
 | JWT claim mapping | Extract tenant identity from JWT claims per issuer, propagate through request context | 5 pts |
-| API spec changes | Add tenant identity fields to resource models | 3 pts |
+| API spec changes | Add tenant identity fields to resource models as response-only (read-only) fields; reject any client-supplied value on create or update | 3 pts |
 | Schema change | Add enrichment table with indexes | 3 pts |
 | DAO filtering | Scope all queries to caller's tenant, allow system identity bypass | 8 pts |
 | API integration | Reject requests missing tenant identity, surface clear error responses | 5 pts |
