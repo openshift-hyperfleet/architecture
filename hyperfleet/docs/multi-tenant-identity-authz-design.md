@@ -217,6 +217,8 @@ Options:
 
 **Conjunctive matching invariant:** With multi-dimensional tenancy, all of the caller's enrichment key/value pairs must match exactly for a resource to be authorized. A filter that matches on any single dimension (e.g., `org` alone) would let a caller scoped to `org=acme, project=platform` read resources scoped to `org=acme, project=other`. DAO filtering and its integration tests must treat missing, mismatched, or extra dimensions as denied, not just the exact-match case.
 
+**Parameterization invariant:** Enrichment keys and values originate from JWT claims, which are externally sourced and configurable per issuer. DAO filtering must bind these values as query parameters; string interpolation or dynamically constructed predicate fragments from claim values are prohibited, regardless of how trusted the issuer is presumed to be. This prevents a malicious or compromised issuer from using a crafted claim value to alter the query itself.
+
 **Write-path enforcement:** Tenant fields are never accepted from the request body. On resource creation, the API derives enrichment key/value pairs from the caller's JWT token (using the `tenant_claims` mapping) and writes them to the enrichment table. These values are immutable after creation; update requests that attempt to modify them are rejected.
 
 **System-identity writes:** System identities (Sentinel, Adapter) do not create new tenant-scoped resources. They update existing resources where tenant fields are already set and immutable. The system identity write contract is: update status and conditions only, never modify or set tenant ownership fields.
