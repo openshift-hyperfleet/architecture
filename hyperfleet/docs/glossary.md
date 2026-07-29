@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-07-23
+Last Updated: 2026-07-29
 ---
 
 # HyperFleet Glossary
@@ -59,9 +59,8 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Subscription** | A named queue attached to a Message Broker topic. In HyperFleet, each Adapter has its own subscription to the shared topic, ensuring every adapter independently receives every reconciliation event (fan-out). The subscription ID determines whether multiple instances share messages (same ID = load-balanced) or each receives all messages (different IDs). | Broker |
 | **System Identity** | A service account issuer configured with `system: true` in the JWT issuer config. Bypasses tenant filtering for internal services (Sentinel, Adapter). See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API, Sentinel, Adapter Framework |
 | **Technical Debt** | A consciously accepted trade-off that simplifies current implementation at the cost of future work. HyperFleet component documents explicitly track technical debt in a "Technical Debt Incurred" section within the Trade-offs section. | All |
-| **tenant_claim** | A per-issuer JWT configuration field specifying which JWT claim contains the caller's tenant identity. Configured in the API's multi-issuer JWT config. See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
-| **tenant_issuer** | A database column on HyperFleet API resources storing the issuer URL of the authenticating IdP. Together with `tenant_value`, forms the composite tenant identity. Server-owned and immutable. See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
-| **tenant_value** | A database column on HyperFleet API resources storing the resolved value of the `tenant_claim` JWT claim. Together with `tenant_issuer`, forms the composite tenant identity. Server-owned and immutable. See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
+| **tenant_claims** | A per-issuer JWT configuration map specifying which JWT claims to extract as enrichment key/value pairs. Each map entry maps an enrichment key (e.g., `org`) to a JWT claim name (e.g., `hd`). See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
+| **Enrichment Table** | A database table storing tenant identity as key/value pairs per resource (e.g., `org=acme-corp`, `project=platform`). One value per key per resource. Server-owned and immutable after resource creation. See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
 | **Terminal Error** | An error that will not resolve on retry and requires human investigation (e.g., HTTP 400, 403, malformed event payload, invalid manifest template). When the adapter classifies an error as terminal, it ACKs the message (preventing redelivery), reports error status to the API, and logs at `error` level. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Transient Error** | An error expected to resolve without human intervention (e.g., HTTP 429, 5xx, network timeout, API server overload). When the adapter classifies an error as transient, it returns an error to the broker library, which NACKs the message and triggers redelivery with backoff. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Topic** | A named channel in the Message Broker to which Sentinel publishes events. HyperFleet uses topic naming convention: `hyperfleet.<resourceType>.changed.<version>` (e.g., `hyperfleet.clusters.changed.v1`). | Broker, Sentinel |
