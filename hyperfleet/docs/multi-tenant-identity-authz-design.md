@@ -192,7 +192,7 @@ Options for storing tenant identity on resources:
 | Enrichment table (`resource_id`, `key`, `value`) | Multiple dimensions per resource, new dimensions added without schema migration | JOIN required on queries, slightly more complex DAO layer |
 | Flexible metadata map (JSONB) | Extensible, supports multiple attributes | Harder to index, query, and enforce constraints |
 
-**Recommendation:** Enrichment table. Each resource can have multiple key/value pairs (e.g., `org=acme-corp` + `project=platform`) stored as rows in a separate table, linked by resource ID. A uniqueness constraint on `(resource_id, key)` ensures one value per key per resource. New dimensions are added without schema migration.
+**Recommendation:** Enrichment table. Each resource can have multiple key/value pairs (e.g., `org=acme-corp` + `project=platform`) stored as rows in a separate table, linked by resource ID. A uniqueness constraint on `(resource_id, key)` ensures one value per key per resource. New dimensions are added without schema migration, though existing resources require a data backfill for the new key to remain accessible under the conjunctive matching invariant.
 
 Why not the others:
 
@@ -215,7 +215,7 @@ Options:
 
 **Recommendation:** Use implicit filtering at the DAO layer. It prevents accidental cross-tenant data leaks because developers can't forget the WHERE clause. Internal services that need cross-tenant access (Sentinel, Adapter) would use a bypass mechanism (see Sentinel/Adapter Identity section). RLS can be layered on top as defense-in-depth but should not be the sole mechanism.
 
-**Conjunctive matching invariant:** With multi-dimensional tenancy, all of the caller's enrichment key/value pairs must match exactly for a resource to be authorized. A filter that matches on any single dimension (e.g., `org` alone) would let a caller scoped to `org=acme, project=platform` read resources scoped to `org=acme, project=other`. DAO filtering and its integration tests must treat missing, mismatched, or extra dimensions as denied, not just the exact-match case.
+**Conjunctive matching invariant:** With multi-dimensional tenancy, a resource is authorized only when the caller's enrichment key set and the resource's enrichment key set are identical, and every corresponding value matches exactly. A filter that matches on any single dimension (e.g., `org` alone) would let a caller scoped to `org=acme, project=platform` read resources scoped to `org=acme, project=other`. DAO filtering and its integration tests must treat missing, mismatched, or extra dimensions as denied, not just the exact-match case.
 
 **Parameterization invariant:** Enrichment keys and values originate from JWT claims, which are externally sourced and configurable per issuer. DAO filtering must bind these values as query parameters; string interpolation or dynamically constructed predicate fragments from claim values are prohibited, regardless of how trusted the issuer is presumed to be. This prevents a malicious or compromised issuer from using a crafted claim value to alter the query itself.
 
