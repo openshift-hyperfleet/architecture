@@ -1,12 +1,12 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-06-26
+Last Updated: 2026-08-03
 ---
 
 # Performance Baselines
 
-**Jira**: [HYPERFLEET-1185](https://issues.redhat.com/browse/HYPERFLEET-1185), [HYPERFLEET-1270](https://issues.redhat.com/browse/HYPERFLEET-1270)
+**Jira**: [HYPERFLEET-1185](https://issues.redhat.com/browse/HYPERFLEET-1185), [HYPERFLEET-1270](https://issues.redhat.com/browse/HYPERFLEET-1270), [HYPERFLEET-1305](https://issues.redhat.com/browse/HYPERFLEET-1305)
 
 ---
 
@@ -17,6 +17,7 @@ Last Updated: 2026-06-26
 - [Baselines](#baselines)
   - [API reads](#api-reads)
   - [Reconciliation operations](#reconciliation-operations)
+  - [Generic resource CRUD (Channel, Version, WifConfig)](#generic-resource-crud-channel-version-wifconfig)
 - [How to reproduce](#how-to-reproduce)
 
 ## Overview
@@ -52,7 +53,7 @@ Both environments run the same stack: API, Sentinel (clusters + nodepools), 3 ad
 ### Reconciliation operations
 
 | Operation                               | GKE dev | Prow CI |
-| --------------------------------------- | ------- | ------- |
+| ---------------------------------------- | ------- | ------- |
 | Cluster create-to-reconciled            | 10.02s  | ~60s    |
 | Cluster update-to-re-reconciled         | 20.06s  | ~40s    |
 | Cluster delete-to-hard-delete           | 40.09s  | ~40s    |
@@ -64,6 +65,34 @@ Prow CI latencies are higher than GKE dev due to shared cluster resources.
 
 CI thresholds for both API reads and reconciliation operations are defined in [`pkg/config/thresholds.go`](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/pkg/config/thresholds.go) in the `hyperfleet-e2e` repo. Thresholds apply a margin over Prow CI baselines to absorb run-to-run variance.
 
+**HYPERFLEET-1305 regression check (2026-07-27):** HYPERFLEET-1159 migrated Cluster and NodePool onto the same generic resource layer (shared `resources`/`resource_labels`/`resource_conditions` tables) that Channel/Version/WifConfig already used. The `tier1-nightly` [run from 2026-07-27](https://prow.ci.openshift.org/view/gs/test-platform-results/logs/periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier1-nightly/2081703903212081152) confirms no regression: all Cluster/NodePool reconciliation and API read/list thresholds still pass (0 failed). Two operations show a modest increase over the baselines above that's still comfortably within threshold: Cluster create-to-reconciled (70.1s vs. the 60s baseline, threshold 90s) and NodePool create-to-reconciled (30.1s vs. the 20s baseline, threshold 45s) — plausibly attributable to the generic resource DAO's unconditional `Preload("Conditions").Preload("Labels").Preload("References")` on every read, which applies uniformly across all five entity kinds post-migration.
+
+### Generic resource CRUD (Channel, Version, WifConfig)
+
+Channel, Version, and WifConfig carry no `RequiredAdapters` — unlike Cluster/NodePool, they have no reconciliation loop, so create/update/delete are single synchronous API calls with no "reconciled" variant to time separately.
+
+Captured 2026-07-27 on a dedicated GKE dev cluster (`dev-tithakka`, e2-standard-4 nodes, no adapters/Sentinel dependency for these kinds) with ~1k seeded rows per kind (1000 Channels, 1000 WifConfigs, 1000 Versions under one parent Channel — the worst-case shape for a single list query). **No Prow CI numbers exist yet** for these operations: the perf specs are new (added by HYPERFLEET-1305) and haven't run in `tier1-nightly` yet — they'll be picked up automatically (no CI config changes needed, same Ginkgo `perf` label) on the first nightly run after this branch merges to `main`. Revisit this table once that run lands.
+
+| Operation                                   | GKE dev |
+| -------------------------------------------- | ------- |
+| POST /channels                              | 5.39ms  |
+| GET /channels/{id}                          | 3.44ms  |
+| GET /channels                               | 8.31ms  |
+| PATCH /channels/{id}                        | 5.75ms  |
+| DELETE /channels/{id}                       | 9.05ms  |
+| POST /channels/{parent_id}/versions         | 8.94ms  |
+| GET /channels/{parent_id}/versions/{id}     | 6.37ms  |
+| GET /channels/{parent_id}/versions          | 7.39ms  |
+| PATCH /channels/{parent_id}/versions/{id}   | 8.00ms  |
+| DELETE /channels/{parent_id}/versions/{id}  | 10.07ms |
+| POST /wifconfigs                            | 5.03ms  |
+| GET /wifconfigs/{id}                        | 3.61ms  |
+| GET /wifconfigs                             | 6.86ms  |
+| PATCH /wifconfigs/{id}                      | 6.68ms  |
+| DELETE /wifconfigs/{id}                     | 5.99ms  |
+
+All operations comfortably clear the shared `ThresholdAPIRead`/`ThresholdAPIList`/`ThresholdAPICreate`/`ThresholdAPIUpdate`/`ThresholdAPIDelete` constants (50ms each) in [`pkg/config/thresholds.go`](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/pkg/config/thresholds.go) — the largest observed value (10.07ms) is less than a quarter of the threshold.
+
 ## How to reproduce
 
 ### Prow CI
@@ -72,4 +101,4 @@ Prow baselines are captured automatically by the `tier1-nightly` job. To trigger
 
 ### GKE dev
 
-See the [perf README](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/perf/README.md) in the `hyperfleet-e2e` repo for prerequisites, infrastructure setup, seeding, and test execution instructions.
+See the [perf README](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/perf/README.md) in the `hyperfleet-e2e` repo for prerequisites, infrastructure setup, seeding, and test execution instructions. `perf/seed-clusters.sh` seeds Cluster rows; `perf/seed-resources.sh <channels|wifconfigs|versions>` seeds the generic-resource kinds.
