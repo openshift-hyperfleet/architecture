@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-06-10
+Last Updated: 2026-07-29
 ---
 
 # HyperFleet Glossary
@@ -28,6 +28,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Condition** | A structured status field following the Kubernetes conditions pattern. Each adapter reports three standard conditions per resource: `Available`, `Applied`, and `Health`. Conditions include a `type`, `status` (True/False/Unknown), `reason`, and `message`. In GET responses, the API adds `last_transition_time` (API-managed). See: [Status Guide](status-guide.md) | Adapter Framework, Sentinel, API |
 | **Dead Letter Queue (DLQ)** | A message broker queue that receives messages that could not be processed after the maximum number of retries. HyperFleet uses DLQs (where supported by the broker) to surface persistently failing events for manual inspection and alerting. | Broker |
 | **Decision Logic** | The CEL-based configuration in a Sentinel instance that determines when to publish a reconciliation event. Composed of named `params` (intermediate boolean expressions) and a `result` (boolean CEL expression combining the params). Defined in the Sentinel's `broker.yaml` / ConfigMap under `message_decision`. | Sentinel |
+| **Enrichment Table** | A database table storing tenant identity as key/value pairs per resource (e.g., `org=acme-corp`, `project=platform`). One value per key per resource. Server-owned and immutable after resource creation. See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
 | **Event** | See CloudEvent (below). | Broker, Sentinel, Adapter Framework |
 | **Fan-out** | The messaging pattern used in HyperFleet where a single reconciliation event published to one topic is independently delivered to multiple adapter subscriptions simultaneously. Each adapter receives its own copy of the event via a dedicated subscription. | Broker |
 | **GCP Pub/Sub** | Google Cloud Pub/Sub — the primary Message Broker implementation used in GCP-hosted HyperFleet deployments. Configured with `broker.type: googlepubsub` in `broker.yaml`. | Broker |
@@ -57,7 +58,9 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Sentinel** | The HyperFleet reconciliation service that continuously polls the API for resources, evaluates configurable CEL-based decision logic, and publishes CloudEvents to the Message Broker to trigger adapter processing. Multiple Sentinel instances can be deployed with different resource selectors for horizontal scalability. See: [Sentinel Design](../components/sentinel/sentinel.md) | Sentinel |
 | **Shard / Sharding** | The strategy of deploying multiple Sentinel instances, each watching a different subset of resources (e.g., by region label). Enables horizontal scaling of the reconciliation loop without coordination between instances. Note: this is label-based filtering, not true sharding — operators must ensure full resource coverage. | Sentinel |
 | **Subscription** | A named queue attached to a Message Broker topic. In HyperFleet, each Adapter has its own subscription to the shared topic, ensuring every adapter independently receives every reconciliation event (fan-out). The subscription ID determines whether multiple instances share messages (same ID = load-balanced) or each receives all messages (different IDs). | Broker |
+| **System Identity** | A service account issuer configured with `system: true` in the JWT issuer config. Bypasses tenant filtering for internal services (Sentinel, Adapter). See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API, Sentinel, Adapter Framework |
 | **Technical Debt** | A consciously accepted trade-off that simplifies current implementation at the cost of future work. HyperFleet component documents explicitly track technical debt in a "Technical Debt Incurred" section within the Trade-offs section. | All |
+| **tenant_claims** | A per-issuer JWT configuration map specifying which JWT claims to extract as enrichment key/value pairs. Each map entry maps an enrichment key (e.g., `org`) to a JWT claim name (e.g., `hd`). See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
 | **Terminal Error** | An error that will not resolve on retry and requires human investigation (e.g., HTTP 400, 403, malformed event payload, invalid manifest template). When the adapter classifies an error as terminal, it ACKs the message (preventing redelivery), reports error status to the API, and logs at `error` level. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Transient Error** | An error expected to resolve without human intervention (e.g., HTTP 429, 5xx, network timeout, API server overload). When the adapter classifies an error as transient, it returns an error to the broker library, which NACKs the message and triggers redelivery with backoff. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Topic** | A named channel in the Message Broker to which Sentinel publishes events. HyperFleet uses topic naming convention: `hyperfleet.<resourceType>.changed.<version>` (e.g., `hyperfleet.clusters.changed.v1`). | Broker, Sentinel |

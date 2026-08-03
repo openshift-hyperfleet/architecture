@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-03-27
+Last Updated: 2026-07-27
 ---
 
 # HyperFleet Tracing and Telemetry Standard
@@ -36,11 +36,8 @@ Last Updated: 2026-03-27
   - [HyperFleet-Specific Attributes](#hyperfleet-specific-attributes)
   - [Attribute Best Practices](#attribute-best-practices)
 - [Sampling Strategy](#sampling-strategy)
-  - [Head-Based vs Tail-Based Sampling](#head-based-vs-tail-based-sampling)
-  - [Default: Parent-Based Trace ID Ratio](#default-parent-based-trace-id-ratio)
-  - [Environment-Specific Sampling Rates](#environment-specific-sampling-rates)
-  - [Configuration Example](#configuration-example)
-  - [Always Sample Specific Operations](#always-sample-specific-operations)
+  - [SDK Head-Based Sampling](#sdk-head-based-sampling)
+  - [Default: Tail-Based Sampling via OpenTelemetry Collector](#default-tail-based-sampling-via-opentelemetry-collector)
 - [Exporter Configuration](#exporter-configuration)
   - [OTLP Exporter (Default)](#otlp-exporter-default)
   - [Kubernetes Deployment](#kubernetes-deployment)
@@ -110,8 +107,8 @@ All components MUST support tracing configuration via **environment variables**.
 | `OTEL_SERVICE_NAME` | Component name | Service name for traces |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | `localhost:4317` | OTLP gRPC endpoint |
 | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | Protocol: `grpc` or `http/protobuf` |
-| `OTEL_TRACES_SAMPLER` | `parentbased_traceidratio` | Sampler type |
-| `OTEL_TRACES_SAMPLER_ARG` | `1.0` | Sampler argument (ratio for ratio-based samplers) |
+| `OTEL_TRACES_SAMPLER` | `parentbased_always_on` (SDK default) | Sampler type (see [Sampling Strategy](#sampling-strategy)) |
+| `OTEL_TRACES_SAMPLER_ARG` | - | Sampler argument (e.g., ratio for `traceidratio`) |
 | `OTEL_PROPAGATORS` | `tracecontext,baggage` | Context propagators |
 | `OTEL_RESOURCE_ATTRIBUTES` | - | Additional resource attributes |
 | `HYPERFLEET_TRACING_ENABLED` | `false` | Enable/disable tracing |
@@ -376,61 +373,32 @@ span.SetAttributes(
 
 ## Sampling Strategy
 
-### Head-Based vs Tail-Based Sampling
+### SDK Head-Based Sampling
 
-| Approach | Decision Point | Pros | Cons |
-|----------|---------------|------|------|
-| **Head-based** | At trace start | Simple, low overhead, no data buffering | Cannot sample based on outcome (errors, latency) |
-| **Tail-based** | After trace completes | Can sample interesting traces (errors, slow) | Requires buffering, higher resource usage |
+The OTel SDK supports head-based sampling via environment variables:
 
-**HyperFleet uses head-based sampling** for simplicity and lower operational overhead. Tail-based sampling requires additional infrastructure (OpenTelemetry Collector with tail sampling processor) and is recommended only when error/latency-based sampling is critical.
+| Variable | Description |
+|----------|-------------|
+| `OTEL_TRACES_SAMPLER` | Sampler type (`always_on`, `always_off`, `traceidratio`, `parentbased_traceidratio`, etc.) |
+| `OTEL_TRACES_SAMPLER_ARG` | Sampler argument (e.g., ratio for `traceidratio`) |
 
-### Default: Parent-Based Trace ID Ratio
+Head-based sampling decides at trace start — it cannot selectively retain traces based on outcomes like errors or latency. No head-based sampling is configured by default.
 
-HyperFleet uses `parentbased_traceidratio` as the default sampler.
+### Default: Tail-Based Sampling via OpenTelemetry Collector
 
-**Why this sampler:**
+By default, components use the SDK default sampler (`parentbased_always_on`) and defer sampling decisions to the OpenTelemetry Collector, which buffers the complete trace before deciding. Spans arriving with an unsampled parent (`sampled=0` in `traceparent`) are dropped at the SDK and never reach the Collector.
 
-1. **Recommended by OpenTelemetry** - This is the default production sampler suggested by OTel SDKs and Collector documentation
-2. **Trace completeness** - Parent-based sampling ensures all spans in a trace are either sampled or not, avoiding broken/incomplete traces
-3. **Distributed consistency** - When Sentinel starts a trace and it propagates to Adapters via Pub/Sub, all downstream services respect the original sampling decision
-4. **Predictable costs** - The ratio-based approach provides consistent sampling rates for capacity planning
+**Why tail-based:** HyperFleet's trace volume is low enough to buffer all spans in the Collector, making tail-based sampling practical. It is more reliable for debugging than head-based sampling because it retains traces based on outcomes — errors and reconciliations are always kept, rather than randomly dropped by a ratio decision made before the operation executes.
 
-**How it works:**
+The Collector applies the following tail-based sampling policies. The same policies run in both kind and GKE for consistent behavior.
 
-- If parent span exists: Follow parent's sampling decision (preserves trace completeness)
-- If no parent (root span): Sample based on trace ID ratio
+| Policy | Rule | Rationale |
+|--------|------|-----------|
+| Errors | Keep all traces with an ERROR span | Always debug failures |
+| Reconciliations | Keep all traces where any span has attribute `messaging.operation.type` = `publish` | Actual work — sentinel decided a resource needs reconciliation |
+| Baseline | 1% probabilistic | Sample of normal behavior for dashboards |
 
-### Environment-Specific Sampling Rates
-
-| Environment | Sampling Rate | Rationale |
-|-------------|---------------|-----------|
-| Development | `1.0` (100%) | Full visibility for debugging |
-| Staging | `0.1` (10%) | Balance between visibility and cost |
-| Production | `0.01` (1%) | Cost-effective for high-traffic systems |
-
-### Configuration Example
-
-```bash
-# Development
-OTEL_TRACES_SAMPLER=always_on
-
-# Production
-OTEL_TRACES_SAMPLER=parentbased_traceidratio
-OTEL_TRACES_SAMPLER_ARG=0.01
-```
-
-### Always Sample Specific Operations
-
-With head-based sampling, you can force 100% sampling for **known operations** at trace start:
-
-- Specific API routes (e.g., `/admin/*`, `/debug/*`)
-- Specific resource types (e.g., critical clusters)
-- Requests with debug headers
-
-This is achieved using a custom sampler that checks request attributes before the operation executes.
-
-> **Limitation:** Head-based sampling cannot sample based on **outcomes** (errors, latency) because the decision is made before the operation completes. To capture all errors or slow requests, tail-based sampling with an OpenTelemetry Collector would be required. This is a future enhancement if needed.
+Sampling policies are configured in the OpenTelemetry Collector Helm values in `hyperfleet-infra`.
 
 ---
 
@@ -457,10 +425,6 @@ env:
     value: "otel-collector.observability.svc:4317"
   - name: OTEL_SERVICE_NAME
     value: "hyperfleet-sentinel"
-  - name: OTEL_TRACES_SAMPLER
-    value: "parentbased_traceidratio"
-  - name: OTEL_TRACES_SAMPLER_ARG
-    value: "0.01"
 ```
 
 ### Local Development
