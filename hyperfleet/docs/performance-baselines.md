@@ -71,6 +71,8 @@ CI thresholds for both API reads and reconciliation operations are defined in [`
 
 Channel, Version, and WifConfig carry no `RequiredAdapters` — unlike Cluster/NodePool, they have no reconciliation loop, so create/update/delete are single synchronous API calls with no "reconciled" variant to time separately.
 
+Version rows below cover only the nested `/channels/{parent_id}/versions` routes. `hyperfleet-api` also exposes flat `/versions` read/update/delete routes (`POST /versions` is rejected — creation needs parent context) for cross-channel access, but no perf coverage exists for that flat path yet; treat it as a gap for a follow-up story, not a value reflected in this table.
+
 Captured 2026-07-27 on a dedicated GKE dev cluster (`dev-tithakka`, e2-standard-4 nodes, no adapters/Sentinel dependency for these kinds) with ~1k seeded rows per kind (1000 Channels, 1000 WifConfigs, 1000 Versions under one parent Channel — the worst-case shape for a single list query). **No Prow CI numbers exist yet** for these operations: the perf specs are new (added by HYPERFLEET-1305) and haven't run in `tier1-nightly` yet — they'll be picked up automatically (no CI config changes needed, same Ginkgo `perf` label) on the first nightly run after this branch merges to `main`. Revisit this table once that run lands.
 
 | Operation                                   | GKE dev |
@@ -101,4 +103,10 @@ Prow baselines are captured automatically by the `tier1-nightly` job. To trigger
 
 ### GKE dev
 
-See the [perf README](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/perf/README.md) in the `hyperfleet-e2e` repo for prerequisites, infrastructure setup, seeding, and test execution instructions. `perf/seed-clusters.sh` seeds Cluster rows; `perf/seed-resources.sh <channels|wifconfigs|versions>` seeds the generic-resource kinds.
+See the [perf README](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/perf/README.md) in the `hyperfleet-e2e` repo for prerequisites, infrastructure setup, seeding, and test execution instructions. `perf/seed-clusters.sh` seeds Cluster rows; `perf/seed-resources.sh` seeds the generic-resource kinds, one kind per run:
+
+```bash
+perf/seed-resources.sh channels
+perf/seed-resources.sh wifconfigs
+perf/seed-resources.sh versions
+```
