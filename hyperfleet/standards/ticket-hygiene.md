@@ -111,7 +111,7 @@ Each ticket MUST have at least one component assigned. Use the component that be
 | Claude Plugins | Claude Code plugins, skills, and AI-assisted tooling | [hyperfleet-claude-plugins](https://github.com/openshift-hyperfleet/hyperfleet-claude-plugins) |
 | Documentation | Developer guides, authoring guides, reference docs, pattern docs | Multiple repos |
 | E2E Tests | End-to-end test suites and test infrastructure | [hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e) |
-| Infra | Operator, applier, Helm umbrella charts, deployment scripts | [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) |
+| Infra | Operator, Helm umbrella charts, deployment scripts | [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) |
 | Message Broker | Shared broker library (Pub/Sub, RabbitMQ, CloudEvents) | [hyperfleet-broker](https://github.com/openshift-hyperfleet/hyperfleet-broker) |
 | OCI | OCI artifact distribution, Helm chart publishing | Multiple repos |
 | Sentinel | Sentinel reconciliation service, decision engine | [hyperfleet-sentinel](https://github.com/openshift-hyperfleet/hyperfleet-sentinel) |
