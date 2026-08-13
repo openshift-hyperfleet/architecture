@@ -1,7 +1,7 @@
 ---
 Status: Approved
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-05-08
+Last Updated: 2026-08-11
 ---
 
 # Automated PR review strategy
@@ -22,6 +22,7 @@ Last Updated: 2026-05-08
 - [Recommendation](#recommendation)
 - [Trade-offs](#trade-offs)
 - [Alternatives considered](#alternatives-considered)
+- [Evaluation results](#evaluation-results)
 
 ---
 
@@ -241,7 +242,7 @@ The risk label enables workflow differentiation: low-risk PRs can follow a fast 
 
 > **Implementation:** Tracked in [HYPERFLEET-991](https://redhat.atlassian.net/browse/HYPERFLEET-991). Recommended to run in "observe mode" for 2-3 sprints first — compute and label without gating — to calibrate thresholds against real data before enforcing merge policies.
 >
-> **Measurement:** Use the existing [PR Cycle Time dashboard](https://metrics.dprod.io/dashboard.html?team=openshift-hyperfleet&dashboard=prcycletime) to track impact. Baseline (April 2026): median cycle time 14.3h, first review 6.5h, first approval 24.3h. After the observe period, compare these metrics to validate whether risk labels correlate with review speed and cycle time improvement.
+> **Measurement:** Use the existing [PR Cycle Time dashboard](https://metrics.dprod.io/dashboard.html?team=openshift-hyperfleet&dashboard=prcycletime) to track impact. Reference point (April 2026, CodeRabbit on the default configuration — CodeRabbit has been active org-wide since 2025-11-26, so there is no pre-CodeRabbit baseline): median cycle time 14.3h, first review 6.5h. After the observe period, compare these metrics to validate whether risk labels correlate with review speed and cycle time improvement.
 
 ### Human reviewers remain accountable
 
@@ -286,16 +287,39 @@ Automated tools assist but do not replace human judgment. Human reviewers are ac
 
 **What**: Configure CodeRabbit extensively (see [configuration steps](#three-complementary-layers)) and stop investing in the custom skill.
 
-**Consideration**: This may be the right answer, but we lack data. Configuring CodeRabbit first and measuring its effectiveness with HyperFleet standards and architecture docs would allow an informed decision. Retiring the skill prematurely could leave gaps we only discover in practice.
+**Consideration**: The [3-sprint effectiveness evaluation](coderabbit-effectiveness-report.md) showed that CodeRabbit handles surface-level review well (66.5% finding acceptance rate) but cannot replace human review for architecture decisions, cross-component impact, or project-specific conventions. The review skill remains valuable for JIRA validation and interactive depth that CodeRabbit cannot provide.
 
 ### Run both tools at full scope, evaluate later
 
 **What**: Keep both tools running with full scope, evaluate after 2-3 sprints, then decide whether to keep, narrow, or retire the review skill based on data.
 
-**Consideration**: The review skill already deduplicates against CodeRabbit comments, so reviewers would not see duplicate findings. Since `/review-pr` is human-invoked, the developer controls when to run it, which findings to act on, and whether to post a comment or not — the power stays with the human. In practice, complementary roles emerge naturally: the skill's deduplication skips what CodeRabbit already found, so the overlap resolves itself at runtime without needing to remove checks from the skill. This also preserves the skill's full value for `/review-local`, which runs before push when no CodeRabbit comments exist yet. The risk is that the evaluation period delays action and the team continues maintaining both tools in the interim.
+**Outcome**: This is the approach we adopted. The [3-sprint evaluation](coderabbit-effectiveness-report.md) confirmed that the complementary model works well in practice. CodeRabbit handles surface-level review (1,010 findings, 66.5% acceptance rate), while the review skill and human reviewers cover architecture, JIRA validation, and project-specific conventions that CodeRabbit misses. The skill's deduplication skips what CodeRabbit already found, so the overlap resolves itself at runtime. This also preserves the skill's full value for `/review-local`, which runs before push when no CodeRabbit comments exist yet.
 
 ### Automate the review skill in CI (original ticket scope)
 
 **What**: Build a Prow job to run the review skill automatically on every PR, as described in HYPERFLEET-781.
 
 **Consideration**: The original scope assumed the review skill provided unique value that justified CI automation. This analysis shows that most of that value can be achieved by properly configuring CodeRabbit — which requires no infrastructure investment. Additionally, automating the skill in CI would strip its interactive workflow (fix/comment/skip), which is where most of its value lies.
+
+## Evaluation results
+
+The 3-sprint observation period (2026-05-08 to 2026-07-10) is complete. The full analysis
+is in the [CodeRabbit Effectiveness Report](coderabbit-effectiveness-report.md).
+
+### Key findings
+
+- **Coverage**: CodeRabbit reviewed 213 of 347 human-authored PRs (61.4%) across the repositories where it is active
+- **Findings**: 1,010 findings posted with a 66.5% acceptance rate (672 findings addressed in code), per CodeRabbit's own dashboard export
+- **Engagement**: the team actively interacts with CodeRabbit findings, replying to explain design decisions rather than dismissing outright
+- **Cycle time**: Median PR cycle time stable at ~20h (vs 18.8h with the default configuration in April — CodeRabbit has been active org-wide since 2025-11-26, so this is a default-config vs custom-config comparison, not with-vs-without CodeRabbit; independently confirmed at 20.48h by the [team DevLake dashboard](https://devtools.pages.redhat.com/n8n-pulumi-poc/#/?org=hybridplatforms&product=hypershiftakahostedcontrolplanes&team=openshift-hyperfleet&range=days60)); time to first human review improved from 3.1h to 1.3h
+
+### Decision
+
+**Keep CodeRabbit as the automated first-pass reviewer. Keep the `/review-pr` skill for
+interactive depth. Reinforce that human review remains indispensable.**
+
+CodeRabbit handles the heavy lifting of surface-level review — security patterns, consistency,
+style, and contract validation. However, it cannot replace human judgment for architecture
+decisions, cross-component impact, business logic correctness, knowledge sharing, and mentorship.
+
+Re-evaluation is only necessary if the CodeRabbit configuration changes at the org or Red Hat level.
