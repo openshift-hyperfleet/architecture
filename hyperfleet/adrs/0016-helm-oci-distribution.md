@@ -18,7 +18,7 @@ Publish all HyperFleet Helm charts as OCI artifacts to Quay.io via the Konflux r
 
 Key design choices:
 
-- **Konflux native tooling** — `build-helm-chart-oci-ta` for chart packaging. Managed release pipeline for external registries pending from Konflux team (reference RELEASE-2363). No custom Tekton tasks or GitHub Actions.
+- **Konflux native tooling** — `build-helm-chart-oci-ta` for chart packaging. `push-to-external-registry` release pipeline with SA `release-sa-hyperfleet` for chart distribution. No custom Tekton tasks or GitHub Actions.
 - **Separate Konflux Components** for chart builds — each component repo registers a `-chart` Component alongside its container image Component. Independent build triggers and Snapshots.
 - **Chart-specific EC policy** derived from `registry-standard` with container-specific rules excluded (no base image checks, CVE scanning, SBOM, or label requirements). Provenance verification retained.
 - **Standard image references** — chart `values.yaml` defaults point to Konflux-built images, overridable via `image.repository` and `image.tag` for local dev and E2E testing.

@@ -23,7 +23,7 @@ HyperFleet publishes Helm charts as OCI artifacts to Quay.io via the Konflux rel
 
 - Konflux native `build-helm-chart-oci-ta` task for chart packaging — no custom Tekton tasks or GitHub Actions
 - Separate Konflux Components for chart builds (independent from container image Components)
-- Managed release pipeline for chart OCI artifacts with chart-specific EC policy (external-registry variant to be requested from Konflux team)
+- `push-to-external-registry` release pipeline with chart-specific EC policy (`registry-hyperfleet-chart-prod`) and SA `release-sa-hyperfleet`
 - Charts published to `quay.io/redhat-services-prod/hyperfleet-tenant/` (flat namespace, `-chart` suffix)
 - Chart image defaults point to Konflux-built images, overridable via `image.repository` and `image.tag` values
 - `hyperfleet-infra` umbrella chart dependencies migrate from `helm-git` to `oci://` references
@@ -72,7 +72,7 @@ flowchart TB
         chains["Tekton Chains<br/>sign provenance"]
         snapshot["Snapshot<br/>chart OCI artifact"]
         ec["Enterprise Contract<br/>chart policy"]
-        release["Release Pipeline<br/>(external-registry variant pending)"]
+        release["Release Pipeline<br/>push-to-external-registry"]
     end
 
     subgraph quay["Quay.io"]
@@ -161,13 +161,13 @@ The [`build-helm-chart-oci-ta`](https://github.com/konflux-ci/build-definitions/
 
 ### Release Pipeline
 
-> **Dependency:** No managed pipeline currently exists for pushing Helm charts to external registries (quay.io). The existing `rh-push-helm-chart-to-registry-redhat-io` targets `registry.redhat.io` only (product releases). A request needs to be filed with the Konflux release-service team for an external-registry variant (reference RELEASE-2363). This design assumes that pipeline will be available.
+The chart release pipeline is `push-to-external-registry`, configured in the `hyperfleet-charts.yaml` RPA. It uses service account `release-sa-hyperfleet` (distinct from the container image RPA's `release-app-interface-prod`).
 
-The expected pipeline would follow the same pattern as `rh-push-helm-chart-to-registry-redhat-io`:
+The pipeline:
 
-1. Validate helm chart snapshot (`validate-helm-chart-snapshot`)
-2. Enterprise Contract verification (chart-specific policy)
-3. Push to target registry (quay.io)
+1. Validates the Helm chart Snapshot
+2. Runs Enterprise Contract verification against `registry-hyperfleet-chart-prod`
+3. Pushes the chart to the target Quay registry
 
 ### Enterprise Contract Policy
 
@@ -182,7 +182,7 @@ EC works for chart OCI artifacts with container-specific rules excluded:
 | Required labels | No | Container label requirements |
 | SBOM | No | No SBOM generation for charts |
 
-Policy is derived from `registry-standard` with these exclusions. RHOAI uses this pattern in production (`registry-rhoai-chart-prod` policy).
+Policy name: `registry-hyperfleet-chart-prod`. Derived from `registry-standard` with these exclusions. RHOAI uses this pattern in production (`registry-rhoai-chart-prod` policy).
 
 ---
 
@@ -206,6 +206,8 @@ This works because:
 - The `build-helm-chart-oci-ta` task derives the version from the git tag automatically
 - Chart templates rarely change independently of the application code
 - Independent versioning would add pipeline complexity (separate triggers, version matrix) with no practical benefit for our team size and chart complexity
+
+For the full versioning strategy — including dev vs. release derivation, OCI tag conversion, and consumer pinning — see [Chart Versioning Strategy](./chart-versioning.md).
 
 ---
 

@@ -235,11 +235,11 @@ CEL expressions with RE2 regex anchoring solve this. Verified against PaC source
 
 ### Pipeline Files Per Component Repo
 
-Each component repo gets **two** `.tekton/` pipeline files:
+Each component repo gets **four** `.tekton/` pipeline files — two for container images, two for Helm charts:
 
 **1. Push pipeline** — `hyperfleet-<component>-push.yaml`
 
-Triggers on every merge to main. Builds with `VERSION=dev` (the Dockerfile default).
+Triggers on every merge to main. Builds container image with `VERSION=dev` (the Dockerfile default).
 
 ```yaml
 metadata:
@@ -263,6 +263,16 @@ metadata:
 This single CEL expression matches both `v1.0.0-rc1` and `v1.0.0`. Both contexts use the same build steps — the only difference is the version string injected.
 
 RC and release tags produce identical pipelines. A separate release-tag pipeline can be split out later if behaviour diverges.
+
+**3. Chart push pipeline** — `hyperfleet-<component>-chart-push.yaml`
+
+Triggers on every merge to main (chart path). Builds the Helm chart OCI artifact via `build-helm-chart-oci-ta` without explicit version params (native fallback versioning).
+
+**4. Chart tag pipeline** — `hyperfleet-<component>-chart-tag.yaml`
+
+Triggers on semver tag pushes (same CEL expression as the image tag pipeline). Passes explicit `CHART_VERSION` and `APP_VERSION` from the git tag via an `extract-version` task.
+
+For chart versioning details, see [Chart Versioning Strategy](./chart-versioning.md). For chart distribution design, see [Helm OCI Distribution Design](./helm-oci-distribution-design.md).
 
 ### Version Injection Chain
 
@@ -305,15 +315,19 @@ LABEL version="${VERSION}"
 
 ### Application and Components
 
-One Application (`hyperfleet`) with three Components:
+One Application (`hyperfleet`) with six Components — three for container images, three for Helm charts:
 
 | Component | Git Repo | Target Registry |
 |-----------|----------|-----------------|
 | `hyperfleet-api` | `github.com/openshift-hyperfleet/hyperfleet-api` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-api` |
 | `hyperfleet-sentinel` | `github.com/openshift-hyperfleet/hyperfleet-sentinel` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-sentinel` |
 | `hyperfleet-adapter` | `github.com/openshift-hyperfleet/hyperfleet-adapter` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-adapter` |
+| `hyperfleet-api-chart` | `github.com/openshift-hyperfleet/hyperfleet-api` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-api-chart` |
+| `hyperfleet-sentinel-chart` | `github.com/openshift-hyperfleet/hyperfleet-sentinel` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-sentinel-chart` |
+| `hyperfleet-adapter-chart` | `github.com/openshift-hyperfleet/hyperfleet-adapter` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-adapter-chart` |
 
-When any Component builds, the resulting Snapshot contains images for ALL Components (the new build plus the last known images for the other two).
+When any Component builds, the resulting Snapshot contains images for ALL Components in the same Application (the new build plus the last known images/charts for the others). Container and chart Components belong to separate Applications (`hyperfleet` for images, `hyperfleet-charts` for charts), so their Snapshots are independent.
+
 
 ### ReleasePlanAdmission Design
 
@@ -324,9 +338,8 @@ The RPA configuration lives in `konflux-release-data` as the source of truth. Re
 
 **Design rationale:**
 
-- **Single RPA** listing all three components. One RPA, one tag template, three distinct outcomes driven by `{{ labels.version }}`.
+- **Single RPA per artifact type** — one for images (`hyperfleet.yaml` using `rh-push-to-external-registry`, SA `release-app-interface-prod`), one for charts (`hyperfleet-charts.yaml` using `push-to-external-registry`, SA `release-sa-hyperfleet`). Each lists all three components of its type.
 - **Auto-release** (`block-releases: false`). `block-releases` is per-RPA, not per-Snapshot — every Snapshot from the Application matches every RPA. A gated RPA would block every nightly and RC build, creating hundreds of blocked releases never intended to be unblocked. The tag push IS the gate.
-- **Release pipeline:** `rh-push-to-external-registry`. Pushes to Quay, registers in Pyxis (vulnerability scanning), and sends Slack notifications. Every non-Konflux service team on kflux-prd-rh02 uses this pipeline.
 - **Tag templates** using `{{ labels.version }}`, `{{ labels.version }}-{{ timestamp }}`, `{{ git_sha }}`, and `latest`.
 
 ### Image Tags Per Build Context
@@ -468,7 +481,7 @@ The Release Owner updates the manifest manually before tagging `hyperfleet-relea
 | Item | Description |
 |------|-------------|
 | ITS Prow wrapper | IntegrationTestScenario that queries Prow API to verify E2E passed for the commit SHA before release. Adds automated safety net without `block-releases` noise. |
-| Custom EC policy | `app-interface-hyperfleet-prod` re-enabling CVE scanning. Needs data from initial builds. |
+| Custom EC policy | `app-interface-hyperfleet-prod` re-enabling CVE scanning for images. Chart-specific policy `registry-hyperfleet-chart-prod` is already in place. |
 | Multi-arch builds | Switch to `docker-build-multi-platform-oci-ta` if arm64 deployment target materializes. One-line change per pipeline. |
 
 ---
