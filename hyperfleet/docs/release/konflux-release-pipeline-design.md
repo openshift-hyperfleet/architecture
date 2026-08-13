@@ -239,7 +239,7 @@ Each component repo gets **four** `.tekton/` pipeline files — two for containe
 
 **1. Push pipeline** — `hyperfleet-<component>-push.yaml`
 
-Triggers on every merge to main. Builds container image with `VERSION=dev` (the Dockerfile default).
+Triggers on every merge to main. Builds container image with `APP_VERSION=dev` (the Dockerfile default).
 
 ```yaml
 metadata:
@@ -280,19 +280,19 @@ For chart versioning details, see [Chart Versioning Strategy](./chart-versioning
 git tag v1.5.0-rc1
   → PaC extracts {{ target_branch }} = "refs/tags/v1.5.0-rc1"
     → Pipeline task strips prefix and v: TAG_NAME="1.5.0-rc1"
-      → Build arg: --build-arg VERSION=1.5.0-rc1
-        → Dockerfile: ARG VERSION=dev → LABEL version="${VERSION}"
+      → Build arg: --build-arg APP_VERSION=1.5.0-rc1
+        → Dockerfile: ARG APP_VERSION="0.0.0-dev" → LABEL version="${APP_VERSION}"
           → RPA tag template: {{ labels.version }} = "1.5.0-rc1"
             → Quay tag: hyperfleet-api:1.5.0-rc1
 ```
 
-Main merges use the Dockerfile default (`VERSION=dev`), producing `hyperfleet-api:dev`.
+Main merges use the Dockerfile default (`APP_VERSION=0.0.0-dev`), producing `hyperfleet-api:dev` via the push pipeline's explicit `APP_VERSION=dev` build arg.
 
 > **Note:** Git tags use the `v` prefix (e.g., `v1.5.0`). The pipeline strips the `v` before injecting into the build, so Quay image tags do **not** have the prefix (e.g., `hyperfleet-api:1.5.0`). This is intentional.
 
 ### Build Pipeline Type
 
-`docker-build-oci-ta` (trusted artifacts). Uses OCI artifacts for data sharing between tasks (not PVCs), so the Enterprise Contract `trusted_task.trusted` policy passes even with pipeline customisations like version extraction tasks. Supports `build-args` for VERSION injection.
+`docker-build-oci-ta` (trusted artifacts). Uses OCI artifacts for data sharing between tasks (not PVCs), so the Enterprise Contract `trusted_task.trusted` policy passes even with pipeline customisations like version extraction tasks. Supports `build-args` for `APP_VERSION` injection.
 
 > **Note:** The build pipeline type can be changed after the fact. If multi-arch support (e.g., amd64 + arm64) is needed later, switching to `docker-build-multi-platform-oci-ta` is a one-line change per pipeline file.
 
@@ -301,9 +301,9 @@ Main merges use the Dockerfile default (`VERSION=dev`), producing `hyperfleet-ap
 Existing Dockerfiles work with one addition:
 
 ```dockerfile
-ARG VERSION=dev
+ARG APP_VERSION="0.0.0-dev"
 # ... build stages ...
-LABEL version="${VERSION}"
+LABEL version="${APP_VERSION}"
 ```
 
 - Base images: UBI images are public, accessible from Konflux
@@ -313,21 +313,27 @@ LABEL version="${VERSION}"
 
 ## 6. Multi-Component Configuration
 
-### Application and Components
+### Applications and Components
 
-One Application (`hyperfleet`) with six Components — three for container images, three for Helm charts:
+Two Applications, each with three Components:
+
+**Application `hyperfleet`** — container images:
 
 | Component | Git Repo | Target Registry |
 |-----------|----------|-----------------|
 | `hyperfleet-api` | `github.com/openshift-hyperfleet/hyperfleet-api` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-api` |
 | `hyperfleet-sentinel` | `github.com/openshift-hyperfleet/hyperfleet-sentinel` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-sentinel` |
 | `hyperfleet-adapter` | `github.com/openshift-hyperfleet/hyperfleet-adapter` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-adapter` |
+
+**Application `hyperfleet-charts`** — Helm chart OCI artifacts:
+
+| Component | Git Repo | Target Registry |
+|-----------|----------|-----------------|
 | `hyperfleet-api-chart` | `github.com/openshift-hyperfleet/hyperfleet-api` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-api-chart` |
 | `hyperfleet-sentinel-chart` | `github.com/openshift-hyperfleet/hyperfleet-sentinel` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-sentinel-chart` |
 | `hyperfleet-adapter-chart` | `github.com/openshift-hyperfleet/hyperfleet-adapter` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-adapter-chart` |
 
-When any Component builds, the resulting Snapshot contains images for ALL Components in the same Application (the new build plus the last known images/charts for the others). Container and chart Components belong to separate Applications (`hyperfleet` for images, `hyperfleet-charts` for charts), so their Snapshots are independent.
-
+When any Component builds, the resulting Snapshot contains artifacts for ALL Components in the same Application (the new build plus the last known artifacts for the others). The two Applications are independent — image Snapshots never include chart artifacts and vice versa.
 
 ### ReleasePlanAdmission Design
 

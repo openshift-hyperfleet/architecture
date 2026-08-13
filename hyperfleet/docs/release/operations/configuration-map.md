@@ -49,7 +49,7 @@ URL: <https://gitlab.cee.redhat.com/releng/konflux-release-data>. This is the Gi
 | `config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/hyperfleet-charts.yaml` | RPA for Helm chart OCI releases. Uses `push-to-external-registry`; targets all three component charts (`hyperfleet-api-chart`, `hyperfleet-sentinel-chart`, `hyperfleet-adapter-chart`). |
 | `constraints/service/hyperfleet.yaml` | JSON-schema constraint that validates our RPAs (origin, policy, registry URL prefix, pipeline source, service account). |
 | `config/kflux-prd-rh02.0fk9.p1/service/EnterpriseContractPolicy/registry-hyperfleet-chart-prod.yaml` | EC policy for chart releases. Derived from `app-interface-standard`; excludes container-only checks. |
-| `tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/` | Tenant namespace, RBAC, Application (`hyperfleet`), three Components, ReleasePlan. Source files only — never edit `auto-generated/`. |
+| `tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/` | Tenant namespace, RBAC, two Applications (`hyperfleet` for images, `hyperfleet-charts` for charts), six Components, ReleasePlan. Source files only — never edit `auto-generated/`. |
 | `CODEOWNERS` | Approval routing. HyperFleet paths require team approval. |
 
 The container RPA uses policy `app-interface-standard` with SA `release-app-interface-prod`; the chart RPA uses policy `registry-hyperfleet-chart-prod` with SA `release-sa-hyperfleet`. Both auto-release (`block-releases: false`).

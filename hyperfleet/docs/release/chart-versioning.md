@@ -33,7 +33,7 @@ Both modes use the same `build-helm-chart-oci-ta` Tekton task; the only differen
 
 The `chart-push.yaml` pipeline does **not** pass `CHART_VERSION` or `APP_VERSION` to the build task. The task falls back to its native versioning logic, which looks for `helm-X.Y` git tags. Since HyperFleet repos have no `helm-*` tags, the task applies its final fallback:
 
-```
+```text
 0.1.<commit-distance>+<short-sha>
 ```
 
@@ -45,7 +45,7 @@ The `+` (semver build metadata separator) is converted to `_` in the OCI tag (se
 
 The `chart-tag.yaml` pipeline fires on semver tag pushes (`vX.Y.Z`, `vX.Y.Z-rcN`). An `extract-version` task strips the `refs/tags/v` prefix and passes the result as both `CHART_VERSION` and `APP_VERSION` to `build-helm-chart-oci-ta`:
 
-```
+```text
 refs/tags/v1.0.0  →  CHART_VERSION=1.0.0, APP_VERSION=1.0.0
 ```
 
@@ -59,7 +59,7 @@ The chart publishes as `hyperfleet-api-chart:1.0.0` with `appVersion: "1.0.0"` i
 
 Chart version, app version, and git tag are coupled — one value, one tag:
 
-```
+```text
 git tag v1.0.0
   → chart version: 1.0.0
   → appVersion:    1.0.0
@@ -140,12 +140,11 @@ helm pull oci://quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet-api-ch
 
 ### Dev Tracking
 
-For development builds, use the `latest` tag or pin to a specific dev version:
+For development builds, omit `--version` to pull the latest available version, or pin to a specific dev version:
 
 ```bash
-# Latest dev build
-helm pull oci://quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet-api-chart \
-  --version latest
+# Latest dev build (omit --version; Helm resolves the highest semver)
+helm pull oci://quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet-api-chart
 
 # Specific dev build (use the + form, not _)
 helm pull oci://quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet-api-chart \
