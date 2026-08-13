@@ -18,6 +18,7 @@ Last Updated: 2026-08-12
   - [New primitives](#new-primitives)
 - [Edge cases](#edge-cases)
 - [Eventual consistency](#eventual-consistency)
+- [Desired-state convergence](#desired-state-convergence)
 - [Decision](#decision)
 
 ---
@@ -158,6 +159,16 @@ Applies regardless of which ordering model is chosen.
 Applies regardless of which ordering model is chosen.
 
 Ordering guarantees sequential apply/delete **attempts** only. With Maestro, a successful write means the transport accepted the work, not that the remote cluster has converged. Dependents may need another reconciliation before `when` passes. New primitives do not change this.
+
+---
+
+## Desired-state convergence
+
+This is the pattern the blessed model relies on:
+
+1. **Adapter declares desired state, not a sequence.** Each reconciliation, the adapter's `resources` list expresses what should exist (or be gone) this pass; there is no ordering commitment across the set.
+2. **Executor attempts every resource once per pass.** A resource whose `lifecycle.*.when` dependency isn't met yet is skipped or deferred, not retried in a loop; it does not block sibling resources.
+3. **Convergence happens across reconciliations.** Each new event re-evaluates every `when` from scratch (see [Edge cases](#edge-cases)); a resource deferred this pass resolves once its dependency's state changes on a later pass.
 
 ---
 
