@@ -46,13 +46,13 @@ URL: <https://gitlab.cee.redhat.com/releng/konflux-release-data>. This is the Gi
 | File | Purpose |
 |------|---------|
 | `config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/hyperfleet.yaml` | RPA for the three component images. Maps Snapshots to Quay paths, applies tags, references the Slack webhook secret. |
-| `config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/hyperfleet-charts.yaml` | RPA for Helm chart OCI releases. Uses `push-to-external-registry`; targets `…/hyperfleet-api-chart`. |
+| `config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/hyperfleet-charts.yaml` | RPA for Helm chart OCI releases. Uses `push-to-external-registry`; targets all three component charts (`hyperfleet-api-chart`, `hyperfleet-sentinel-chart`, `hyperfleet-adapter-chart`). |
 | `constraints/service/hyperfleet.yaml` | JSON-schema constraint that validates our RPAs (origin, policy, registry URL prefix, pipeline source, service account). |
 | `config/kflux-prd-rh02.0fk9.p1/service/EnterpriseContractPolicy/registry-hyperfleet-chart-prod.yaml` | EC policy for chart releases. Derived from `app-interface-standard`; excludes container-only checks. |
-| `tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/` | Tenant namespace, RBAC, Application (`hyperfleet`), three Components, ReleasePlan. Source files only — never edit `auto-generated/`. |
+| `tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/` | Tenant namespace, RBAC, two Applications (`hyperfleet` for images, `hyperfleet-charts` for charts), six Components, ReleasePlan. Source files only — never edit `auto-generated/`. |
 | `CODEOWNERS` | Approval routing. HyperFleet paths require team approval. |
 
-The container RPA uses policy `app-interface-standard`; the chart RPA uses `registry-hyperfleet-chart-prod`. Both auto-release (`block-releases: false`). Service account for releases is `release-app-interface-prod`.
+The container RPA uses policy `app-interface-standard` with SA `release-app-interface-prod`; the chart RPA uses policy `registry-hyperfleet-chart-prod` with SA `release-sa-hyperfleet`. Both auto-release (`block-releases: false`).
 
 ---
 
@@ -65,6 +65,7 @@ Each repo has the same shape. Replace `<svc>` with `api`, `sentinel`, or `adapte
 | `.tekton/hyperfleet-<svc>-push.yaml` | Merge to `main` | Builds with `APP_VERSION=0.0.0-dev` default. Powers nightly. |
 | `.tekton/hyperfleet-<svc>-tag.yaml` | Push of a semver tag (`vX.Y.Z` or `vX.Y.Z-rcN`) | CEL match in PaC annotation — see [Pipeline Anatomy](./pipeline-anatomy.md#what-triggers-what) for the exact pattern. `extract-version` task strips `refs/tags/v` → injects `APP_VERSION`. |
 | `.tekton/hyperfleet-<svc>-chart-push.yaml` | Merge to `main` (chart path) | Builds and releases the component's Helm chart alongside the image, via the chart RPA. |
+| `.tekton/hyperfleet-<svc>-chart-tag.yaml` | Push of a semver tag (`vX.Y.Z` or `vX.Y.Z-rcN`) | Builds the component's Helm chart with explicit `CHART_VERSION` and `APP_VERSION` from the git tag. See [Chart Versioning Strategy](../chart-versioning.md). |
 | `Dockerfile` | — | Contract: `ARG APP_VERSION="0.0.0-dev"` and `LABEL version="${APP_VERSION}"`. The label is what the RPA's `{{ labels.version }}` template reads. |
 
 If you change the CEL regex or the Dockerfile `APP_VERSION` contract, you change the release flow. See [Pipeline Anatomy](./pipeline-anatomy.md) for the version chain.

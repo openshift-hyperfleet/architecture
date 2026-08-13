@@ -18,11 +18,11 @@ Publish all HyperFleet Helm charts as OCI artifacts to Quay.io via the Konflux r
 
 Key design choices:
 
-- **Konflux native tooling** — `build-helm-chart-oci-ta` for chart packaging. Managed release pipeline for external registries pending from Konflux team (reference RELEASE-2363). No custom Tekton tasks or GitHub Actions.
+- **Konflux native tooling** — `build-helm-chart-oci-ta` for chart packaging. `push-to-external-registry` release pipeline with SA `release-sa-hyperfleet` for chart distribution. No custom Tekton tasks or GitHub Actions.
 - **Separate Konflux Components** for chart builds — each component repo registers a `-chart` Component alongside its container image Component. Independent build triggers and Snapshots.
 - **Chart-specific EC policy** derived from `registry-standard` with container-specific rules excluded (no base image checks, CVE scanning, SBOM, or label requirements). Provenance verification retained.
 - **Standard image references** — chart `values.yaml` defaults point to Konflux-built images, overridable via `image.repository` and `image.tag` for local dev and E2E testing.
-- **Coupled versioning** — chart version and appVersion always match the git tag. Chart and app live in the same repo, get the same tag, and `build-helm-chart-oci-ta` derives the version automatically.
+- **Coupled versioning** — for tagged releases, chart version and appVersion match the git tag via explicit `CHART_VERSION` and `APP_VERSION` pipeline params. For development builds, the task uses native fallback versioning (`0.1.<distance>+<sha>`). See [Chart Versioning Strategy](../docs/release/chart-versioning.md).
 - **`hyperfleet-infra` umbrella chart dependencies** migrate from `helm-git` to `oci://` references for versioned, content-addressable chart resolution.
 
 See [Helm OCI Distribution Design](../docs/release/helm-oci-distribution-design.md) for the full design document.
