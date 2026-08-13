@@ -166,7 +166,7 @@ Ordering guarantees sequential apply/delete **attempts** only. With Maestro, a s
 
 This is the pattern the blessed model relies on:
 
-1. **Adapter declares desired state, not a sequence.** Each reconciliation, the adapter's `resources` list expresses what should exist (or be gone) this pass; there is no ordering commitment across the set.
+1. **Adapter declares desired state for the full resource set.** Declaration order and `lifecycle.*.when` are observable controls within a pass, not a transactional apply sequence.
 2. **Executor attempts every resource once per pass.** A resource whose `lifecycle.*.when` dependency isn't met yet is skipped or deferred, not retried in a loop; it does not block sibling resources.
 3. **Convergence happens across reconciliations.** Each new event re-evaluates every `when` from scratch (see [Edge cases](#edge-cases)); a resource deferred this pass resolves once its dependency's state changes on a later pass.
 
