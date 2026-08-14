@@ -62,7 +62,7 @@ Key terms used across the release docs. Written for someone encountering these s
 | **kflux-prd-rh02** | Konflux production cluster hosted by Red Hat. Runs the PaC controller, Tekton Chains, and release pipelines for HyperFleet. |
 | **Quay** | Red Hat's container registry. HyperFleet images are published to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/`. |
 | **OCI** (Open Container Initiative) | Standard for container and artifact distribution. Helm charts are published as OCI artifacts to the same registries as container images. |
-| **helm-git** | Helm plugin that pulls charts from Git repos. Legacy distribution method being replaced by OCI. Requires plugin installation on every consumer. |
+| **helm-git** | Deprecated Helm plugin for pulling charts from Git repos. Replaced by OCI distribution (HYPERFLEET-831). No longer required for HyperFleet chart consumption. Still used by the dev-only Maestro umbrella chart in hyperfleet-infra until Maestro is decommissioned. |
 | **Pyxis** | Red Hat's container metadata catalog. Images registered here are automatically scanned for CVEs. |
 | **ArgoCD** | GitOps-based deployment tool. Partner teams use ArgoCD to consume HyperFleet images from Quay. |
 | **konflux-release-data** | GitLab repo containing RPA, constraint, and tenant configuration for Konflux releases. Source of truth for release pipeline config. |

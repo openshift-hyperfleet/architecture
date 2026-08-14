@@ -17,7 +17,7 @@ Last Updated: 2026-05-11
 
 ## 1. Overview
 
-HyperFleet publishes Helm charts as OCI artifacts to Quay.io via the Konflux release pipeline, replacing the current `helm-git` plugin-based distribution. Charts are built, signed, and released through the same Konflux infrastructure used for container images.
+HyperFleet publishes Helm charts as OCI artifacts to Quay.io via the Konflux release pipeline. This has replaced the former `helm-git` plugin-based distribution. Charts are built, signed, and released through the same Konflux infrastructure used for container images.
 
 **Key decisions:**
 
@@ -32,17 +32,17 @@ HyperFleet publishes Helm charts as OCI artifacts to Quay.io via the Konflux rel
 
 ## 2. Background
 
-### Current State (helm-git)
+### Previous State (helm-git)
 
-HyperFleet Helm charts are consumed via the `helm-git` plugin, pulling directly from Git repositories:
+Prior to HYPERFLEET-831, HyperFleet Helm charts were consumed via the `helm-git` plugin, pulling directly from Git repositories:
 
 ```text
 git+https://github.com/openshift-hyperfleet/hyperfleet-api@charts?ref=main
 ```
 
-This requires every consumer to install the `helm-git` plugin. Git references are mutable, there is no content-addressable storage, no signing, and no provenance.
+This required every consumer to install the `helm-git` plugin. Git references were mutable, with no content-addressable storage, no signing, and no provenance.
 
-### Target State (OCI on Quay.io)
+### Current State (OCI on Quay.io)
 
 ```text
 oci://quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet-api-chart:1.5.0
