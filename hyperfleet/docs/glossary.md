@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-08-12
+Last Updated: 2026-08-17
 ---
 
 # HyperFleet Glossary
@@ -33,6 +33,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Dead Letter Queue (DLQ)** | A message broker queue that receives messages that could not be processed after the maximum number of retries. HyperFleet uses DLQs (where supported by the broker) to surface persistently failing events for manual inspection and alerting. | Broker |
 | **Decision Logic** | The CEL-based configuration in a Sentinel instance that determines when to publish a reconciliation event. Composed of named `params` (intermediate boolean expressions) and a `result` (boolean CEL expression combining the params). Defined in the Sentinel's `broker.yaml` / ConfigMap under `message_decision`. | Sentinel |
 | **Desire** | A declaration of intent targeting a single Kubernetes resource on a management cluster, written by an adapter to the desire store and reconciled by the Applier. Three types: **ApplyDesire** (create/update the resource via server-side apply), **DeleteDesire** (delete it), and **ReadDesire** (mirror its live state back to the control plane). Identity: `(managementCluster, type, group, resource, namespace, name)`. See: [Desire Identity Spike](spike-desire-identity-ownership.md) | Adapter Framework, Applier |
+| **Desire Store** | A rebuildable delivery channel (replacing Maestro/ManifestWork for remote clusters) that transports desires (ApplyDesire, DeleteDesire, ReadDesire) from an Adapter to an Applier. Not a source of truth — if lost, the Adapter recomputes and rewrites desires from API state. See: [Desire Identity Spike](spike-desire-identity-ownership.md), [SPIKE: Evaluate Running the Desire Store on the API Postgres](desire-store-api-postgres-spike.md) | Adapter Framework, API, Applier |
 | **Enrichment Table** | A database table storing tenant identity as key/value pairs per resource (e.g., `org=acme-corp`, `project=platform`). One value per key per resource. Server-owned and immutable after resource creation. See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
 | **Event** | See CloudEvent (below). | Broker, Sentinel, Adapter Framework |
 | **Envoy** | The API ingress proxy in HyperFleet. All API traffic, external and internal, passes through Envoy; no other route to the API is permitted. Strips client-supplied identity and tenant headers before forwarding to Authorino for authorization. See: [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) | API, Sentinel, Adapter Framework |

@@ -8,6 +8,8 @@ Last Updated: 2026-08-12
 
 **Jira**: [HYPERFLEET-1447](https://redhat.atlassian.net/browse/HYPERFLEET-1447)
 
+Related: [SPIKE: Evaluate Running the Desire Store on the API Postgres](desire-store-api-postgres-spike.md) covers the delivery channel between adapter and applier.
+
 ## Table of Contents
 
 - [Overview](#overview)
