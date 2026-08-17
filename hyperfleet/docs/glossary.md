@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-08-12
+Last Updated: 2026-08-17
 ---
 
 # HyperFleet Glossary
@@ -16,6 +16,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **AdapterCondition** | A status condition reported by adapters in PUT requests to the HyperFleet API. Three mandatory types (`Available`, `Applied`, `Health`) plus `Finalized` (optional, for deletion lifecycle). Distinct from `ResourceCondition`, which is computed by the API on the Cluster/NodePool resource. Defined in the [API spec](https://github.com/openshift-hyperfleet/hyperfleet-api-spec). See: [Status Guide](status-guide.md) | Adapter Framework, API |
 | **AdapterConfig** | A YAML configuration file used to configure a HyperFleet Adapter, delivered as a Kubernetes ConfigMap and loaded from a mounted file path (`HYPERFLEET_ADAPTER_CONFIG`). Specifies the adapter type, preconditions, broker subscription, HyperFleet API connection, and job template. Not a live Custom Resource - the adapter process reads it from disk; it is never registered with the Kubernetes API server. | Adapter Framework |
 | **Adapter Job** | A Kubernetes `Job` created by an Adapter to execute a specific provisioning task (e.g., creating DNS records, validating quotas, provisioning a control plane). Jobs run to completion in isolation from the Adapter service pod, enabling retry semantics, resource limits, and independent logging. | Adapter Framework |
+| **ApplyDesire (controller)** | The upcoming HyperFleet controller that applies desired-state resources to managed clusters using Kubernetes Server-Side Apply (SSA) with `Force: true`, under the field manager `hyperfleet-applier`. Implemented in the `hyperfleet-applier` repository — a separate component from the Adapter Framework; adapters produce desire payloads, the applier owns SSA and field-manager mechanics. See: [SSA Field Manager Naming](ssa-field-manager-naming.md) | Applier |
 | **ADR (Architecture Decision Record)** | A document that captures a significant architectural decision, its context, the decision made, and its consequences. In HyperFleet, ADRs are stored in this architecture repository. | All |
 | **Anemic Event** | The pattern used in HyperFleet where reconciliation events published by Sentinel contain only the minimum resource identifiers (kind, id, href, generation) — not the full resource spec. Adapters receiving an anemic event must fetch current resource state from the API before acting. This prevents stale data race conditions. | Sentinel, Broker, Adapter Framework |
 | **Applied (Condition)** | One of the three standard adapter status conditions. `Applied: True` means the adapter successfully created the Kubernetes resources needed to perform its work (e.g., a Job was launched). It does not mean the work is complete — that is indicated by `Available`. See also: Available, Health | Adapter Framework, Sentinel |
