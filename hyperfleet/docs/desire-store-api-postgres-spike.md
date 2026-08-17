@@ -66,7 +66,7 @@ Sharing the API's Postgres adds zero new stateful services per environment; the 
 
 ## Schema and role sketch
 
-Table, indexes, and role grants validated above, for reference when a future backend story implements the store.
+Table, indexes, and role grants validated above, for reference when a future backend story implements the store. Simplified keys for POC purposes; production identity fields are defined in the [Desire Identity Spike](spike-desire-identity-ownership.md).
 
 ```sql
 CREATE TABLE desire_store.desires (
@@ -97,3 +97,5 @@ GRANT DELETE ON desire_store.desires TO adapter_role;
 GRANT SELECT ON desire_store.desires TO applier_role;
 GRANT UPDATE (status, version) ON desire_store.desires TO applier_role;
 ```
+
+**Note:** roles above enforce spec/status write-split only, not per-cluster row isolation. Partition-scoped access (row-level security or per-cluster credentials) is a separate design question for the backend implementation story.
