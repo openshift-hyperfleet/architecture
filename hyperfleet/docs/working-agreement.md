@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-05-25
+Last Updated: 2026-08-18
 ---
 
 # HyperFleet Working Agreement
@@ -26,7 +26,112 @@ Before picking up a ticket, confirm:
 - [ ] Work is sized to complete within a sprint
 - [ ] Required JIRA fields set (see [Ticket Hygiene Standard](../standards/ticket-hygiene.md))
 
-If a ticket is not ready, update it before starting work. If acceptance criteria appear out of date, raise it with the **epic owner** — they are responsible for keeping acceptance criteria current across their epic.
+If a ticket is not ready, update it before starting work. If acceptance criteria appear out of date, raise it with the [Epic Owner](#work-item-ownership) — they are responsible for keeping acceptance criteria current across their Epic.
+
+---
+
+## Work Item Ownership
+
+Every work item has a clear owner. Ownership is accountability for results — not a promise to do all the work alone. Owners coordinate; they don't work in isolation.
+
+The guiding principle: **decisions flow down to the lowest level that has the context to make them well.** Architectural direction stays with the Architect; execution decisions belong to the Tech Lead; each Epic is delivered by its Epic Owner.
+
+| Level | Owner | Owns |
+| ----- | ----- | ---- |
+| Feature | **Architect + Tech Lead** (co-owned) | Architect: direction, constraints, success criteria. Tech Lead: scope, priority, cross-epic coordination and staffing |
+| Sprint / cross-Epic execution | **Tech Lead** | Sprint planning, commitment, capacity, and unblocking; ensures Epic Owners deliver |
+| Epic | **Epic Owner** (a named engineer) | Breaking down and delivering one Epic; tracking and reporting its progress |
+| Story / Task | **Assignee** | Delivering the individual work item |
+
+### Two kinds of ownership
+
+Ownership runs on two axes that coexist:
+
+- **Work-item ownership** — who is accountable for *delivering a specific piece of work*: the Feature Owners, the Epic Owner, and the story assignees below. Temporary, tied to the work item.
+- **Domain ownership** — who is accountable for the *standing technical health and direction of a component* (API, Sentinel, Adapter, E2E, Release, Observability). The **Domain Owner** is the first escalation point and the decision-maker for technical approach within their domain. Standing, not tied to a single work item.
+
+The two intersect during delivery: the **Epic Owner drives the Epic to done**, but **technical-approach decisions defer to the Domain Owner** of the affected component (and to the Architect for cross-component contracts). Domain ownership — its Contributor → Key Contributor → Owner progression — and the full role ladder are defined in the [HyperFleet Team Operating Model](https://docs.google.com/document/d/1Pqq9EdWGBuMR00wL7sguZHGFiP5_f4aQ2VPoDcW5HCA/edit?tab=t.bthlqz8tix2a).
+
+This section defines the two roles the team asks about most: the **Feature Owner** and the **Epic Owner**.
+
+### Feature Owner (Level 4)
+
+A Feature delivers customer-facing value within a Quarter/Release and spans several Epics, often across teams. Feature ownership is **shared between the Architect and the Tech Lead**, working as a pair — the Architect owns the direction, the Tech Lead owns getting it delivered across Epics.
+
+The **Architect** is responsible for:
+
+- Setting the Feature's **architectural direction, constraints, and sequencing**
+- Owning the **success criteria** — what "good" looks like
+- **Co-shaping Epic breakdown** with the Tech Lead and Epic Owner (a conversation, not a sign-off)
+- Keeping the **Feature Intent** current when scope, constraints, or success criteria change
+- Flagging **cross-domain dependencies** that touch other components or teams
+
+The **Tech Lead** is responsible for:
+
+- Owning the Feature's **scope and priority** — stack-ranking active Features so there is a clear priority order, not a flat list, and stating explicitly when priorities shift and why
+- **Cross-epic coordination** — ensuring the Epics under the Feature are staffed and progressing
+- Making **cross-team trade-off decisions** when Epics compete for capacity
+
+Neither owner tracks individual stories day to day — that belongs to the Epic Owner and the story assignees.
+
+### Epic Owner (Level 3)
+
+An Epic is the team-specific work needed to deliver (part of) a Feature within a single Release. Each Epic has a **single named owner — an engineer**, not the Tech Lead. Typically the engineer assigned to the Epic's scoping spike becomes its Epic Owner; the Architect and Tech Lead co-shape the breakdown with them.
+
+An Epic Owner is responsible for:
+
+- **Breaking down the Epic** into stories — with architectural direction from the Architect, technical-approach input from the affected Domain Owner(s), and execution input from the Tech Lead. Stories should be ready before sprint planning
+- Ensuring stories meet the [Definition of Ready](#definition-of-ready) and keeping **acceptance criteria current** and testable
+- Identifying and driving dependencies to resolution
+- **Tracking and reporting Epic progress** — the Tech Lead and Architect stay informed because the Epic Owner reports, not because they chase the board
+- **Providing clarity** — facilitating a sync-up when needed to resolve open questions or implementation uncertainty
+- **Coordinating the demo** — ensuring the engineers who built the work present it at sprint review
+- **Facilitating the Epic** so contributors can self-serve (see below)
+
+An Epic Owner does **not** assign stories to engineers and does **not** own the implementation — stories are pull-based, owned by whoever picks them up. The Epic Owner is the person who can answer **"where are we on this?"** at any point.
+
+The **Tech Lead** ensures every active and "up next" Epic has an Epic Owner, that the breakdown is done properly, that stories meet the Definition of Ready, and that progress is tracked — but does **not** own Epics directly. If an Epic Owner isn't tracking or communicating, that's a Tech Lead problem to fix.
+
+#### Facilitating the Epic
+
+The Epic Owner keeps the Epic navigable for anyone who picks up its child work. The primary tool is a pinned Epic comment that tells contributors where to start and in what order — which items have no blockers, which should be taken together by one person, and the delivery sequence. This reduces churn and prevents work from being split in ways that create rework. Keep the comment updated as scope and dependencies change.
+
+A good facilitation comment covers:
+
+- **Start here** — the child items with no blockers
+- **Take these together** — items that share a code area or abstraction and should be owned by one person to stay consistent
+- **Sequencing** — the order in which items unblock each other
+
+Example of a facilitation comment on an Epic:
+
+> **Picking up tasks? Read this first.**
+>
+> **Start here — no blockers:**
+>
+> - HYPERFLEET-1083 — TypeSpec models
+> - HYPERFLEET-1084 — Resource data layer (independent of 1083, different repo — just agree on schema names like `ChannelSpec` upfront)
+>
+> **If you pick up HYPERFLEET-1084 → take 1085 and 1093 too.** They build on each other (data layer → service → delete policies). Same code area, same abstractions. Splitting across people will cause churn.
+>
+> **If you pick up HYPERFLEET-1086 (channel handler) → take 1087 (version handler) too.** Version handler is the same pattern with parent-scoping added. One person doing both = consistent code.
+>
+> **HYPERFLEET-1088 (E2E tests) goes last.** Needs all handlers + delete policies done first. Ideally done by whoever built the handlers.
+>
+> **Sequencing:**
+>
+> 1. 1083 + 1084 (parallel — different repos, agree on schema names)
+> 2. 1085 (needs 1084)
+> 3. 1086 + 1093 (parallel, both need 1085)
+> 4. 1087 (needs 1086)
+> 5. 1088 (needs 1087 + 1093)
+
+### The one-line distinction
+
+- **Feature Owner (Architect + Tech Lead)** — the Architect owns *direction and success criteria*, the Tech Lead owns *scope, priority, and cross-epic coordination*, until the Feature becomes a line item in release notes. Altitude: strategy and coordination.
+- **Epic Owner (engineer)** — owns *delivering one Epic*: breakdown, readiness, tracking, and demo, within the release. Altitude: execution of a single Epic.
+- Beyond co-owning Features, the **Tech Lead** also owns *sprint execution across Epics*: planning, commitment, capacity, and unblocking, and holds Epic Owners accountable for delivery.
+
+> **See also:** the [HyperFleet Team Operating Model](https://docs.google.com/document/d/1Pqq9EdWGBuMR00wL7sguZHGFiP5_f4aQ2VPoDcW5HCA/edit?tab=t.bthlqz8tix2a) for the full role ladder, Domain Ownership model, decision-making framework, and escalation paths (the canonical source for team roles); the [Sprint Planning — Architect & Tech Lead Roles](https://docs.google.com/document/d/1TV5hNX02fgsHVD_2SHjg9SpmMbPHfiDq1RGLYOz8s3I/edit) document for how these roles interact during sprint planning; and the [Work Assignment Process](https://docs.google.com/document/d/1Pqq9EdWGBuMR00wL7sguZHGFiP5_f4aQ2VPoDcW5HCA/edit?tab=t.dssq8ihx7z3) (a tab of the Operating Model) for ticket assignment, the Epic Owner model, and reactive-work capacity.
 
 ---
 
