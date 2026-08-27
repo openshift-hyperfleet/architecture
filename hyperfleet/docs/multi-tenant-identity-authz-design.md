@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-07-29
+Last Updated: 2026-08-18
 ---
 
 # Multi-Tenant Identity and Authorization Design
@@ -14,7 +14,7 @@ Last Updated: 2026-07-29
   - [Option: ext_authz pattern](#option-ext_authz-pattern)
   - [Option: Middleware hooks](#option-middleware-hooks)
   - [POC Results](#poc-results)
-  - [Recommendation](#recommendation)
+  - [Recommendation (superseded)](#recommendation-superseded)
 - [Path B: Data Enrichment](#path-b-data-enrichment)
   - [JWT Claim Mapping](#jwt-claim-mapping)
   - [Schema Changes](#schema-changes)
@@ -23,13 +23,13 @@ Last Updated: 2026-07-29
   - [Option: Per-tenant Sentinel](#option-per-tenant-sentinel)
   - [Option: Shared Sentinel with system identity](#option-shared-sentinel-with-system-identity)
   - [Option: Auth-exempt internal routes](#option-auth-exempt-internal-routes)
-  - [Recommendation](#recommendation-1)
+  - [Recommendation](#recommendation)
   - [Event Pipeline Impact](#event-pipeline-impact)
 - [Gateway vs Application-Layer Boundary](#gateway-vs-application-layer-boundary)
-  - [Option: Gateway-first](#option-gateway-first-jwt-validation--tenant-extraction-at-ingress)
-  - [Option: Application-only](#option-application-only-current-approach)
+  - [Option: Gateway-first (JWT validation + tenant extraction at ingress)](#option-gateway-first-jwt-validation--tenant-extraction-at-ingress)
+  - [Option: Application-only (superseded)](#option-application-only-superseded)
   - [Option: Sidecar/proxy (per-service auth)](#option-sidecarproxy-per-service-auth)
-  - [Recommendation](#recommendation-2)
+  - [Recommendation](#recommendation-1)
 - [Recommended Approach](#recommended-approach)
 - [Sizing Estimate](#sizing-estimate)
 - [Open Questions](#open-questions)
@@ -45,6 +45,10 @@ HyperFleet currently has no tenant isolation. All authenticated API consumers se
 **Prior Research:**
 
 - [HYPERFLEET-1134](https://issues.redhat.com/browse/HYPERFLEET-1134) explored OPA/Rego integration
+
+**[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) (2026-08-05):** All API traffic, external and internal, goes through an Envoy and Authorino gateway. Authorino authenticates every caller and injects identity and tenant headers. The API trusts these headers and does not extract claims itself.
+
+This supersedes this document's original app-middleware and service-mesh phasing. Gateway deployment, AuthConfig CRs, machine-identity plumbing, and NetworkPolicy are covered by the sibling [Envoy and Authorino Gateway Deployment](https://redhat.atlassian.net/browse/HYPERFLEET-1476) epic and are out of scope here.
 
 ## Problem Statement
 
@@ -69,7 +73,7 @@ How it works: Envoy intercepts the request, sends a check request to OPA with ca
 Context HyperFleet would need to expose:
 
 - Caller identity (JWT `sub`, `iss`)
-- Tenant identity (extracted `tenant_claims` values)
+- Tenant identity (extracted from JWT claims)
 - Resource type and ID (from the URL path)
 - HTTP method (GET, POST, DELETE, etc.)
 
@@ -118,7 +122,7 @@ Cons:
 - Resource-level tenant matching (does this resource belong to this caller's tenant?) requires a DB lookup that happens after the middleware. Adding this to Path A would require a pre-fetch query on every request.
 - Full tenant isolation requires Path B (DAO-layer filtering) regardless of whether Path A is adopted.
 
-### Recommendation
+### Recommendation (superseded)
 
 **Middleware hooks** as the integration point for Path A. It avoids the service mesh dependency and works with HyperFleet's current infrastructure.
 
@@ -131,6 +135,8 @@ Accepted trade-offs:
 
 - Application coupled to OPA availability. Mitigated by fail-closed default (reject requests when OPA is unreachable), explicit timeouts, and OPA health checks.
 
+Superseded: [Recommended Approach](#recommended-approach) drops Path A entirely, and [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) rejects OPA outright (a policy engine cannot enforce row-level isolation without a database pre-fetch per request). This recommendation is retained for the historical record of what the spike evaluated.
+
 ---
 
 ## Path B: Data Enrichment
@@ -139,47 +145,42 @@ Add tenant identity to the data model and filter at the query layer. No external
 
 ### JWT Claim Mapping
 
-**Current state:** The API already supports multi-issuer JWT configuration (`JWTConfig` with `[]JWTIssuerConfig`).
+**Current state:** Per the gateway decision, Authorino is the primary authenticator. It validates every caller and, on success, injects identity and tenant dimension values as trusted headers: `x-hyperfleet-identity` for caller identity, `x-hyperfleet-system` for the system-identity marker, and, in the reference implementation today, per-dimension headers such as `x-tenant-org` and `x-tenant-project`. See "Dimension-list propagation" below for why tenant dimensions are moving to a single JSON header instead. The API's tenant enforcement middleware reads only these injected headers for identity and tenant resolution. It does not extract tenant claims from the token itself.
 
-Each JWT issuer can carry tenant identity in different claims. The config below extends the existing issuer config with a `tenant_claims` map that maps enrichment keys to JWT claim names:
+Envoy also forwards the original bearer token to the API alongside the injected headers. The API retains in-app JWT validation as defense-in-depth (see [Gateway vs Application-Layer Boundary](#gateway-vs-application-layer-boundary)). If that validation fails, the request is rejected regardless of what the gateway already approved.
 
-```yaml
-jwt:
-  configs:
-    # Google
-    - issuer_url: "https://accounts.google.com"
-      jwk_cert_url: "https://www.googleapis.com/oauth2/v3/certs"
-      identity_claim: "email"
-      tenant_claims:
-        org: "hd"
-    # Azure
-    - issuer_url: "https://login.microsoftonline.com/{tenant-id}/v2.0"
-      jwk_cert_url: "https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys"
-      identity_claim: "sub"
-      tenant_claims:
-        org: "tid"
-    # Keycloak
-    - issuer_url: "https://sso.example.com/realms/hyperfleet"
-      jwk_cert_url: "https://sso.example.com/realms/hyperfleet/protocol/openid-connect/certs"
-      identity_claim: "email"
-      tenant_claims:
-        org: "org"
-        project: "project"
-    # OCM (OpenShift Cluster Manager)
-    - issuer_url: "https://api.openshift.com"
-      jwk_cert_url: "https://api.openshift.com/.well-known/jwks.json"
-      identity_claim: "sub"
-      tenant_claims:
-        org: "org_id"
-```
+If the token's own claims (e.g. `sub`, tenant-related claims) disagree with the Authorino-injected headers, the injected headers govern. They are what the API trusts for identity and tenant dimensions, per [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)'s "API trusts only injected headers" rule. The in-app validation is a second check on the token's validity, not a second source of identity.
 
-`tenant_claims` is a map of enrichment key to JWT claim name, configurable per issuer because each IdP puts tenant identity in different fields. Middleware extracts all configured claims and sets them in the request context.
+Per-issuer claim mapping (which JWT claim maps to which tenant dimension) is declared in Authorino `AuthConfig` custom resources, not in HyperFleet application configuration. Each deployment's `AuthConfig` defines its own tenant dimensions and claim mappings. For example, an on-prem partner might map `hd`/`tid`/`org` claims to an `org` dimension, while an Oracle Cloud deployment maps tenancy OCID and compartment claims to `tenancy` and `compartment` dimensions.
 
-**Claim-to-tenant resolution:** Tenant identity is stored in an enrichment table with each key/value pair as a separate row. See [Schema Changes](#schema-changes) for the full evaluation.
+The API's own JWT configuration must separately list each accepted issuer and its JWKS source, since its defense-in-depth validation needs to verify a token's signature independently of the gateway. Adding a tenant model or issuer is a configuration change on both sides (`AuthConfig` at the gateway, `JWTIssuerConfig` and tenant dimensions on the API), with zero code changes and no rebuild in any component.
 
-**System-level bypass:** Issuers with `system: true` explicitly set (e.g., Sentinel and Adapter service account issuers) skip tenant filtering entirely. Issuers must have exactly one of `tenant_claims` (non-empty) or `system: true`. Having neither, both, or an empty `tenant_claims` map is rejected at startup with a configuration validation error. This fail-closed design prevents accidental cross-tenant access from misconfigured issuer entries. See [Sentinel and Adapter Identity](#sentinel-and-adapter-identity) for the full evaluation.
+**Header-to-tenant resolution:** Tenant identity is stored as a single JSONB tenancy map per resource. See [Schema Changes](#schema-changes) for the full evaluation.
 
-**Runtime claim validation:** If a token from a tenant-scoped issuer (one with `tenant_claims` configured) does not contain the expected claims, or any claim value is empty or non-string, the request is rejected with 403 before any DAO access. The middleware never falls back to an unscoped query.
+**System-level bypass:** Internal callers (Sentinel, Adapters) authenticate at the gateway via Kubernetes TokenReview against a subject allowlist. They are not tenant-scoped. Authorino marks every caller with `x-hyperfleet-system`, true for these internal callers and false otherwise. The API's enforcement middleware branches on that header before reading any dimension header at all, for any caller. This is a hard requirement, not an optimization: a missing claim renders as the literal string `<nil>` rather than an absent header, so a dimension header cannot be trusted at face value without first knowing the caller isn't a system identity. See [Sentinel and Adapter Identity](#sentinel-and-adapter-identity) for the full evaluation.
+
+**Runtime header validation:** Applies only to tenant-scoped callers, system callers take the bypass path above and skip it. A deployment's tenant model declares a fixed set of required and optional dimensions (e.g., org required, project optional), the same for every tenant-scoped caller in that deployment. Required dimension headers are guaranteed present, enforced by `AuthConfig` before headers render. Optional dimension headers are emitted only when the caller's underlying claim exists, and cleanly omitted otherwise.
+
+A request is rejected with 403 before any DAO access if any of the following are true:
+
+- it is missing a header its own rule expects
+- an expected header value is empty
+- it resolves zero dimensions (the matched rule expects none)
+
+The middleware never falls back to an unscoped query.
+
+See [Containment matching semantics](#query-filtering) for how callers scoped to fewer dimensions than a resource still match it, and why zero dimensions specifically must fail closed rather than fall back to unscoped.
+
+**Dimension-list propagation:** No mechanism yet carries the expected-dimension list from the gateway to the API. The tenant model exists in two places that must be edited together: the `AuthConfig` CR and the API's own tenant config, rendered from Helm values. Keeping them in sync is a manual step, and a config-drift risk once multiple tenant models are live.
+
+Two options:
+
+- Per-dimension headers, with Authorino also asserting the expected dimension set. The API would validate against what the gateway asserts rather than a static list.
+- Single JSON tenancy header. The API parses it directly as the containment operand.
+
+**Recommendation:** Single JSON tenancy header. The API needs no dimension names at all, and one fixed header name means one fixed Envoy strip list. Authorino's `json` response type is a native, documented capability for composing multiple claims into one object, so this reuses the same `defaults`/emitted-header pattern `AuthConfig` already demonstrates with `hf_system`.
+
+Why not per-dimension headers with an assertion: it leaves the Envoy strip-list gap open. The strip list is a hardcoded superset of every tenant model's headers, so a new dimension header not yet added to it remains client-forgeable. It also has no existing Authorino mechanism to build on for asserting an "expected dimension set," unlike the JSON header option.
 
 ### Schema Changes
 
@@ -189,15 +190,15 @@ Options for storing tenant identity on resources:
 |----------|------|------|
 | Fixed columns (`tenant_issuer` + `tenant_value`, composite index) | Unambiguous, no delimiter concerns | One dimension per resource. Cannot express multi-dimensional scoping (e.g., org + project). |
 | Single `tenant_id` (concatenated string) | Simple single column | Delimiter choice must avoid collisions, same single-dimension limitation as fixed columns |
-| Enrichment table (`resource_id`, `key`, `value`) | Multiple dimensions per resource, new dimensions added without schema migration | JOIN required on queries, slightly more complex DAO layer |
-| Flexible metadata map (JSONB) | Extensible, supports multiple attributes | Harder to index, query, and enforce constraints |
+| Enrichment table (`resource_id`, `key`, `value`) | Multiple dimensions per resource, new dimensions added without schema migration | JOIN required on every query, extra round trip on write, harder to reason about containment across dimensions |
+| Tenancy map (JSONB column with GIN index) | Multiple dimensions per resource, no JOIN, new dimensions added without schema migration, `@>` containment operator maps directly onto the matching semantics needed | Requires a GIN index to keep containment queries fast, less rigid typing than a normalized table |
 
-**Recommendation:** Enrichment table. Each resource can have multiple key/value pairs (e.g., `org=acme-corp` + `project=platform`) stored as rows in a separate table, linked by resource ID. A uniqueness constraint on `(resource_id, key)` ensures one value per key per resource. New dimensions are added without schema migration, though existing resources require a data backfill for the new key to remain accessible under the conjunctive matching invariant.
+**Recommendation:** JSONB tenancy map with a GIN index, validated end to end on the reference implementation (`poc/multitenancy-v2`). Each resource carries a single `tenancy` column holding its resolved dimensions as a flat key/value JSON object (e.g., `{"org": "acme-corp", "project": "platform"}`). A GIN index on the column supports the containment queries described in [Query Filtering](#query-filtering) without a JOIN. New dimensions are added without a schema migration. Existing resources still require a data backfill for a new key to be matched under containment.
 
 Why not the others:
 
-- **Fixed columns and single `tenant_id`** rejected because single-dimension scoping cannot isolate resources within a tenant (e.g., breaks when a user in org Y needs access to resources scoped to project Z).
-- **JSONB** rejected because it trades queryability and constraint enforcement for flexibility we don't need. Config-driven keys give the same extensibility with better indexing.
+- **Fixed columns and single `tenant_id`** rejected because single-dimension scoping cannot isolate resources within a tenant. For example, it breaks when a user in org Y needs access to resources scoped to project Z.
+- **Enrichment table** rejected in favor of JSONB. PostgreSQL's `@>` containment operator on a GIN-indexed JSONB column expresses the containment matching directly, avoiding a JOIN on every query and an extra write per dimension.
 
 Considerations:
 
@@ -215,15 +216,21 @@ Options:
 
 **Recommendation:** Use implicit filtering at the DAO layer. It prevents accidental cross-tenant data leaks because developers can't forget the WHERE clause. Internal services that need cross-tenant access (Sentinel, Adapter) would use a bypass mechanism (see Sentinel/Adapter Identity section). RLS can be layered on top as defense-in-depth but should not be the sole mechanism.
 
-**Conjunctive matching invariant:** With multi-dimensional tenancy, a resource is authorized only when the caller's enrichment key set and the resource's enrichment key set are identical, and every corresponding value matches exactly. A filter that matches on any single dimension (e.g., `org` alone) would let a caller scoped to `org=acme, project=platform` read resources scoped to `org=acme, project=other`. DAO filtering and its integration tests must treat missing, mismatched, or extra dimensions as denied, not just the exact-match case.
+**Containment matching semantics:** A caller is authorized for a resource when the caller's resolved tenancy map is a subset of the resource's tenancy map. Every dimension the caller has must be present on the resource with an equal value, but the resource may carry additional dimensions the caller doesn't have. This is what makes an org-scoped caller (resolved dimensions: `{org: acme}`, because their token carries no optional project claim) see all of that org's projects: a resource scoped to `{org: acme, project: platform}` is a superset and matches. A caller scoped to `{org: acme, project: platform}` does not match a resource scoped to `{org: acme, project: other}`, because the value for the shared `project` key differs.
 
-**Parameterization invariant:** Enrichment keys and values originate from JWT claims, which are externally sourced and configurable per issuer. DAO filtering must bind these values as query parameters; string interpolation or dynamically constructed predicate fragments from claim values are prohibited, regardless of how trusted the issuer is presumed to be. This prevents a malicious or compromised issuer from using a crafted claim value to alter the query itself.
+**Fail-closed rule for zero dimensions:** A request that resolves zero tenant dimensions must be rejected with 403. Under containment semantics, an empty caller map (`{}`) is a subset of every resource's tenancy map. It would contain-match every row, the opposite of isolation. This is enforced in the same place as [runtime header validation](#jwt-claim-mapping): before any DAO access.
 
-**Write-path enforcement:** Tenant fields are never accepted from the request body. On resource creation, the API derives enrichment key/value pairs from the caller's JWT token (using the `tenant_claims` mapping) and writes them to the enrichment table. These values are immutable after creation; update requests that attempt to modify them are rejected.
+**Uniqueness matches differently than visibility:** Resource name uniqueness (HYPERFLEET-1473, [hyperfleet-api#344](https://github.com/openshift-hyperfleet/hyperfleet-api/pull/344)) is enforced by a unique index on `(kind, name, tenancy)`, matched by exact tenancy-document equality, not containment, which is how reads match. A caller scoped to `{org: acme}` and one scoped to `{org: acme, project: p1}` are different tenancy documents, so both can create a resource named `prod`; the `{org: acme}` caller then sees two resources named `prod` under containment-based listing. This can't be fixed by a cleverer index: uniqueness over a containment relation isn't expressible by a btree. This is scoped to root resources: child resources (`owner_id IS NOT NULL`) stay unique on `(kind, owner_id, name)`, excluding tenancy entirely, since their isolation is transitive through the globally-unique owner. Rows with `tenancy = '{}'` reproduce the old global-uniqueness behavior among themselves, since they all share the identical empty tenancy document. These are resources created before enforcement is enabled; see [Open Questions](#open-questions) for the rollout-ordering implications.
+
+**Parameterization invariant:** Tenant dimension values originate from gateway-injected trusted headers, which are sourced from JWT claims resolved per `AuthConfig`. These values are externally controlled. DAO filtering must bind them as query parameters. String interpolation or dynamically constructed predicate fragments from header values are prohibited, regardless of how trusted the gateway is presumed to be. This prevents a compromised or misconfigured `AuthConfig` from using a crafted claim value to alter the query itself.
+
+**Write-path enforcement:** Tenant fields are never accepted from the request body. On resource creation, the API derives the tenancy map from the caller's gateway-injected trusted headers and writes it to the resource's `tenancy` column. This value is immutable after creation. Update requests that attempt to modify it are rejected.
 
 **System-identity writes:** System identities (Sentinel, Adapter) do not create new tenant-scoped resources. They update existing resources where tenant fields are already set and immutable. The system identity write contract is: update status and conditions only, never modify or set tenant ownership fields.
 
-**Enforcement:** This rule must be enforced in code, not just documented as a policy. Tenant fields must be excluded from the writable field set for every caller, regardless of identity type. For system identities specifically, the update handler must further restrict the writable set to only `status` and `conditions`, so no code path, even for a compromised or misused system token, is able to modify tenant fields or any other resource field.
+**Destructive blast radius:** The `status`/`conditions` writable-field limit does not bound what a system identity can destroy. Per [ADR-0012](../adrs/0012-hard-delete-mechanism-after-adapter-reconciliation.md), a status write is what triggers permanent deletion: the API hard-deletes a resource inside the same `POST /adapter_statuses` request that computes `Reconciled=True`. A leaked or buggy adapter token can therefore drive any resource in any tenant to hard deletion, with no recovery path, regardless of the writable-field restriction. Restricting delete access for system identities is precluded by this mechanism.
+
+**Enforcement:** This rule must be enforced in code, not just documented as a policy. Tenant fields must be excluded from the writable field set for every caller, regardless of identity type. For system identities specifically, the update handler must further restrict the writable set to only `status` and `conditions`. That way, no code path can modify tenant fields or any other resource field.
 
 ---
 
@@ -250,24 +257,26 @@ Cons:
 
 ### Option: Shared Sentinel with system identity
 
-Single Sentinel authenticates with a service account JWT (e.g., `sub: "sentinel-service-account"`) configured with `system: true` (see [JWT Claim Mapping](#jwt-claim-mapping)).
+Single Sentinel authenticates through the same Envoy and Authorino gateway as external traffic. Authorino validates its projected service account token via Kubernetes TokenReview against a subject allowlist (e.g., `system:serviceaccount:hyperfleet:sentinel`). It marks the caller as a system identity via `x-hyperfleet-system`, which the middleware checks before reading any dimension header, since a service account token carries no tenant claims and a dimension header read for this caller cannot be trusted.
 
 Pros:
 
-- Matches current architecture. No new deployment topology needed.
-- Reuses the config-driven bypass (`system: true` = no filter). No new code patterns required.
-- Single instance scales horizontally via label-based sharding as today.
+- Matches the gateway decision: internal traffic is not exempt from the gateway. It authenticates through it via a different `AuthConfig` rule (TokenReview instead of OIDC).
+- No new deployment topology needed.
+- Subject allowlist is a gateway configuration change, not application code.
 - No per-tenant operational overhead for internal services.
 
 Cons:
 
-- If the system token leaks, attacker has access to all tenants' resources.
-- Requires strong controls to prevent external clients from using the system identity: dedicated internal audience, restricted issuer, and network-level enforcement.
+- If the service account token leaks, and the subject remains on the allowlist, an attacker gains system-identity access to all tenants' resources.
+- Requires the subject allowlist to be kept current. An in-cluster service account with the correct audience but an unlisted subject is denied at the gateway, so allowlist drift can also cause outages.
 - Audit trail shows "system" as the actor, not the original tenant who triggered the action.
 
 ### Option: Auth-exempt internal routes
 
 API exposes a separate internal listener (different port) with no authentication or tenant filtering. Sentinel/Adapter traffic uses this port. Kubernetes NetworkPolicy restricts access to only internal pods.
+
+This option is foreclosed by the gateway decision: [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) requires all API traffic, external and internal, to pass through the gateway, with a NetworkPolicy restricting API pod ingress to the gateway only. It is retained here for the historical record of what was evaluated during the spike.
 
 Pros:
 
@@ -284,16 +293,17 @@ Cons:
 
 ### Recommendation
 
-**Shared Sentinel with system identity.** It aligns with the current architecture, requires no new deployment topology, and reuses the config-driven bypass already designed in JWT Claim Mapping.
+**Shared Sentinel with system identity, authenticated at the gateway.**
+This aligns with the gateway decision. It requires no new deployment topology and reuses the subject-allowlist mechanism already established for internal callers in [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md).
 
 Why not the others:
 
-- **Per-tenant Sentinel** rejected because operational overhead scales linearly with tenants and contradicts Sentinel's stateless, label-based sharding design.
-- **Auth-exempt internal routes** rejected because it removes all identity from internal requests, leaving no audit trail and relying entirely on network policy for security.
+- **Per-tenant Sentinel** rejected because operational overhead scales linearly with tenants. It also contradicts Sentinel's stateless, label-based sharding design.
+- **Auth-exempt internal routes** rejected: it removes all identity from internal requests. It is also foreclosed by ADR-0020, which requires that no route to the API bypasses the gateway.
 
 Accepted trade-offs:
 
-- System token blast radius is larger than a tenant-scoped token. Mitigated by short-lived tokens (projected ServiceAccount tokens auto-rotate), Kubernetes NetworkPolicy restricting which pods can reach the API, and mTLS for transport encryption (if a service mesh is deployed).
+- System-identity blast radius is larger than a tenant-scoped identity. Mitigated by short-lived tokens (projected ServiceAccount tokens auto-rotate), the gateway's subject allowlist, and the NetworkPolicy restricting which pods can reach the API at all.
 - Audit trail shows the service account name, not the original user. Mitigated by correlating existing `created_by` (original user) and `updated_by` (system service) fields on the resource.
 
 ### Event Pipeline Impact
@@ -310,12 +320,14 @@ The event contract (kind, id, href, generation) does not change. Tenant context 
 
 Where does each responsibility live in the request pipeline?
 
-| Responsibility | Gateway (ingress) | Application (Go middleware) |
-|----------------|-------------------|-----------------------------|
-| JWT signature validation | Rejects invalid tokens before they hit the API pod | Current approach; handled in middleware |
-| Tenant claim extraction | Inject as header from gateway | Read directly from JWT in middleware |
+| Responsibility | Gateway (Envoy + Authorino) | Application (hyperfleet-api) |
+|----------------|------------------------------|-------------------------------|
+| JWT / token validation | Authorino validates every caller: OIDC for external callers, Kubernetes TokenReview for internal callers | Retains in-app JWT validation as defense-in-depth; rejects the request if the token itself is invalid, but does not override the gateway's decision |
+| Tenant claim extraction | Authorino resolves tenant dimensions from validated claims per `AuthConfig` and injects them as trusted headers | None. The API does not extract identity or tenant claims from the token; injected headers are authoritative even if token claims disagree |
 | Rate limiting | Per-tenant throttling at network edge | Per-handler or global in-process |
-| Tenant filtering | N/A (no DB access) | DAO layer scopes queries to caller's tenant |
+| Tenant filtering | N/A (no DB access) | DAO layer scopes queries to caller's tenant by containment |
+
+See [JWT Claim Mapping](#jwt-claim-mapping) for the full authentication contract, including bearer token forwarding and the precedence of injected headers over token claims.
 
 ### Option: Gateway-first (JWT validation + tenant extraction at ingress)
 
@@ -323,15 +335,15 @@ Pros:
 
 - Bad requests rejected before hitting application pods. Saves compute.
 - Centralized auth config if HyperFleet adds more services in the future.
-- Clear separation: gateway handles AuthN, application handles AuthZ.
+- Applies uniformly to external and internal traffic: Sentinel and Adapters authenticate at the same gateway via TokenReview, they are not a separate code path.
+- Switching a tenant model or adding an identity provider is a configuration change on both sides (`AuthConfig` at the gateway, `JWTIssuerConfig` and tenant dimensions on the API), with zero code changes and no rebuild.
 
 Cons:
 
-- Coupled to a specific ingress controller (Envoy, Istio). Harder to test locally without mimicking the gateway.
-- Two places to maintain auth config (gateway rules + application config).
-- Tenant extraction logic duplicated since the application already reads the JWT for other claims (e.g., `sub` for audit fields).
+- Coupled to a specific ingress/authorization stack (Envoy, Authorino). Local development and testing must account for the gateway rather than calling the API directly.
+- Two places to hold auth-relevant configuration: `AuthConfig` CRs at the gateway, and the API's tenant dimension config for DAO enforcement.
 
-### Option: Application-only (current approach)
+### Option: Application-only (superseded)
 
 Pros:
 
@@ -343,6 +355,7 @@ Cons:
 
 - Every request (including invalid ones) reaches the application before being rejected.
 - If HyperFleet adds more services in the future, each would reimplement the same auth logic.
+- No structural network boundary: nothing prevents a workload from calling the API pod directly and bypassing authentication entirely.
 
 ### Option: Sidecar/proxy (per-service auth)
 
@@ -356,71 +369,65 @@ Pros:
 
 Cons:
 
-- Requires a service mesh or sidecar injection. HyperFleet does not currently deploy one.
+- Does not provide a single ingress point for external callers the way a gateway does.
 - Adds operational complexity: sidecar config, resource overhead per pod, debugging across proxy and application logs.
-- Tenant extraction logic duplicated unless all claim extraction (including audit fields like `sub`) is moved to the proxy.
 - Harder to test locally without the sidecar running.
 
 ### Recommendation
 
-Phasing:
+**Gateway-first**, per [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md). Envoy is the API ingress proxy and Authorino the external authorization service for all traffic, external and internal. Authorino performs authentication and tenant claim extraction. The API consumes trusted injected headers and does not extract claims itself. In-app JWT validation is retained as defense-in-depth, not as the primary authentication mechanism.
 
-- **Phase 1**: Ship multi-tenancy with app middleware (enrichment table, `tenant_claims`, DAO filtering, system identity). The middleware performs full JWT validation: signature verification via JWKS, issuer matching, audience validation, expiration checks, and algorithm allowlist (RS256).
-- **Phase 2**: Adopt service mesh and move JWT validation to sidecar/proxy. The DAO layer and enrichment model remain unchanged; only where JWT validation runs moves. Phase 2 is not viable until it defines a trusted identity-propagation boundary: the application must strip any client-supplied tenant identity headers, accept tenant identity only via the sidecar-set header, refuse direct access to the pod that bypasses the sidecar, and authenticate the sidecar-to-application channel. The specific mechanism (mTLS, loopback-only binding, etc.) is TBD pending mesh selection in the Phase 2 spike (see Sizing Estimate).
+This supersedes this document's original phased plan (application middleware first, service mesh sidecar later). The gateway decision also resolves the sidecar/proxy option's biggest open question (how to establish a trusted identity-propagation boundary). It does so directly, through early header stripping before the authorization filter runs, trusted header injection after, and a NetworkPolicy restricting API pod ingress to the gateway only.
 
-Why phased: deploying a service mesh and building a new data model at the same time introduces two unknowns. Phasing lets the team validate tenancy on a working system before layering infrastructure changes on top.
+Why not application-only:
 
-Why not gateway-first:
+- No structural network boundary. Bypassing auth by calling the API pod directly was possible.
+- Identity and tenant-model configuration lived in application code, requiring a rebuild to change.
 
-- Requires a specific ingress controller and duplicates tenant extraction logic already in the application.
-- Only covers external traffic. Internal traffic (Sentinel/Adapter to API) bypasses the gateway and still requires app-level auth.
+Why not per-service sidecar without a shared gateway:
+
+- Does not provide a single ingress point or audit point for external callers. A gateway can still be layered with sidecars later without changing the trust model established here.
 
 Accepted trade-offs:
 
-- Phase 1 accepts invalid requests consuming application resources before rejection. Acceptable at current scale; Phase 2 (sidecar) will reject at the proxy layer.
-- Phase 2 introduces operational complexity (service mesh ownership, sidecar debugging, per-pod resource overhead). Acceptable because the tenancy model is already validated in Phase 1.
+- The gateway is on the availability path of every API call, including internal Sentinel and Adapter traffic. A gateway outage is a full API outage.
+- All internal services must route API traffic through the gateway. Pointing directly at the API service is rejected by the NetworkPolicy.
 
 ---
 
 ## Recommended Approach
 
-**Path B (DAO-layer filtering) as the primary tenant isolation mechanism.** Path A (OPA) is optional and can be layered on later for fine-grained ABAC policies.
+**Path B (DAO-layer filtering) as the tenant isolation mechanism.** Path A (OPA) is dropped and out of scope. As the POC confirmed, a policy engine cannot enforce row-level isolation without a database pre-fetch on every request. Partners can still layer a policy engine behind the gateway later for coarse-grained ABAC policies if needed, but it is not part of this design.
 
 Rationale:
 
-- The POC confirmed that OPA cannot enforce row-level tenant isolation without a DB pre-fetch on every request. Path B handles this naturally with implicit tenant filtering at the DAO layer.
-- Path B requires no additional infrastructure (no OPA deployment, no bundle server, no sidecar).
-- Path B is the minimum viable solution: add enrichment table, extract claims in middleware, scope all DAO queries.
+- Row-level tenant isolation can only be guaranteed at the data layer. Path B enforces it there directly, with implicit containment filtering at the DAO layer.
+- Path B requires no additional infrastructure (no OPA deployment, no bundle server).
+- Combined with the gateway decision, Path B is the minimum viable solution: the gateway authenticates and injects tenant headers, and the DAO layer scopes every read, list, delete, and existence check by containment.
 
 Trade-offs:
 
-- Path B is less flexible than Path A. Authorization logic lives in HyperFleet application code, not in an externally configurable policy engine.
-- A new query path that bypasses the implicit filter (e.g., raw SQL) could expose cross-tenant data. Mitigated by code review, integration tests, and restricting raw queries.
-- System identity bypass (`system: true`) creates a higher-privilege tier. A leaked system token grants access to all tenants. Mitigated by short-lived tokens and network-level restrictions.
+- A new query path that bypasses the implicit filter (e.g., raw SQL) could expose cross-tenant data. This is mitigated by code review, integration tests per access path, and prohibiting string-built tenant predicates.
+- System identity bypass creates a higher-privilege tier. A leaked or misconfigured system-identity token grants read access to all tenants, and its write access, though restricted to `status` and `conditions`, can still drive any resource in any tenant to permanent hard deletion (see [System-identity writes](#query-filtering)), with no recovery path. This is mitigated by short-lived tokens, the gateway's subject allowlist, and the NetworkPolicy restricting which pods can reach the API, though none of these bound the destructive blast radius if a token is actually compromised.
 
 ---
 
 ## Sizing Estimate
 
-### Phase 1: Multi-tenancy with app middleware
+Matches this epic's ([HYPERFLEET-1164](https://issues.redhat.com/browse/HYPERFLEET-1164)) remaining story decomposition. Caller identity context plumbing already exists ([HYPERFLEET-1134](https://issues.redhat.com/browse/HYPERFLEET-1134)). Gateway deployment, `AuthConfig` CRs, and machine-identity plumbing are sized under the sibling [Envoy and Authorino Gateway Deployment](https://redhat.atlassian.net/browse/HYPERFLEET-1476) epic and are not sized here. Each story includes unit tests, end-to-end tenant isolation coverage is its own story.
 
-Preliminary estimates. Caller identity context plumbing already exists ([HYPERFLEET-1134](https://issues.redhat.com/browse/HYPERFLEET-1134)). Each phase includes unit and integration tests.
-
-| Phase | Description | Estimate |
-|------|-------------|----------|
-| JWT claim mapping | Extract tenant identity from JWT claims per issuer, propagate through request context | 5 pts |
-| API spec changes | Add tenant identity fields to resource models as response-only (read-only) fields; reject any client-supplied value on create or update | 3 pts |
-| Schema change | Add enrichment table with indexes | 3 pts |
-| DAO filtering | Scope all queries to caller's tenant, allow system identity bypass | 8 pts |
-| API integration | Reject requests missing tenant identity, surface clear error responses | 5 pts |
-| Sentinel/Adapter identity | Establish system identity for internal services: token acquisition, dedicated audience, middleware bypass wiring | 5 pts |
-| Helm + documentation | Expose tenant configuration in Helm chart, update deployment and config docs | 3 pts |
-| E2E tests | Verify cross-tenant access is denied end-to-end | 5 pts |
-| **Total** | | **~37 pts** |
-
-### Phase 2: Service mesh + sidecar/proxy
-
-TBD. Requires a spike to evaluate mesh selection, integration with existing infrastructure, migration path from middleware, and performance impact.
+| Story | Description | Estimate |
+|-------|-------------|----------|
+| Implement tenant configuration and enforcement middleware | Add tenant configuration and middleware that resolves caller context from gateway-injected trusted headers, failing closed if a dimension is missing | 5 pts |
+| Add the resources tenancy column and GIN index | Add a JSONB `tenancy` column with a GIN index and migration | 3 pts |
+| Add the read-only tenancy map to the Resource spec | Add a server-populated, read-only tenancy map to the Resource spec, absent from create and patch schemas | 3 pts |
+| Scope all resource DAO access by tenancy containment | Scope every read, list, delete, and existence check by JSONB containment; system identities bypass scoping on reads only | 8 pts |
+| Server-set tenancy on the resource write path | Derive tenancy from gateway-injected identity on create; keep it immutable and rejected on patch | 3 pts |
+| Restrict system-identity writes to status and conditions | Restrict system identities to writing only `status` and `conditions`, enforced in code | 5 pts |
+| Make resource name uniqueness tenant-scoped | Scope resource name uniqueness to tenancy so it doesn't leak existence across tenants | 3 pts |
+| Expose tenant configuration in the Helm chart | Expose the tenant model decided in [JWT Claim Mapping](#jwt-claim-mapping) (a single JSON tenancy header) via the Helm chart | 3 pts |
+| Build the tenant isolation integration suite | Build the integration test suite covering tenant isolation across all access paths | 5 pts |
+| **Total** | | **~38 pts** |
 
 ---
 
@@ -428,3 +435,7 @@ TBD. Requires a spike to evaluate mesh selection, integration with existing infr
 
 - Are there compliance requirements that mandate RLS as a hard requirement (vs. defense-in-depth)?
 - What is the expected tenant count at GA? (Impacts whether per-tenant options are viable, and affects indexing strategy.)
+- Does a caller's scope need to be asserted independently of tenant claims? (A claim that silently stops being emitted would broaden a caller's visibility under containment, not deny it.)
+- Should resource name uniqueness be canonicalized to one dimension, or is duplicate name visibility across broader scopes accepted? (See [Query Filtering](#query-filtering) for the confirmed exact-match-vs-containment mismatch behind this.)
+- Can a caller create a resource into a narrower scope than their own? (Creation stamps exactly the creator's dimensions; containment only widens visibility as a caller's map shrinks, never the reverse.)
+- What's the cutover order for enabling tenant enforcement against existing resources? (Every pre-existing row defaults to `{}` tenancy, and no non-empty caller map is a subset of `{}`. The moment enforcement turns on, every existing resource becomes invisible to tenant-scoped callers, visible only to system identities.)
