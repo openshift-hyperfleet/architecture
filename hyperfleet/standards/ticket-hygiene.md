@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-05-20
+Last Updated: 2026-08-26
 ---
 
 # HyperFleet Ticket Hygiene Standard
@@ -100,23 +100,34 @@ Epics MUST include in their description:
 
 ## Valid Components
 
-Each ticket MUST have at least one component assigned. Use the component that best matches the primary area of work.
+Each ticket MUST have at least one component assigned. Components fall into two kinds: **domain** components (which system the work lives in) and **cross-cutting** components (which kind of work it is, regardless of system). Use the component(s) that best match the work — see [Combining Components](#combining-components) below.
+
+### Domain Components
 
 | Component | Scope | Repository |
 |-----------|-------|------------|
 | Adapter | Adapter framework, task configs, resource lifecycle | [hyperfleet-adapter](https://github.com/openshift-hyperfleet/hyperfleet-adapter) |
 | API | REST API service, handlers, DAOs, middleware | [hyperfleet-api](https://github.com/openshift-hyperfleet/hyperfleet-api) |
+| Applier | Desire store backends, applier controllers, remote applier connectivity | [hyperfleet-applier](https://github.com/openshift-hyperfleet/hyperfleet-applier) |
+| Infra | Helm umbrella charts, Terraform modules, deployment scripts | [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) |
+| Message Broker | Shared broker library (Pub/Sub, RabbitMQ, CloudEvents) | [hyperfleet-broker](https://github.com/openshift-hyperfleet/hyperfleet-broker) |
+| Operator | Bundle controller, HyperFleetConfig CRD, OLM packaging, operator lifecycle | [hyperfleet-operator](https://github.com/openshift-hyperfleet/hyperfleet-operator) |
+| Sentinel | Sentinel reconciliation service, decision engine | [hyperfleet-sentinel](https://github.com/openshift-hyperfleet/hyperfleet-sentinel) |
+
+### Cross-Cutting Components
+
+| Component | Scope | Repository |
+|-----------|-------|------------|
 | Architecture | Architecture docs, standards, ADRs, working agreements | [architecture](https://github.com/openshift-hyperfleet/architecture) |
 | CICD | Prow jobs, Konflux pipelines, release automation | Multiple repos (CI config) |
 | Claude Plugins | Claude Code plugins, skills, and AI-assisted tooling | [hyperfleet-claude-plugins](https://github.com/openshift-hyperfleet/hyperfleet-claude-plugins) |
 | Documentation | Developer guides, authoring guides, reference docs, pattern docs | Multiple repos |
 | E2E Tests | End-to-end test suites and test infrastructure | [hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e) |
-| Infra | Operator, Helm umbrella charts, deployment scripts | [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) |
-| Message Broker | Shared broker library (Pub/Sub, RabbitMQ, CloudEvents) | [hyperfleet-broker](https://github.com/openshift-hyperfleet/hyperfleet-broker) |
 | OCI | OCI artifact distribution, Helm chart publishing | Multiple repos |
-| Sentinel | Sentinel reconciliation service, decision engine | [hyperfleet-sentinel](https://github.com/openshift-hyperfleet/hyperfleet-sentinel) |
 
-> **Note:** If a ticket spans multiple components, assign the primary component. Add secondary components only when the work equally affects both areas.
+### Combining Components
+
+Most tickets need exactly one domain component. Add a cross-cutting component alongside it when the ticket's primary output is that kind of artifact rather than working code — for example, a design spike that lives in the Applier domain gets `Applier` + `Architecture`; a guide documenting the Operator's CR contract gets `Operator` + `Documentation`. Don't combine two domain components — if a ticket genuinely spans two systems (e.g. Adapter and Applier), split it or pick the domain where most of the work lands.
 
 ---
 
