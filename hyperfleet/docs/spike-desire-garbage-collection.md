@@ -17,7 +17,7 @@ The applier continues reconciling it on every poll tick, and the K8s resource
 on the management cluster becomes un-deletable. We want to clean up both orphaned
 desires and k8s resources.
 
-The cleanup procedure must be able to:
+A cleanup job must be able to:
 
 - Read resources from HyperFleet API
 - Read and Delete desires from Desire Store
@@ -34,7 +34,7 @@ We do not always have access to the management cluster's k8s api from our hub cl
 Set an expiresAt timestamp on every desire, refreshed by the adapter on every interaction.
 If the adapter stops interacting, the desire and k8s resource get cleaned up.
 
-**Why Rejected** A Sentinel outage can cause all desires and underlying k8s resources to be agressively deleted.
+**Why Rejected** A Sentinel outage can cause all desires and underlying k8s resources to be aggressively deleted.
 
 ### Approach B: Resource Based Correlation Check
 
@@ -47,30 +47,34 @@ not, the resource is confirmed gone.
 
 ### Question 2: How/Where does garbage collection run?
 
-The garbage collection procedure needs access to list our resources from API, delete from desire entries and delete k8s resources.
+### Approach A: Goroutine in hyperfleet-applier
 
-### Approach A: Separate Component
+Run the sweep job in a goroutine of the hyperfleet-applier binary.
 
-Run the sweep job as a separate hyperfleet-sweeper component as a CronJob/Deployment
+**Why Rejected** Bigger blast radius, mixed concerns, requires API credentials in applier
 
-**Why Rejected** Setup and additional infra in constrained on-prem environment outweighs the benefits from potential reduced blast radius in case of applier/sweeper failure.
+### Approach B: Per-management-cluster hyperfleet-sweeper
 
-### Approach B: Goroutine in hyperfleet-applier
+Run the sweep job as a separate hyperfleet-sweeper binary in a CronJob in every management cluster.
 
-Run the sweeb job in a goroutine of the hyperfleet-applier binary.
+**Why Rejected** Decentralized deployment, operational overhead of managing sweeper in every management cluster
 
-**Why Selected** Ease of setup, ability to move to a new component if needed
+### Approach C: Centralized hyperfleet-sweeper using DeleteDesires
+
+A hyperfleet-sweeper component running in the hub cluster, creating DeleteDesires to trigger cleanup in the remote cluster(s).
+
+The sweeper:
+
+  1. Finds desires with invalid resource reference
+  2. Creates a DeleteDesire for the resource
+  3. Cleans up DeleteDesires and ReadDesires after successful deletion of orphaned resources is reported by the applier
+
+The sweeper must have priority over the `owner` field check when deleting the desires.
+A DeleteDesire and ApplyDesire cannot coexist, this is currently enforced by
+`pkg/desire` in hyperfleet-applier - the sweeper does not need to cleanup apply desires.
+
+**Why Selected** Centralized, no k8s api access required
 
 ## 3. Decision
 
-A goroutine running in hyperfleet-applier every 12 hours doing a resource based correlation-check.
-
-The control flow:
-
-1. Fetch k8s resources with `kubernetes.io/managed-by: hyperfleet-applier` label (all resources must have a label applied by hyperfleet-applier)
-
-2. If a desire referencing this k8s resource exists and the desire is orphaned (doesn't reference a valid api resource):\
-Delete the desire
-
-3. If a desire referencing this k8s resource doesnt exist:\
-  Delete the k8s resource
+A centralized hyperfleet-sweeper in the hub cluster, running every 12 hours. Simplicity is preferred over TTL's strictness, an adapter task config change or adapter decommissioning can still leave dangling k8s resources and desires behind.
