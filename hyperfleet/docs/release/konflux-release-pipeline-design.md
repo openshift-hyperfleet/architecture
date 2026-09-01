@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: Ciaran Roche
-Last Updated: 2026-04-21
+Last Updated: 2026-08-24
 ---
 
 # Konflux Release Pipeline Design
@@ -28,7 +28,7 @@ The architecture has three layers:
 
 **Key decisions:**
 
-- One Application (`hyperfleet`) with three Components (API, Sentinel, Adapter)
+- One Application (`hyperfleet`) with four Components (API, Sentinel, Adapter, Applier)
 - Single RPA with auto-release for all build contexts (nightly, RC, GA)
 - Tag-based triggers using CEL expressions (globs cannot distinguish RC from release tags)
 - `app-interface-standard` Enterprise Contract policy
@@ -72,7 +72,7 @@ flowchart TB
     subgraph konflux["ORCHESTRATION LAYER: Konflux"]
         build["Tekton Pipeline<br/>docker-build-oci-ta"]
         chains["Tekton Chains<br/>sign provenance"]
-        snapshot["Snapshot<br/>all 3 component images"]
+        snapshot["Snapshot<br/>all 4 component images"]
         ec["Enterprise Contract<br/>app-interface-standard"]
         release["Release Pipeline<br/>rh-push-to-external-registry"]
     end
@@ -81,6 +81,7 @@ flowchart TB
         api_img["hyperfleet-api"]
         sentinel_img["hyperfleet-sentinel"]
         adapter_img["hyperfleet-adapter"]
+        applier_img["hyperfleet-applier"]
     end
 
     subgraph prow["TEST LAYER: Prow"]
@@ -95,7 +96,7 @@ flowchart TB
     push --> build
     tag --> build
     build --> chains --> snapshot --> ec --> release
-    release --> api_img & sentinel_img & adapter_img
+    release --> api_img & sentinel_img & adapter_img & applier_img
     api_img --> nightly & rc_e2e & partners
 ```
 
@@ -103,7 +104,7 @@ flowchart TB
 
 | Component | Location | Owner |
 |-----------|----------|-------|
-| PaC pipeline definitions (`.tekton/`) | Component repos (hyperfleet-api, sentinel, adapter) | HyperFleet team |
+| PaC pipeline definitions (`.tekton/`) | Component repos (hyperfleet-api, sentinel, adapter, applier) | HyperFleet team |
 | PaC controller | Konflux cluster (kflux-prd-rh02) | Konflux platform team |
 | Tekton Chains (signing) | Konflux cluster | Konflux platform team |
 | RPA (registry mapping, tags, policy) | `konflux-release-data` repo | HyperFleet team |
@@ -159,7 +160,7 @@ There is no automated gate between E2E and release — the human is the gate. Th
 **Before pushing GA tags, the Release Owner MUST:**
 
 1. Confirm the RC E2E Prow job passed for the final RC commit SHA (check Prow dashboard)
-2. Confirm all three RC images exist in Quay at the expected tags
+2. Confirm all four RC images exist in Quay at the expected tags
 3. Confirm no regressions in nightly E2E since the RC was cut
 
 **GA release steps:**
@@ -315,7 +316,7 @@ LABEL version="${APP_VERSION}"
 
 ### Applications and Components
 
-Two Applications, each with three Components:
+Two Applications, each with four Components:
 
 **Application `hyperfleet`** — container images:
 
@@ -324,6 +325,7 @@ Two Applications, each with three Components:
 | `hyperfleet-api` | `github.com/openshift-hyperfleet/hyperfleet-api` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-api` |
 | `hyperfleet-sentinel` | `github.com/openshift-hyperfleet/hyperfleet-sentinel` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-sentinel` |
 | `hyperfleet-adapter` | `github.com/openshift-hyperfleet/hyperfleet-adapter` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-adapter` |
+| `hyperfleet-applier` | `github.com/openshift-hyperfleet/hyperfleet-applier` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-applier` |
 
 **Application `hyperfleet-charts`** — Helm chart OCI artifacts:
 
@@ -332,6 +334,7 @@ Two Applications, each with three Components:
 | `hyperfleet-api-chart` | `github.com/openshift-hyperfleet/hyperfleet-api` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-api-chart` |
 | `hyperfleet-sentinel-chart` | `github.com/openshift-hyperfleet/hyperfleet-sentinel` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-sentinel-chart` |
 | `hyperfleet-adapter-chart` | `github.com/openshift-hyperfleet/hyperfleet-adapter` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-adapter-chart` |
+| `hyperfleet-applier-chart` | `github.com/openshift-hyperfleet/hyperfleet-applier` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-applier-chart` |
 
 When any Component builds, the resulting Snapshot contains artifacts for ALL Components in the same Application (the new build plus the last known artifacts for the others). The two Applications are independent — image Snapshots never include chart artifacts and vice versa.
 
@@ -344,7 +347,7 @@ The RPA configuration lives in `konflux-release-data` as the source of truth. Re
 
 **Design rationale:**
 
-- **Single RPA per artifact type** — one for images (`hyperfleet.yaml` using `rh-push-to-external-registry`, SA `release-app-interface-prod`), one for charts (`hyperfleet-charts.yaml` using `push-to-external-registry`, SA `release-sa-hyperfleet`). Each lists all three components of its type.
+- **Single RPA per artifact type** — one for images (`hyperfleet.yaml` using `rh-push-to-external-registry`, SA `release-app-interface-prod`), one for charts (`hyperfleet-charts.yaml` using `push-to-external-registry`, SA `release-sa-hyperfleet`). Each lists all four components of its type.
 - **Auto-release** (`block-releases: false`). `block-releases` is per-RPA, not per-Snapshot — every Snapshot from the Application matches every RPA. A gated RPA would block every nightly and RC build, creating hundreds of blocked releases never intended to be unblocked. The tag push IS the gate.
 - **Tag templates** using `{{ labels.version }}`, `{{ labels.version }}-{{ timestamp }}`, `{{ git_sha }}`, and `latest`.
 
@@ -397,7 +400,7 @@ Prow tests the actual Konflux-built artifact. No ITS wrapper, no migration. Publ
 
 ### RC E2E
 
-RC testing is triggered via the `hyperfleet-release` repo, which coordinates all three components:
+RC testing is triggered via the `hyperfleet-release` repo, which coordinates all four components:
 
 ```mermaid
 sequenceDiagram
@@ -407,11 +410,11 @@ sequenceDiagram
     participant Gangway as Gangway API
     participant Prow as Prow E2E
 
-    Dev->>Dev: Push RC tags to 3 component repos
+    Dev->>Dev: Push RC tags to 4 component repos
     Note over Dev: Konflux builds + releases automatically
     Dev->>Dev: Confirm images in Quay
     Dev->>GHA: Tag hyperfleet-release (v1.0.0-rc1)
-    GHA->>Quay: Verify all 3 images exist
+    GHA->>Quay: Verify all 4 images exist
     GHA->>Gangway: POST /v1/executions with image coordinates
     Gangway->>Prow: Trigger RC E2E job
     Prow->>Quay: Pull per-component RC images
@@ -435,13 +438,14 @@ gh workflow run rc-e2e.yaml -f tag=1.0.0-rc1 --repo openshift-hyperfleet/hyperfl
 
 The manifest in `hyperfleet-release` is a **coordination artifact for Prow E2E triggering** — it tells the GitHub Action which image tags to pass to Gangway. It is not the build source of truth; Konflux Snapshots are. Each Snapshot records exactly which images were built and at which commits.
 
-The manifest exists because Prow E2E needs to test a specific combination of component versions, and Konflux has no concept of "these three independent builds belong together." The manifest is the human-maintained bridge between independent per-component Konflux builds and the coordinated E2E test.
+The manifest exists because Prow E2E needs to test a specific combination of component versions, and Konflux has no concept of "these four independent builds belong together." The manifest is the human-maintained bridge between independent per-component Konflux builds and the coordinated E2E test.
 
 ```yaml
 components:
   hyperfleet-api: 1.5.0-rc1
   hyperfleet-sentinel: 1.4.2-rc1
   hyperfleet-adapter: 2.0.0-rc1
+  hyperfleet-applier: 0.1.0-rc1
 ```
 
 The Release Owner updates the manifest manually before tagging `hyperfleet-release`. The GitHub Action then verifies the listed images exist in Quay before triggering E2E — this catches drift between the manifest and what was actually built.
@@ -478,7 +482,7 @@ The Release Owner updates the manifest manually before tagging `hyperfleet-relea
 | Separate RPAs per build context | One auto-release RPA for nightly + one gated for releases. `block-releases` is per-RPA not per-Snapshot, so every build creates blocked releases — noise without safety. |
 | Glob patterns for tag matching | PaC globs cannot distinguish `v1.0.0-rc1` from `v1.0.0`. No negative matching. CEL with regex anchoring is required. |
 | Migrate E2E to Konflux | Prow already has GKE clusters, GCP credentials, the test framework, and the deploy scripts. Migration cost is not justified. |
-| Single shared RC version across all components | Tagging all three components with the same RC version when only one has a fix. Rejected because it wastes build time, conflates unchanged components with the fix, and makes it harder to track which component actually changed. The chosen model is independent per-component RC versioning: only the affected component gets a new RC tag, and `RELEASE_MANIFEST.yaml` tracks the tested combination. |
+| Single shared RC version across all components | Tagging all four components with the same RC version when only one has a fix. Rejected because it wastes build time, conflates unchanged components with the fix, and makes it harder to track which component actually changed. The chosen model is independent per-component RC versioning: only the affected component gets a new RC tag, and `RELEASE_MANIFEST.yaml` tracks the tested combination. |
 
 ---
 
