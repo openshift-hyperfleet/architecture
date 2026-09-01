@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Owner**: HyperFleet Team
-**Last Updated**: 2026-03-25
+**Last Updated**: 2026-08-24
 
 ---
 
@@ -103,6 +103,18 @@ Shared Go library providing a unified pub/sub messaging abstraction with built-i
 - Two messaging patterns: load balancing (shared subscription) and fanout (separate subscriptions)
 - Publisher health checks for readiness probes, Prometheus metrics, configurable worker pools
 
+### 1.5 HyperFleet Applier
+
+| Field | Value |
+|-------|-------|
+| **Repository** | [hyperfleet-applier](https://github.com/openshift-hyperfleet/hyperfleet-applier) |
+| **Language** | Go 1.26 |
+| **State** | Active |
+| **Helm Chart** | Planned (HYPERFLEET-1434) |
+| **Container Image** | `quay.io/openshift-hyperfleet/hyperfleet-applier` |
+
+A per-management-cluster agent that reads desires from the desire store and reconciles them against the local Kubernetes API server - server-side apply for ApplyDesires, delete for DeleteDesires, watch/mirror for ReadDesires - writing status back to each desire. The reference binary is `hyperfleet-applier`. Replaces the Maestro/OCM work agent in the desire-based delivery model.
+
 ---
 
 ## 2. Supporting Services and Tools
@@ -182,7 +194,7 @@ Black-box E2E testing framework for validating Critical User Journeys (CUJ). Gin
 
 ### 5.2 Per-Component Testing
 
-All core services use testcontainers-go for integration testing and golangci-lint for code quality.
+All core services use golangci-lint for code quality. Integration tests use testcontainers-go or controller-runtime envtest, depending on the component.
 
 | Component | Unit Tests | Integration Tests | Helm Tests | Notable |
 |-----------|-----------|-------------------|------------|---------|
@@ -190,6 +202,7 @@ All core services use testcontainers-go for integration testing and golangci-lin
 | hyperfleet-sentinel | Config, decision engine, payload builder, metrics, health | Testcontainers + real message brokers | Multiple scenarios covering PDB, RabbitMQ, Pub/Sub, PodMonitoring, PrometheusRule | Mock HyperFleet API server for load testing, profiling tools |
 | hyperfleet-adapter | Config loader, CEL criteria, executor pipeline, manifest generation, dry-run engine | Dual strategy: envtest (unprivileged, CI-friendly) and K3s (faster); Maestro client TLS tests | Multiple scenarios covering broker, API config, PDB, autoscaling, probes | Dual integration strategy: envtest (CI) and K3s (local) |
 | hyperfleet-broker | CloudEvents conversion, config, health checks, metrics | Testcontainers + RabbitMQ and Pub/Sub emulator | — | Performance benchmarks, leak detection tests |
+| hyperfleet-applier | Desire types, store backends, apply-desire controller | controller-runtime envtest (`-tags envtest`) | — | Envtest excluded from `make test`; Prow `integration` presubmit runs `make test-envtest` |
 
 ---
 
@@ -226,3 +239,4 @@ CI system for PR validation and E2E testing. Presubmit and postsubmit jobs acros
 |------|---------|--------|--------|
 | 2026-03-25 | 1.0 | Initial Bill of Artifacts | Tirth Chetan Thakkar |
 | 2026-05-11 | 1.1 | Updated Konflux section: cluster to kflux-prd-rh02, added Helm OCI distribution, fixed ADR reference | Ciaran Roche |
+| 2026-08-24 | 1.2 | Added HyperFleet Applier as a core service (HYPERFLEET-1435) | Dmitrii Andreev |
