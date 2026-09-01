@@ -110,7 +110,7 @@ Shared Go library providing a unified pub/sub messaging abstraction with built-i
 | **Repository** | [hyperfleet-applier](https://github.com/openshift-hyperfleet/hyperfleet-applier) |
 | **Language** | Go 1.26 |
 | **State** | Active |
-| **Helm Chart** | v0.1.0 (not yet released — no RC tag cut) |
+| **Helm Chart** | v0.1.0 (not yet released - no RC tag cut) |
 | **Container Image** | `quay.io/openshift-hyperfleet/hyperfleet-applier` |
 
 A per-management-cluster agent that reads desires from the desire store and reconciles them against the local Kubernetes API server - server-side apply for ApplyDesires, delete for DeleteDesires, watch/mirror for ReadDesires - writing status back to each desire. The reference binary is `hyperfleet-applier`. Replaces the Maestro/OCM work agent in the desire-based delivery model.
