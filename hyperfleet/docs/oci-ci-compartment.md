@@ -10,7 +10,7 @@ Last Updated: 2026-09-03
 
 ## Overview
 
-Describes the `hyperfleet-ci` Oracle Cloud Infrastructure (OCI) compartment: a dedicated, quota-fenced compartment for running the OCI end-to-end test suite, with a scheduled sweep as the backstop for anything a CI run fails to tear down and a budget that bounds spend.
+Describes the `hyperfleet-ci` Oracle Cloud Infrastructure (OCI) compartment: a dedicated, quota-fenced compartment for running the OCI end-to-end test suite, with a scheduled sweep as the backstop for anything a CI run fails to tear down and a budget that alerts on spend (not a hard enforcement boundary — see [Budget and quota](#budget-and-quota)).
 
 - **Compartment Name**: `hyperfleet-ci`
 - **Tenancy**: `rhelcert`
@@ -36,9 +36,9 @@ A scheduled OCI Function sweeps the compartment and deletes anything older than 
 | Schedule | Hourly (`0 * * * *`) |
 | Exemption | Freeform tag `hyperfleet-keep=true` holds a resource regardless of age, for manual debugging |
 
-The sweep is the **backstop**, not the primary cleanup mechanism: the e2e CI job is expected to tear down every billable resource at the end of each run (including failed runs). The sweep only catches what that per-run teardown misses — a leaked resource costs at most a few hours of spend before the sweep removes it, rather than sitting forgotten indefinitely.
+The sweep is the **backstop**, not the primary cleanup mechanism: the e2e CI job is expected to tear down every billable resource at the end of each run (including failed runs). The sweep only catches what that per-run teardown misses — a leaked resource costs at most a few hours of spend before the sweep removes it, rather than sitting forgotten indefinitely. That bound only holds for a non-exempt resource once the sweep actually runs and deletes successfully: a resource tagged `hyperfleet-keep=true` is held indefinitely by design, and a sweep left in `DRY_RUN` or otherwise not running normally won't delete anything at all.
 
-The sweep's decision is age-only; it does not know which team member or CI run created a resource, so tag anything you want preserved past the run window with `hyperfleet-keep=true` before it ages out.
+Past the tag exemption, the sweep's decision is age-only; it does not know which team member or CI run created a resource, so tag anything you want preserved past the run window with `hyperfleet-keep=true` before it ages out.
 
 ### Budget and quota
 
@@ -103,6 +103,7 @@ oci ce cluster list --compartment-id <hyperfleet-ci-ocid>
 
 ```bash
 cd hyperfleet-infra/terraform/oci
+cp ci.tfbackend.example ci.tfbackend   # if you don't already have one; edit prefix if needed
 terraform init -backend-config=ci.tfbackend
 terraform state list
 terraform output
@@ -116,7 +117,8 @@ terraform output
 
 ```bash
 cd hyperfleet-infra/terraform/oci
-cp ci.tfvars.example ci.tfvars   # if you don't already have one
+cp ci.tfvars.example ci.tfvars       # if you don't already have one
+cp ci.tfbackend.example ci.tfbackend # if you don't already have one; edit prefix if needed
 terraform init -backend-config=ci.tfbackend
 ```
 
@@ -140,7 +142,7 @@ If the CI clusters' worker shape changes, re-derive the compute quota name befor
 oci limits definition list --compartment-id <tenancy_ocid> --service-name compute
 ```
 
-Applying a `quota_statements` change requires tenancy-admin permissions: `oci_limits_quota` is created at the tenancy root even though its statements target `hyperfleet-ci` specifically.
+Applying a `quota_statements` change requires an identity with the `quota` resource-type manage permission at the tenancy level (`allow group <your-group> to manage quota in tenancy`) — not full tenancy administration. `oci_limits_quota` is created at the tenancy root even though its statements target `hyperfleet-ci` specifically, so a compartment-scoped identity is not sufficient.
 
 ```bash
 terraform plan -var-file=ci.tfvars
@@ -169,7 +171,7 @@ Check the function's logs (Logging service, `oci-ci-sweep` function) for the per
 
 ### Quota apply fails with a permissions error
 
-`oci_limits_quota` requires tenancy-admin permissions (see [How to Change Quota, Budget, or Sweep Settings](#how-to-change-quota-budget-or-sweep-settings)) — a compartment-scoped identity is not sufficient.
+`oci_limits_quota` requires `manage quota in tenancy` permissions (see [How to Change Quota, Budget, or Sweep Settings](#how-to-change-quota-budget-or-sweep-settings)) — a compartment-scoped identity is not sufficient.
 
 ### Budget alert emails never arrived
 
