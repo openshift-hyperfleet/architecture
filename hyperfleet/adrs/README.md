@@ -101,3 +101,4 @@ What did we decide? State it plainly.
 | [0023](0023-oci-managed-postgresql.md) | OCI Database with PostgreSQL as the Managed Instance for the Oracle Deployment Path | Active | 2026-09-09 |
 | [0024](0024-oke-load-balancer-security-nsg.md) | Dedicated Network Security Group for OKE Load Balancer Traffic | Active | 2026-09-15 |
 | [0025](0025-oci-operand-image-delivery.md) | Image Sourcing and Supply Chain for the OCI Operands | Active | 2026-09-18 |
+| [0026](0026-co-located-service-databases-shared-postgres-isolation.md) | Co-Located Service Databases on Shared Postgres: Isolation Model | Active | 2026-09-24 |
