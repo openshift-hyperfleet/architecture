@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-10-01
+Last Updated: 2026-10-09
 ---
 
 # HyperFleet Container Image Standard
@@ -176,6 +176,8 @@ USER 65532:65532
 `CGO_ENABLED` is a Makefile-level decision (see [Makefile Conventions](makefile-conventions.md#standard-variables)); `GOEXPERIMENT=boringcrypto` is set alongside it in the build command whenever `CGO_ENABLED=1` is chosen.
 
 ### FIPS-Compliant Builds
+
+All shipped HyperFleet Go services **MUST** build FIPS-compliant, currently `hyperfleet-api`, `hyperfleet-operator`, `hyperfleet-applier`, `hyperfleet-sentinel`, and `hyperfleet-adapter`.
 
 `GOEXPERIMENT=boringcrypto` on the Red Hat Go toolchain loads the system OpenSSL at runtime. `ubi9-micro` ships no OpenSSL, so a `CGO_ENABLED=1` binary built on it crashes at startup once it runs in FIPS mode (it silently falls back to non-FIPS crypto otherwise).
 
