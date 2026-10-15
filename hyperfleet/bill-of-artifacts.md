@@ -82,7 +82,7 @@ Configuration-driven framework for executing provisioning tasks. Single binary, 
 
 - Four-phase execution pipeline: Param Extraction, Precondition Evaluation (structured conditions or CEL), Resource Application, Post Actions (CEL-driven API calls including status reporting)
 - Two-config architecture: AdapterConfig (infrastructure) + AdapterTaskConfig (business logic)
-- Dual transport backends: Kubernetes (client-go for in-cluster) and Maestro (gRPC + HTTP to Maestro server for remote cluster delivery via ManifestWork)
+- Transport backends: Kubernetes (client-go for in-cluster) and named remote transports (desire-based delivery to target clusters via the desire store and the HyperFleet Applier)
 - Generation-based idempotent reconciliation (CREATE / UPDATE / SKIP / RECREATE)
 - Dry-run mode for local development without infrastructure dependencies
 - Helm chart v2.0.0 with auto-generated RBAC, HPA, PDB, ServiceMonitor
@@ -190,7 +190,7 @@ All core services use golangci-lint for code quality. Integration tests use test
 |-----------|-----------|-------------------|------------|---------|
 | hyperfleet-api | Handlers, services, DAO, auth, middleware, presenters | Testcontainers + PostgreSQL: adapter status, clusters CRUD, node pools, API contract, search field mapping | Multiple scenarios covering external DB, autoscaling, PDB, ServiceMonitor, auth | Mock factories for clusters/nodepools, gotestsum runner |
 | hyperfleet-sentinel | Config, decision engine, payload builder, metrics, health | Testcontainers + real message brokers | Multiple scenarios covering PDB, RabbitMQ, Pub/Sub, PodMonitoring, PrometheusRule | Mock HyperFleet API server for load testing, profiling tools |
-| hyperfleet-adapter | Config loader, CEL criteria, executor pipeline, manifest generation, dry-run engine | Dual strategy: envtest (unprivileged, CI-friendly) and K3s (faster); Maestro client TLS tests | Multiple scenarios covering broker, API config, PDB, autoscaling, probes | Dual integration strategy: envtest (CI) and K3s (local) |
+| hyperfleet-adapter | Config loader, CEL criteria, executor pipeline, manifest generation, dry-run engine | Dual strategy: envtest (unprivileged, CI-friendly) and K3s (faster) | Multiple scenarios covering broker, API config, PDB, autoscaling, probes | Dual integration strategy: envtest (CI) and K3s (local) |
 | hyperfleet-broker | CloudEvents conversion, config, health checks, metrics | Testcontainers + RabbitMQ and Pub/Sub emulator | — | Performance benchmarks, leak detection tests |
 | hyperfleet-applier | Desire types, store backends, apply-desire controller | controller-runtime envtest (`-tags envtest`) | — | Envtest excluded from `make test`; Prow `integration` presubmit runs `make test-envtest` |
 
@@ -230,4 +230,4 @@ CI system for PR validation and E2E testing. Presubmit and postsubmit jobs acros
 | 2026-03-25 | 1.0 | Initial Bill of Artifacts | Tirth Chetan Thakkar |
 | 2026-05-11 | 1.1 | Updated Konflux section: cluster to kflux-prd-rh02, added Helm OCI distribution, fixed ADR reference | Ciaran Roche |
 | 2026-08-24 | 1.2 | Added HyperFleet Applier as a core service (HYPERFLEET-1435) | Dmitrii Andreev |
-| 2026-10-15 | 1.3 | Removed Maestro artifacts: maestro-cli repository, infra `maestro` umbrella chart, and the Maestro transport E2E suite, following the Maestro teardown ([HYPERFLEET-1509](https://redhat.atlassian.net/browse/HYPERFLEET-1509)) | Rafael Benevides |
+| 2026-10-15 | 1.3 | Removed Maestro artifacts: maestro-cli repository, infra `maestro` umbrella chart, Maestro transport E2E suite, and the stale Maestro claims in the adapter framework and testing summaries, following the Maestro teardown ([HYPERFLEET-1509](https://redhat.atlassian.net/browse/HYPERFLEET-1509)) | Rafael Benevides |
