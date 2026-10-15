@@ -92,7 +92,7 @@ Event-driven services that consume reconciliation events, evaluate preconditions
 
 - **Responsibilities**: Event consumption, precondition evaluation, job creation, status reporting
 - **Stack**: Go, Kubernetes client-go, CloudEvents
-- **Features**: Config-driven preconditions, Kubernetes/Maestro transport layers, idempotent operations
+- **Features**: Config-driven preconditions, Kubernetes transport layers, idempotent operations
 
 **Adapter Types** (MVP):
 

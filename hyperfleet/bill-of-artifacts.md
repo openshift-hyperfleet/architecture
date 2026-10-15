@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Owner**: HyperFleet Team
-**Last Updated**: 2026-08-24
+**Last Updated**: 2026-10-15
 
 ---
 
@@ -17,12 +17,11 @@ This bill of artifacts serves as both a single reference for external stakeholde
 ## Table of Contents
 
 - [1. Core Platform Services](#1-core-platform-services)
-- [2. Supporting Services and Tools](#2-supporting-services-and-tools)
-- [3. API Contracts and Specifications](#3-api-contracts-and-specifications)
-- [4. Infrastructure and Deployment](#4-infrastructure-and-deployment)
-- [5. Testing](#5-testing)
-- [6. CI/CD and Release Infrastructure](#6-cicd-and-release-infrastructure)
-- [7. Integration Points](#7-integration-points)
+- [2. API Contracts and Specifications](#2-api-contracts-and-specifications)
+- [3. Infrastructure and Deployment](#3-infrastructure-and-deployment)
+- [4. Testing](#4-testing)
+- [5. CI/CD and Release Infrastructure](#5-cicd-and-release-infrastructure)
+- [6. Integration Points](#6-integration-points)
 
 ---
 
@@ -117,17 +116,9 @@ A per-management-cluster agent that reads desires from the desire store and reco
 
 ---
 
-## 2. Supporting Services and Tools
+## 2. API Contracts and Specifications
 
-| Repository | Description | Language | Used by |
-|-----------|-------------|----------|---------|
-| [maestro-cli](https://github.com/openshift-hyperfleet/maestro-cli) | CLI for ManifestWork lifecycle management through Maestro (apply, delete, get, list, watch). Dual-protocol: gRPC + HTTP. | Go 1.25 | Adapter (Maestro transport), developers for debugging |
-
----
-
-## 3. API Contracts and Specifications
-
-### 3.1 HyperFleet API Spec (TypeSpec)
+### 2.1 HyperFleet API Spec (TypeSpec)
 
 | Field | Value                                                                                |
 |-------|--------------------------------------------------------------------------------------|
@@ -140,7 +131,7 @@ TypeSpec definitions generating OpenAPI 3.0 specifications (with optional OpenAP
 
 > **Note:** Both `hyperfleet-api` and `hyperfleet-sentinel` consume the OpenAPI schema directly from the `hyperfleet-api-spec` Go module — `openapi/openapi.yaml` is extracted from the module cache at code-generation time and is not tracked in git in either repository. See [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-api/blob/main/openapi/README.md) in `hyperfleet-api` and [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-sentinel/blob/main/openapi/README.md) in `hyperfleet-sentinel` for full details.
 
-### 3.2 CloudEvents Contract
+### 2.2 CloudEvents Contract
 
 All inter-service events use CloudEvents v1.0 with anemic payloads (resource ID, kind, generation only) and W3C `traceparent` for distributed tracing. Formal schema defined in [`hyperfleet/components/broker/asyncapi.yaml`](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/components/broker/asyncapi.yaml).
 
@@ -149,9 +140,9 @@ All inter-service events use CloudEvents v1.0 with anemic payloads (resource ID,
 
 ---
 
-## 4. Infrastructure and Deployment
+## 3. Infrastructure and Deployment
 
-### 4.1 HyperFleet Infra
+### 3.1 HyperFleet Infra
 
 | Field | Value |
 |-------|-------|
@@ -162,15 +153,15 @@ Infrastructure as Code for HyperFleet environments. Makefile-driven provisioning
 
 **Terraform Modules:** GKE cluster (`terraform/modules/cluster/gke/`), Google Pub/Sub (`terraform/modules/pubsub/`), shared VPC infrastructure (`terraform/shared/`). Multi-cloud stubs (EKS, AKS) present for post-MVP expansion.
 
-**Helm Umbrella Charts (7):** `api`, `adapter1`, `adapter2`, `adapter3`, `sentinel-clusters`, `sentinel-nodepools`, `maestro` — each wrapping the upstream component chart with environment-specific values.
+**Helm Umbrella Charts (6):** `api`, `adapter1`, `adapter2`, `adapter3`, `sentinel-clusters`, `sentinel-nodepools` — each wrapping the upstream component chart with environment-specific values.
 
 **Additional:** RabbitMQ dev manifest, broker Helm values generator script, full lifecycle Makefile targets (`install-all`, `uninstall-all`, `status`).
 
 ---
 
-## 5. Testing
+## 4. Testing
 
-### 5.1 E2E Testing Framework
+### 4.1 E2E Testing Framework
 
 | Field | Value |
 |-------|-------|
@@ -186,13 +177,12 @@ Black-box E2E testing framework for validating Critical User Journeys (CUJ). Gin
 |-------|------|-------------------|
 | Cluster Creation | Tier 0 | End-to-end cluster lifecycle: creation, initial conditions, adapter execution, final Ready state |
 | NodePool Creation | Tier 0 | End-to-end nodepool lifecycle: creation under a parent cluster, adapter execution, Ready state |
-| Adapter with Maestro Transport | Tier 0 | Full Maestro transport path: ManifestWork creation, Maestro agent applies to target cluster, adapter reports status back via discovery |
 | Cluster Concurrent Creation | Tier 1 | 5 simultaneous cluster creations reach Ready state without resource conflicts |
 | NodePool Concurrent Creation | Tier 1 | 3 simultaneous nodepools under the same cluster reach Ready state with isolated resources |
 | Cluster Adapter Failure | Tier 1 | Adapter precondition failures are reflected in cluster top-level status |
 | Adapter Failover | Tier 1 | Adapter framework detects invalid Kubernetes resources and reports failures with clear error messages |
 
-### 5.2 Per-Component Testing
+### 4.2 Per-Component Testing
 
 All core services use golangci-lint for code quality. Integration tests use testcontainers-go or controller-runtime envtest, depending on the component.
 
@@ -206,7 +196,7 @@ All core services use golangci-lint for code quality. Integration tests use test
 
 ---
 
-## 6. CI/CD and Release Infrastructure
+## 5. CI/CD and Release Infrastructure
 
 | Field | Value |
 |-------|-------|
@@ -214,17 +204,17 @@ All core services use golangci-lint for code quality. Integration tests use test
 | **Pipeline Design** | [konflux-release-pipeline-design.md](./docs/release/konflux-release-pipeline-design.md) |
 | **ADR** | [0014 — Konflux for Container Image Build and Release](./adrs/0014-konflux-build-and-release.md) |
 
-### 6.1 Konflux (Build and Release)
+### 5.1 Konflux (Build and Release)
 
 Container images are built and released via Konflux on the `kflux-prd-rh02` cluster. PaC tag-triggered pipelines build images, Tekton Chains signs provenance, and the `rh-push-to-external-registry` pipeline publishes to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/`. Helm charts will be published as OCI artifacts via the `build-helm-chart-oci-ta` task to `quay.io/redhat-services-prod/hyperfleet-tenant/` (pending a managed release pipeline for external registries from the Konflux team). See [Konflux Release Pipeline Design](./docs/release/konflux-release-pipeline-design.md) and [Helm OCI Distribution Design](./docs/release/helm-oci-distribution-design.md) for full architecture.
 
-### 6.2 Prow CI
+### 5.2 Prow CI
 
 CI system for PR validation and E2E testing. Presubmit and postsubmit jobs across all core repositories covering unit tests, integration tests, linting, and Helm chart validation. Job definitions are externally managed. Dedicated Prow CI cluster provisioned on GCP.
 
 ---
 
-## 7. Integration Points
+## 6. Integration Points
 
 | Consumer Team | Status | Integration Details |
 |---------------|--------|---------------------|
@@ -240,3 +230,4 @@ CI system for PR validation and E2E testing. Presubmit and postsubmit jobs acros
 | 2026-03-25 | 1.0 | Initial Bill of Artifacts | Tirth Chetan Thakkar |
 | 2026-05-11 | 1.1 | Updated Konflux section: cluster to kflux-prd-rh02, added Helm OCI distribution, fixed ADR reference | Ciaran Roche |
 | 2026-08-24 | 1.2 | Added HyperFleet Applier as a core service (HYPERFLEET-1435) | Dmitrii Andreev |
+| 2026-10-15 | 1.3 | Removed Maestro artifacts: maestro-cli repository, infra `maestro` umbrella chart, and the Maestro transport E2E suite, following the Maestro teardown ([HYPERFLEET-1509](https://redhat.atlassian.net/browse/HYPERFLEET-1509)) | Rafael Benevides |

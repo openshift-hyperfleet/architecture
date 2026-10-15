@@ -1,7 +1,7 @@
 ---
-Status: Active
+Status: Deprecated
 Owner: HyperFleet Adapter Team
-Last Updated: 2025-12-08
+Last Updated: 2026-10-15
 ---
 
 # Maestro Integration Guide for HyperFleet Adapters

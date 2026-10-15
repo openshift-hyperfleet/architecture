@@ -1,7 +1,7 @@
 ---
-Status: Active
+Status: Deprecated
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-01-28
+Last Updated: 2026-10-15
 ---
 
 # Maestro Architecture Deep Dive

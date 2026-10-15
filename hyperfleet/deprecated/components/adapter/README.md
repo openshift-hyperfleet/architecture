@@ -1,7 +1,7 @@
 ---
 Status: Historical
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-03-25
+Last Updated: 2026-10-15
 ---
 
 # Deprecated Adapters
@@ -14,9 +14,9 @@ Last Updated: 2026-03-25
 
 Two distinct reasons drove deprecation across these directories:
 
-1. **GCP-specific scope moved out of core HyperFleet** — Early spikes explored GCP-specific adapter implementations (DNS, validation, pull secrets, HyperShift control plane) directly in the core HyperFleet repositories. After HYPERFLEET-55 and subsequent scoping decisions, GCP-specific adapter implementations became the responsibility of the GCP team and are out of scope for the core `openshift-hyperfleet` repositories. The core repo now defines the adapter framework and Maestro integration patterns that GCP (and other cloud) teams build upon.
+1. **GCP-specific scope moved out of core HyperFleet** — Early spikes explored GCP-specific adapter implementations (DNS, validation, pull secrets, HyperShift control plane) directly in the core HyperFleet repositories. After HYPERFLEET-55 and subsequent scoping decisions, GCP-specific adapter implementations became the responsibility of the GCP team and are out of scope for the core `openshift-hyperfleet` repositories. The core repo now defines the adapter framework that GCP (and other cloud) teams build upon.
 
-2. **Implementation approach superseded** — The Maestro CLI integration approach was replaced by the Maestro SDK integration, which provides a more robust programmatic interface without requiring a CLI binary in adapter jobs.
+2. **Implementation approach superseded** — The Maestro integration evolved twice: the CLI-based integration was replaced by the Maestro SDK integration, and the Maestro transport was later removed from the adapter framework entirely in favor of named transports and desire-based delivery.
 
 ---
 
@@ -40,7 +40,7 @@ Two distinct reasons drove deprecation across these directories:
 
 **Why deprecated**: The GCP-specific HyperShift integration approach was superseded by the current adapter framework design. GCP-specific control plane provisioning is out of scope for core HyperFleet repositories.
 
-**Replaced by**: The active adapter framework (`adapter/framework/`) and Maestro integration (`adapter/maestro-integration/`). GCP-specific provisioning is handled by the GCP team.
+**Replaced by**: The active adapter framework (`adapter/framework/`). GCP-specific provisioning is handled by the GCP team.
 
 **Key document**: `hypershift-controlplane-adapter-spike.md`
 
@@ -52,9 +52,21 @@ Two distinct reasons drove deprecation across these directories:
 
 **Why deprecated**: The CLI-based integration approach was replaced by the Maestro SDK integration, which provides a programmatic Go interface without the overhead of embedding a CLI binary in adapter jobs. The SDK approach is more maintainable, testable, and idiomatic for Go services.
 
-**Replaced by**: `adapter/maestro-integration/` — the current Maestro SDK-based integration design.
+**Replaced by**: First the Maestro SDK integration (`maestro-integration/` below), later deprecated in turn. The adapter framework now uses named transports and desire-based delivery (`adapter/framework/`).
 
 **Key documents**: `maestro-adapter-integration-strategy.md`, `maestro-cli-implementation.md`
+
+---
+
+### `maestro-integration/`
+
+**What it was**: Design documents for the Maestro SDK-based integration: a Maestro architecture deep dive, the spike that validated the Maestro client SDK against the HyperFleet adapter framework, and the integration guide for adapter authors.
+
+**Why deprecated**: The Maestro transport was removed from the adapter framework ([HYPERFLEET-1504](https://redhat.atlassian.net/browse/HYPERFLEET-1504)) and Maestro was torn down from every environment ([HYPERFLEET-1507](https://redhat.atlassian.net/browse/HYPERFLEET-1507)). HyperFleet now delivers resources through desire-based delivery with named transports.
+
+**Replaced by**: The named-transports model and desire-based delivery documented in `adapter/framework/` and the HyperFleet Applier.
+
+**Key documents**: `maestro-architecture-introduction.md`, `SPIKE-maestro-adapter-integration.md`, `maestro-integration-guide.md`
 
 ---
 
@@ -88,7 +100,7 @@ Yes — as historical records. They document:
 
 - What was explored and why certain approaches were considered
 - Technical details of GCP-specific provisioning flows (DNS, WIF, HostedCluster CRs) that the GCP team may reference
-- The reasoning behind the Maestro CLI → SDK decision
+- The reasoning behind the Maestro CLI → SDK decision and the later removal of the Maestro transport
 - Patterns and risks that informed the current adapter framework design
 
-Do not use these documents as the basis for new adapter implementations. Use the active adapter framework documentation in `adapter/framework/` and `adapter/maestro-integration/` instead.
+Do not use these documents as the basis for new adapter implementations. Use the active adapter framework documentation in `adapter/framework/` instead.
