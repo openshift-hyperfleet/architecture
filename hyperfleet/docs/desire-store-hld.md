@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-08
+Last Updated: 2026-10-15
 ---
 
 # Desire Store Architecture Overview
@@ -176,18 +176,18 @@ The Desire Store API is a dedicated Hub service behind its own private Envoy and
 
 ## Transport
 
-**Proposed direction:** Use versioned REST/JSON over HTTPS. REST keeps the service stateless and fits the bounded Desire Store operations and gateway model.
+Versioned REST/JSON over HTTPS, confirmed by the [transport evaluation](spike-desire-store-transport.md). REST keeps the service stateless and fits the bounded Desire Store operations and gateway model.
 
 **Alternatives:**
 
-- **gRPC:** May reduce message size and serialization overhead, but adds protocol and schema-management complexity.
+- **gRPC:** May reduce message size and serialization overhead, but adds protocol and schema-management complexity. The evaluation found the savings are not needed.
 - **Watch/long-poll:** May reduce repeated polling, but adds long-lived connection, timeout, and reconnect complexity.
 
 **Trade-off:** REST polling is simple to operate and retry, but repeated polls increase gateway and API request volume when no desires have changed.
 
-**Acceptable because:** The bounded operations fit request/response semantics, and REST reuses the existing HTTP gateway model while avoiding gRPC schema-management and watch/long-poll connection complexity. Follow-up validation can confirm whether the polling overhead is acceptable.
+**Acceptable because:** The bounded operations fit request/response semantics, and REST reuses the existing HTTP gateway model while avoiding gRPC schema-management and watch/long-poll connection complexity. The evaluation confirms the polling overhead is acceptable on hub worker nodes sized at 4 or more OCPUs.
 
-**Planning workload:** [HYPERFLEET-1432](https://redhat.atlassian.net/browse/HYPERFLEET-1432) models 10,000 management-cluster partitions, one Applier poll per partition every 5 seconds, and 10 desires per partition. This represents approximately 2,000 reads/sec and 20,000 status writes/sec without deduplication. [HYPERFLEET-1743](https://redhat.atlassian.net/browse/HYPERFLEET-1743) will evaluate representative payload and transport overhead before the decision is finalized.
+**Planning workload:** [HYPERFLEET-1432](https://redhat.atlassian.net/browse/HYPERFLEET-1432) models 10,000 management-cluster partitions, one Applier poll per partition every 5 seconds, and 10 desires per partition. This represents approximately 2,000 reads/sec and 20,000 status writes/sec without deduplication. [HYPERFLEET-1743](https://redhat.atlassian.net/browse/HYPERFLEET-1743) evaluated the payload and transport overhead against this workload.
 
 ## Database Protection and Partition Isolation
 
