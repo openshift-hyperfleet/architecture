@@ -30,7 +30,6 @@ Last Updated: 2026-10-15
 - [ADR-0020: Envoy and Authorino API Gateway](../adrs/0020-envoy-authorino-api-gateway.md)
 - [Remote Applier Connectivity and Partition-Scoped Access to Postgres](spike-remote-applier-postgres-access.md)
 - [SPIKE: Evaluate Desire Store Transport Overhead](spike-desire-store-transport.md)
-- [SPIKE: Evaluate Running the Desire Store on the API Postgres](desire-store-api-postgres-spike.md)
 - [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md)
 
 ## Purpose and Scope
