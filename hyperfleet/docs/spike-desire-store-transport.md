@@ -1,5 +1,5 @@
 ---
-Status: Draft
+Status: Active
 Owner: HyperFleet Team
 Last Updated: 2026-10-15
 ---
@@ -55,7 +55,7 @@ The decision is made with a bandwidth model, not an end-to-end benchmark: at the
 The formula: bytes per message × messages per second × 8 = Mbps.
 
 - Sizes: the measured values from [Evaluation method](#evaluation-method).
-- Rates: from the [HYPERFLEET-1432](desire-store-api-postgres-spike.md) workload model, 10,000 partitions polled every 5 seconds gives 2,000 reads/sec plus 20,000 status writes/sec worst case; headroom doubles both.
+- Rates: from the [workload model](desire-store-api-postgres-spike.md) in [HYPERFLEET-1432](https://redhat.atlassian.net/browse/HYPERFLEET-1432), 10,000 partitions polled every 5 seconds gives 2,000 reads/sec plus 20,000 status writes/sec worst case; headroom doubles both.
 
 **Baseline (2,000 reads/s + 20,000 status writes/s, worst case no dedup):**
 
@@ -89,10 +89,10 @@ The worst case assumes every desire carries its full manifest in every response.
 
 **Budget:** headroom egress below 25% of the hub node egress capacity (1,000 Mbps on a 4 Gbps node); ingress is context only.
 
-- **Node capacity:** the OCI workers in the infra terraform are the E4.Flex family, documented at [1 Gbps of network bandwidth per OCPU](https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm) (max 40 Gbps).
+- **Node capacity:** the hub's OKE workers default to E5.Flex at 4 OCPUs per node (oci-infra `02-oke-workers`), documented at [1 Gbps of network bandwidth per OCPU](https://docs.oracle.com/en-us/iaas/Content/Compute/References/computeshapes.htm) (max 40 Gbps).
   - 2 OCPUs (2 Gbps) breaches the unshaped worst case: 669 Mbps vs. a 500 Mbps budget.
-  - 4 OCPUs gives the 1.5x margin.
-  - With the response-shaping rule, 2 OCPUs pass steady state.
+  - The default 4 OCPUs gives the 1.5x margin.
+  - If the wire schema returns kubeContent only on apply desires (see [Transport decision](#transport-decision)), 2 OCPUs pass steady state.
 - **Margin band on a 4 Gbps node:** 1.5x worst case, about 2x for a mixed partition, about 6.8x if reads carry references.
 - **Break-even:** about 2.7 KB of kubeContent per desire.
 - **Local measurement:** 44,000 requests/sec aggregate, measured with zero errors, target rates sustained, p95 around 1 ms.

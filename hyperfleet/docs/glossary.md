@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-08
+Last Updated: 2026-10-15
 ---
 
 # HyperFleet Glossary
@@ -59,6 +59,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **HyperShift** | The Red Hat project for running hosted OpenShift control planes on Kubernetes. HyperFleet manages the provisioning and lifecycle of HyperShift-based clusters. | Adapter Framework, API |
 | **Identity-to-Partition Binding** | A Hub-owned record mapping one remote Applier identity to one management-cluster partition. | API, Applier |
 | **Idempotent** | A property of Adapter operations: processing the same event multiple times produces the same result as processing it once. Required because the Message Broker provides at-least-once delivery (events may be delivered more than once). All HyperFleet Adapters must be idempotent. | Adapter Framework, Broker |
+| **kubeContent** | The desire content field that carries the rendered Kubernetes manifest the Applier applies to the target cluster. One of the desire's content fields (`owner`, `kubeContent`, `status`, `resource_id`) defined in the [Desire Identity Spike](spike-desire-identity-ownership.md); its size is the dominant bandwidth cost in the [transport evaluation](spike-desire-store-transport.md). | Adapter Framework, Applier |
 | **Landing Zone Adapter** | An adapter that performs preparatory provisioning work before other adapters run — creating namespaces, secrets, and ConfigMaps that subsequent adapters depend on. | Adapter Framework |
 | **LastKnownReconciled (Condition)** | A resource-level condition introduced in v1.0.0 that replaces the former `Available` aggregated condition. Represents the last-known reconciled state of the resource, computed from required adapter statuses. Unlike `Reconciled`, this condition preserves the last successful reconciliation state even when adapters are processing a new generation. | API |
 | **Management Cluster** | A cluster that hosts infrastructure controllers (e.g., CAPI controllers, HyperShift). May overlap with the hub cluster. [ADR-0004](../adrs/0004-sentinel-stateless-polling-architecture.md) rejected a CRD specifically for Sentinel's data-plane triggering mechanism on management clusters, not CRD installation in general. [ADR-0019](../adrs/0019-package-hyperfleet-as-operator.md) introduces a separate CRD, `HyperFleetConfig`, for hub-side operator packaging - unaffected by ADR-0004's rejection even when the hub also serves as a management cluster, since it configures the operator's own operands rather than triggering data-plane reconciliation. | Operator, All |
