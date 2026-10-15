@@ -84,11 +84,8 @@ Generated code refers to any files automatically created by tools from source sp
 | Repository | Generated Code Location | Source Specification | Status |
 |------------|------------------------|---------------------|--------|
 | `hyperfleet-api` | `pkg/api/openapi/`, `*_mock.go` | `github.com/openshift-hyperfleet/hyperfleet-api-spec` Go module (extracted to `openapi/openapi.yaml` by `make generate`; not tracked in git) | ✅ Compliant |
-| `hyperfleet-sentinel` | `pkg/api/openapi/` | `github.com/openshift-hyperfleet/hyperfleet-api-spec` Go module (extracted to `openapi/openapi.yaml` by `make generate`; not tracked in git) | ✅ Compliant |
 
-> **Details:** For the full mechanics of schema import and code generation, see [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-api/blob/main/openapi/README.md) in `hyperfleet-api` and [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-sentinel/blob/main/openapi/README.md) in `hyperfleet-sentinel`.
-
-**Note:** `hyperfleet-adapter`, `hyperfleet-broker`, and adapter repositories do not currently have generated code.
+> **Details:** For the full mechanics of schema import and code generation, see [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-api/blob/main/openapi/README.md) in `hyperfleet-api`.
 
 ### File Patterns to Exclude
 
@@ -106,16 +103,6 @@ Each repository should add appropriate patterns to `.gitignore`. Both the extrac
 
 # Generated mock files
 *_mock.go
-```
-
-**hyperfleet-sentinel:**
-
-```gitignore
-# Extracted OpenAPI spec (from hyperfleet-api-spec Go module, not committed)
-openapi/openapi.yaml
-
-# Generated OpenAPI client (from oapi-codegen)
-pkg/api/openapi/
 ```
 
 ---
