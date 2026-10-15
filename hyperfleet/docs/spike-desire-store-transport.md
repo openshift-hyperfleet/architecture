@@ -30,7 +30,7 @@ The Desire Store HLD proposes REST/JSON over HTTPS for the Desire Store API. Thi
 
 ## Evaluation method
 
-The decision is made with math, not a benchmark: bandwidth is the only constraint that can actually fail at these rates, and it is just payload size × request rate, so only the payload size had to be measured.
+The decision is made with a bandwidth model, not an end-to-end benchmark: at these rates, bandwidth is the only constraint that can actually fail, and it is just payload size × request rate, so only the payload size had to be measured.
 
 **Where the numbers come from:**
 
@@ -95,7 +95,7 @@ The worst case assumes every desire carries its full manifest in every response.
   - With the response-shaping rule, 2 OCPUs pass steady state.
 - **Margin band on a 4 Gbps node:** 1.5x worst case, about 2x for a mixed partition, about 6.8x if reads carry references.
 - **Break-even:** about 2.7 KB of kubeContent per desire.
-- **Feasibility:** 44,000 requests/sec aggregate, measured with zero errors, target rates sustained, p95 around 1 ms.
+- **Local measurement:** 44,000 requests/sec aggregate, measured with zero errors, target rates sustained, p95 around 1 ms.
 
 ## Transport decision
 
