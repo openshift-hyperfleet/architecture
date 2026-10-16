@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-15
+Last Updated: 2026-10-16
 ---
 
 # Desire Store Architecture Overview
@@ -186,9 +186,9 @@ Versioned REST/JSON over HTTPS, confirmed by the [transport evaluation](spike-de
 
 **Trade-off:** REST polling is simple to operate and retry, but repeated polls increase gateway and API request volume when no desires have changed.
 
-**Acceptable because:** The bounded operations fit request/response semantics, and REST reuses the existing HTTP gateway model while avoiding gRPC schema-management and watch/long-poll connection complexity. The evaluation's modeled egress fits the budget on hub worker nodes sized at 4 or more OCPUs.
+**Acceptable because:** The bounded operations fit request/response semantics, and REST reuses the existing HTTP gateway model while avoiding gRPC schema-management and watch/long-poll connection complexity. The evaluation's modeled egress fits the budget on hub worker nodes sized at 4 or more OCPUs, with list responses returning references rather than kubeContent.
 
-**Planning workload:** [HYPERFLEET-1432](https://redhat.atlassian.net/browse/HYPERFLEET-1432) models 10,000 management-cluster partitions, one Applier poll per partition every 5 seconds, and 10 desires per partition. This represents approximately 2,000 reads/sec and 20,000 status writes/sec without deduplication. [HYPERFLEET-1743](https://redhat.atlassian.net/browse/HYPERFLEET-1743) evaluated the payload and transport overhead against this workload.
+**Planning workload:** [HYPERFLEET-1432](https://redhat.atlassian.net/browse/HYPERFLEET-1432) models 10,000 management-cluster partitions, one Applier poll per partition every 5 seconds, and 10 desires per partition. This represents approximately 2,000 applier passes/sec. [HYPERFLEET-1743](https://redhat.atlassian.net/browse/HYPERFLEET-1743) evaluated the payload and transport overhead against this workload.
 
 ## Database Protection and Partition Isolation
 
