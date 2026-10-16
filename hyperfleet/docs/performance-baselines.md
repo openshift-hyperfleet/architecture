@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-08-03
+Last Updated: 2026-10-16
 ---
 
 # Performance Baselines
@@ -35,6 +35,8 @@ Both environments run the same stack: API, Sentinel (clusters + nodepools), 3 ad
 | Execution | `kubectl run` (ClusterIP) | Prow `tier1-nightly` job |
 | Database | ~1k seeded clusters | Fresh deploy per run |
 | Date captured | 2026-06-18 | 2026-06-23 |
+
+Prow perf numbers measured after HYPERFLEET-1495 come from the `perf-nightly` job, which runs only the perf specs.
 
 ## Baselines
 
@@ -73,33 +75,33 @@ Channel, Version, and WifConfig carry no `RequiredAdapters` — unlike Cluster/N
 
 Version rows below cover only the nested `/channels/{parent_id}/versions` routes. `hyperfleet-api` also exposes flat `/versions` read/update/delete routes (`POST /versions` is rejected — creation needs parent context) for cross-channel access, but no perf coverage exists for that flat path yet; treat it as a gap for a follow-up story, not a value reflected in this table.
 
-Captured 2026-07-27 on a dedicated GKE dev cluster (`dev-tithakka`, e2-standard-4 nodes, no adapters/Sentinel dependency for these kinds) with ~1k seeded rows per kind (1000 Channels, 1000 WifConfigs, 1000 Versions under one parent Channel — the worst-case shape for a single list query). **No Prow CI numbers exist yet** for these operations: the perf specs are new (added by HYPERFLEET-1305) and haven't run in `tier1-nightly` yet — they'll be picked up automatically (no CI config changes needed, same Ginkgo `perf` label) on the first nightly run after this branch merges to `main`. Revisit this table once that run lands.
+Captured 2026-07-27 on a dedicated GKE dev cluster (`dev-tithakka`, e2-standard-4 nodes, no adapters/Sentinel dependency for these kinds) with ~1k seeded rows per kind (1000 Channels, 1000 WifConfigs, 1000 Versions under one parent Channel — the worst-case shape for a single list query). The Prow CI column is the median of the per-run medians. It covers the 31 `tier1-nightly` runs from 2026-09-16 to 2026-10-16 that produced a report. In Prow, each request goes from the test pod through the public LoadBalancer and `hyperfleet-gateway` to the API. So most of each Prow number is network time, not API time.
 
-| Operation                                   | GKE dev |
-| -------------------------------------------- | ------- |
-| POST /channels                              | 5.39ms  |
-| GET /channels/{id}                          | 3.44ms  |
-| GET /channels                               | 8.31ms  |
-| PATCH /channels/{id}                        | 5.75ms  |
-| DELETE /channels/{id}                       | 9.05ms  |
-| POST /channels/{parent_id}/versions         | 8.94ms  |
-| GET /channels/{parent_id}/versions/{id}     | 6.37ms  |
-| GET /channels/{parent_id}/versions          | 7.39ms  |
-| PATCH /channels/{parent_id}/versions/{id}   | 8.00ms  |
-| DELETE /channels/{parent_id}/versions/{id}  | 10.07ms |
-| POST /wifconfigs                            | 5.03ms  |
-| GET /wifconfigs/{id}                        | 3.61ms  |
-| GET /wifconfigs                             | 6.86ms  |
-| PATCH /wifconfigs/{id}                      | 6.68ms  |
-| DELETE /wifconfigs/{id}                     | 5.99ms  |
+| Operation                                  | GKE dev | Prow CI |
+| ------------------------------------------ | ------- | ------- |
+| POST /channels                             | 5.39ms  | 37.2ms  |
+| GET /channels/{id}                         | 3.44ms  | 35.8ms  |
+| GET /channels                              | 8.31ms  | 36.2ms  |
+| PATCH /channels/{id}                       | 5.75ms  | 38.7ms  |
+| DELETE /channels/{id}                      | 9.05ms  | 40.1ms  |
+| POST /channels/{parent_id}/versions        | 8.94ms  | 43.0ms  |
+| GET /channels/{parent_id}/versions/{id}    | 6.37ms  | 38.9ms  |
+| GET /channels/{parent_id}/versions         | 7.39ms  | 38.1ms  |
+| PATCH /channels/{parent_id}/versions/{id}  | 8.00ms  | 43.4ms  |
+| DELETE /channels/{parent_id}/versions/{id} | 10.07ms | 45.1ms  |
+| POST /wifconfigs                           | 5.03ms  | 36.6ms  |
+| GET /wifconfigs/{id}                       | 3.61ms  | 35.2ms  |
+| GET /wifconfigs                            | 6.86ms  | 36.2ms  |
+| PATCH /wifconfigs/{id}                     | 6.68ms  | 37.9ms  |
+| DELETE /wifconfigs/{id}                    | 5.99ms  | 38.6ms  |
 
-All operations comfortably clear the shared `ThresholdAPIRead`/`ThresholdAPIList`/`ThresholdAPICreate`/`ThresholdAPIUpdate`/`ThresholdAPIDelete` constants (50ms each) in [`pkg/config/thresholds.go`](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/pkg/config/thresholds.go) — the largest observed value (10.07ms) is less than a quarter of the threshold.
+CI thresholds for these operations are defined in [`pkg/config/thresholds.go`](https://github.com/openshift-hyperfleet/hyperfleet-e2e/blob/main/pkg/config/thresholds.go) in the `hyperfleet-e2e` repo.
 
 ## How to reproduce
 
 ### Prow CI
 
-Prow baselines are captured automatically by the `tier1-nightly` job. To trigger a run on demand, use the [Gangway API](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/docs/release/test-release/trigger-e2e-jobs-via-gangway.md). Results are available in the [Prow dashboard](https://prow.ci.openshift.org/?job=periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier1-nightly) build logs (search for `[PERF]` lines).
+Prow baselines are captured automatically by the `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-perf-nightly` job. To trigger a run on demand, use the [Gangway API](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/docs/release/test-release/trigger-e2e-jobs-via-gangway.md). Results are available in the [Prow dashboard](https://prow.ci.openshift.org/?job=periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-perf-nightly). Each perf spec logs its median as a `[PERF]` line. The build log shows these lines only for failed specs. The JUnit report at `artifacts/perf-nightly/openshift-hyperfleet-e2e-test-perf/artifacts/junit.xml` has the lines for all specs, in the `<system-err>` of each test case.
 
 ### GKE dev
 
