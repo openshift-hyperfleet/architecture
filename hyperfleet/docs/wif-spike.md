@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2025-12-19
+Last Updated: 2026-10-16
 ---
 
 # Workload Identity Federation
@@ -50,24 +50,24 @@ The customer will have to run this gcloud command to grant permissions (or via A
 ```bash
 gcloud projects add-iam-policy-binding  projects/CUSTOMER_PROJECT_NAME \
   --role="roles/pubsub.admin" \
-  --member="principal://iam.googleapis.com/projects/HYPERFLEET_PROJECT_NUMBER/locations/global/workloadIdentityPools/HYPERFLEET_PROJECT_NAME.svc.id.goog/subject/ns/HOSTEDCLUSTER_NAME/sa/HOSTEDCLUSTER_NAME" --condition=None 
+  --member="principal://iam.googleapis.com/projects/HYPERFLEET_PROJECT_NUMBER/locations/global/workloadIdentityPools/HYPERFLEET_PROJECT_NAME.svc.id.goog/subject/ns/HOSTEDCLUSTER_NAME/sa/HOSTEDCLUSTER_NAME" --condition=None
 ```
 
 ### Q&A
 
-**Question: How does it work for the first use case where there is no customer involved?**  
+**Question: How does it work for the first use case where there is no customer involved?**
 In that case `CUSTOMER_PROJECT_NAME == HYPERFLEET_PROJECT_NAME` and we grant permissions to the same GCP project that hosts all Hyperfleet infrastructure.
 
-**Question: Do the namespace and Kubernetes Service Account names have to be the same HOSTEDCLUSTER_NAME?**  
+**Question: Do the namespace and Kubernetes Service Account names have to be the same HOSTEDCLUSTER_NAME?**
 No, this is TBD, we simplified this for the example
 This makes the assumption that Adaptor Tasks will run each in a namespace named after `HOSTEDCLUSTER_NAME`
 
-**Question: Does the kubernetes namespace + service account need to exist before the permissions are granted?**  
+**Question: Does the kubernetes namespace + service account need to exist before the permissions are granted?**
 No, it is not required.
 
 The customer only need the names to grant the permissions.
 
-**Question: Why using `HOSTEDCLUSTER_NAME` instead of `HOSTEDCLUSTER_ID` ?**  
+**Question: Why using `HOSTEDCLUSTER_NAME` instead of `HOSTEDCLUSTER_ID` ?**
 The permission grant occurs before the creation of the HostedCluster, even before the `spec` is stored in our Hyperfleet API, and we need an id.
 
 Implication -> **Hosted Cluster names have to be unique per Hyperfleet Region**
@@ -76,7 +76,7 @@ An alternative is having the customer trust all workloads in the Hyperfleet Regi
 
 But is good to have a namespace+ksa per customer, in case a token is leaked, only that customer is exposed
 
-**Does the customer need to create a Workload Identity Pool and a Provider?**  
+**Does the customer need to create a Workload Identity Pool and a Provider?**
 No, setting IAM permissions to a `principal` following the naming conventions is everything that is required on their side.
 
 **Question: the name/Id of the Hyperfleet Regional cluster is not specified when granting permissions, why?**
@@ -119,10 +119,12 @@ Yes, that is named "identity sameness", it is explained also in GCP documentatio
 
 As with the `HOSTEDCLUSTER_NAME` discussion before, there are other `principals` that can be used for identity, or we can set `conditions` to make it more fine grained.
 
-**Do I need to configure the Google Cloud SDK in any special way?**  
+**Do I need to configure the Google Cloud SDK in any special way?**
 No, the SDK will recognize the Google identity automatically when running in the pod
 
 ## Alternative 1: Current GCP team approach for Hypershift Operator
+
+This section records the GCP PoC approach investigated in December 2025. Its reference to a "maestro adapter" is historical, not a currently supported HyperFleet delivery mechanism. For current remote delivery, see the [named transport model](../components/adapter/framework/adapter-frame-design.md#transport-client); this spike does not establish a replacement credential-transfer workflow.
 
 The current approach by GCP team for Hypershift Operator in their PoC is a temporal solution sharing customer generated credentials.
 
@@ -179,7 +181,7 @@ The adapter tasks are owned by provider teams (GCP, ROSA, etc...).  One approach
 
 This way, provider teams are more autonomous on how to solve security when accessing customer resources. One team can decide to use cloud IAM, and another to manage their own private/public keys.
 
-This solution requires a method to run tasks in the Management Clusters, e.g. using Maestro or having access to MC kubeconfig.
+This solution requires a method to run tasks in the Management Clusters. HyperFleet's current remote delivery model uses named transports: adapters write desires, and the management-cluster Applier reconciles the workloads and mirrors their state. Maestro, considered when this spike was written, is no longer supported.
 
 This removes the need to deal with customer resources access from CLM components.
 

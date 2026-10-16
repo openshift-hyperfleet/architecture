@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-08-03
+Last Updated: 2026-10-16
 ---
 
 # Performance Baselines
@@ -28,7 +28,7 @@ Baselines are captured from two environments. The Prow CI environment provides t
 
 ## Environment
 
-Both environments run the same stack: API, Sentinel (clusters + nodepools), 3 adapters (2 Kubernetes transport, 1 Maestro transport), and GCP Pub/Sub. All nodes are e2-standard-4 (4 vCPU / 16GB RAM) with a 5s Sentinel poll interval.
+At the measurement dates below, both environments ran the same stack: API, Sentinel (clusters + nodepools), 3 adapters (2 Kubernetes transport, 1 Maestro transport), and GCP Pub/Sub. All nodes were e2-standard-4 (4 vCPU / 16GB RAM) with a 5s Sentinel poll interval. These are historical measurements, not a description of the current deployment: Maestro has since been removed and remote delivery now uses named transports and desires. The recorded results have not been remeasured for that delivery path.
 
 | Parameter | GKE dev | Prow CI (hyperfleet-dev-prow) |
 |---|---|---|

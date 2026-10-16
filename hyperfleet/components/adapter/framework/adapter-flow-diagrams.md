@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-04-13
+Last Updated: 2026-10-16
 ---
 
 # HyperFleet Reconciliation Flow
@@ -414,7 +414,7 @@ flowchart TD
     D -->|false| CR
     E --> T{Transport?}
     T -->|K8s| G["K8s DeleteResource(propagationPolicy)"]
-    T -->|Maestro| M["Maestro delete endpoint"]
+    T -->|Remote| M["Write DeleteDesire to desire store"]
 
     CR --> H{More resources?}
     G --> H
@@ -461,7 +461,7 @@ flowchart TD
     E -->|false| D
     F --> T{Transport?}
     T -->|K8s| H["K8s DeleteResource(propagationPolicy)"]
-    T -->|Maestro| M["Maestro delete endpoint"]
+    T -->|Remote| M["Write DeleteDesire to desire store"]
 
     D --> D1[Render manifest template]
     D1 --> D2[Check if resource exists]

@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-07-14
+Last Updated: 2026-10-16
 ---
 
 # HyperFleet Adapter Framework - Design Document
@@ -103,7 +103,9 @@ graph TB
     Executor -->|applies resources| TransportClient
     Executor -->|API calls & status| APIClient
     TransportClient -->|direct apply| K8sAPI
-    TransportClient -->|ManifestWork| Maestro
+    TransportClient -->|writes desires| DesireStore
+    Applier -->|reads desires, mirrors state| DesireStore
+    Applier -->|reconciles objects| TargetCluster
     APIClient -->|REST calls| HyperFleetAPI
 
     Logger -.->|used by| Executor
@@ -116,7 +118,9 @@ graph TB
     BrokerLib["HyperFleet Broker Library<br/>(github.com/openshift-hyperfleet/hyperfleet-broker)"]
     MessageBroker["Message Broker<br/>(Pub/Sub, RabbitMQ)"]
     K8sAPI["Kubernetes API"]
-    Maestro["Maestro<br/>(ManifestWork)"]
+    DesireStore["Desire Store<br/>(remote transports)"]
+    Applier["HyperFleet Applier<br/>(per management cluster)"]
+    TargetCluster["Target Cluster<br/>(Kubernetes API)"]
     HyperFleetAPI["HyperFleet API"]
 
     style MainService fill:#e1f5ff,stroke:#0066cc,stroke-width:3px,color:#333
@@ -126,7 +130,9 @@ graph TB
     style BrokerLib fill:#fff4e1,stroke:#cc8800,stroke-width:1px,color:#333
     style MessageBroker fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
     style K8sAPI fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
-    style Maestro fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
+    style DesireStore fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
+    style Applier fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
+    style TargetCluster fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
     style HyperFleetAPI fill:#ffe1e1,stroke:#cc0000,stroke-width:1px,color:#333
 ```
 
@@ -165,7 +171,7 @@ The adapter loads **two separate YAML files** merged at startup:
 - `Config`: Root configuration structure
 - `ParamConfig`: Defines parameter extraction rules (env.*or event.* sources)
 - `PreconditionConfig`: Defines API calls with `apiCall`, `capture`, `conditions`/`expression`
-- `ResourceConfig`: Defines resources with `manifest`, `discovery`, `recreateOnChange`
+- `ResourceConfig`: Defines resources with `manifest`, `discovery`, `recreate_on_change` (local Kubernetes only)
 - `PostConfig`: Defines `payloads` (with `build`/`buildRef`) and `postActions`
 
 **Configuration Lifecycle:**
@@ -663,7 +669,7 @@ subscriber.Subscribe(ctx, topic, func(ctx context.Context, evt *event.Event) err
   - `name`: Resource identifier for referencing in status evaluation (e.g., `resources.clusterNamespace`)
   - `manifest`: Inline YAML spec or `ref` to external template file
   - `discovery`: Rules for discovering existing resources
-  - `recreateOnChange`: Optional flag to recreate resource when generation changes (e.g., for Jobs)
+  - `recreate_on_change`: Optional local-Kubernetes-only flag to recreate resource when generation changes (e.g., for Jobs); remote resources that set it are rejected at startup
 - Store resources in map: `resources[name] = resourceStatus`
 
 **Resource Discovery:**
@@ -688,10 +694,16 @@ subscriber.Subscribe(ctx, topic, func(ctx context.Context, evt *event.Event) err
 
 The transport client is the unified apply interface used by the executor to apply resources. It abstracts the delivery mechanism so the rest of the pipeline is transport-agnostic:
 
-- **Kubernetes direct** (`client: kubernetes`): Applies resources directly to the cluster using `k8sclient`
-- **Maestro ManifestWork** (`client: maestro`): Wraps resources in a Maestro `ManifestWork` object and applies via `maestroclient`, enabling multi-cluster delivery through the Maestro control plane
+- **Kubernetes** (`type: kubernetes`): Applies resources directly to the cluster the adapter is configured for, using `k8sclient`. Registered under the reserved name `kubernetes` and used implicitly when a resource omits `transport`
+- **Remote** (`type: remote`): Desire-based delivery. The adapter writes the rendered manifest to a named desire store instead of applying it; the HyperFleet Applier for the target cluster's management cluster reconciles the object (server-side apply) and mirrors its live state back to the store, where discovery reads it. Deletes are expressed as delete desires, and the store rejects a new apply for the same object until the delete is confirmed
 
-Each `Resource` in the task config selects its transport via `transport.client` (defaults to `kubernetes`).
+Delete safety on a remote transport also relies on the Applier ordering invariants from [ADR 0028 — Serialize Apply Then Delete](../../../adrs/0028-apply-delete-ordering.md): each pass lists the store fresh before it starts, completes every apply before running deletes, and runs only one pass per management-cluster partition. Without these invariants a stale apply can recreate an object after its delete was confirmed — a case the store's rejection of applies during a pending delete does not cover.
+
+Remote discovery reads the mirrored object, but confirmation of a requested delete is separate: `ProbeDeletion` reads the `DeleteDesire` status, not the read mirror. A confirmed delete allows cleanup of the read and delete desires even while the read mirror still shows the object. For namespaced resources, both `discovery.namespace` and `discovery.by_name` must match the manifest's identity, because remote deletion addresses the discovery target.
+
+Transports are declared as named entries in the deployment config under `transports`, backed by named `stores` (Redis or in-memory). Each resource in the task config selects a transport by name (`transport: remote-primary`); an omitted `transport` uses local Kubernetes. The name `kubernetes` is reserved for the local transport.
+
+A remote transport routes per event: `target_cluster` is rendered from task parameters for each event, so one transport serves many target clusters, and `resource_plurals` maps each manifest kind to the plural used to address it on the target cluster. See the [adapter configuration reference](https://github.com/openshift-hyperfleet/hyperfleet-adapter/blob/main/docs/configuration.md#transports-and-stores) for the declaration syntax and store types, and the [adapter authoring guide](https://github.com/openshift-hyperfleet/hyperfleet-adapter/blob/main/docs/adapter-authoring-guide.md#transports) for authoring semantics.
 
 ### 5. Status Reporter Utilities
 
@@ -784,7 +796,7 @@ Config paths specified via `-c`/`HYPERFLEET_ADAPTER_CONFIG` (deployment config) 
 1. Load and merge both config files
 2. Validate config and compile CEL expressions at startup
 3. Create API client with JWT token source
-4. Create transport client (K8s direct or Maestro, per resource config)
+4. Build the transport registry from the named transports in the deployment config (local Kubernetes and desire-based remote transports, plus their stores)
 5. Create executor — wires params, preconditions, resources, post-actions
 6. Subscribe to broker — only after executor and handler are fully wired
 
@@ -922,7 +934,7 @@ sequenceDiagram
     participant Config as Config Loader
     participant Evaluator as CEL Evaluator
     participant API as HyperFleet API Client
-    participant Transport as Transport Client
+    participant Transport as Transport Registry
     participant Broker as Broker Library
 
     Pod->>Config: Load Adapter Configuration (ONE TIME)
@@ -940,8 +952,8 @@ sequenceDiagram
     Pod->>API: Initialize API Client
     API-->>Pod: Ready
 
-    Pod->>Transport: Initialize Transport Client
-    Note over Transport: Routes by resource config:<br/>• Kubernetes API (direct apply)<br/>• Maestro (ManifestWork)
+    Pod->>Transport: Build Transport Registry
+    Note over Transport: One client per named transport:<br/>• Kubernetes (direct apply)<br/>• Remote (desire store)
     Transport-->>Pod: Ready
 
     Note over Pod: Create executor and wire handler<br/>(must complete before subscribing)
@@ -1640,7 +1652,7 @@ readinessProbe:
 - ✅ Discover resources by name or label selectors
 - ✅ Per-resource conditional creation (`lifecycle.create.when`)
 - ✅ Per-resource conditional deletion (`lifecycle.delete.when`)
-- ✅ Maestro ManifestWork transport for multi-cluster delivery
+- ✅ Named transports: local Kubernetes and desire-based remote delivery to target clusters
 
 **Status Reporting:**
 

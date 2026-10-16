@@ -1,7 +1,7 @@
 ---
 Status: Draft
 Owner: HyperFleet Team
-Last Updated: 2026-04-12
+Last Updated: 2026-10-16
 ---
 
 # Adapter Deletion Flow Design
@@ -184,7 +184,7 @@ flowchart TD
     D -->|false| CR
     E --> T{Transport?}
     T -->|K8s| G["K8s DeleteResource(propagationPolicy)"]
-    T -->|Maestro| M["Maestro delete endpoint"]
+    T -->|Remote| M["Write DeleteDesire to desire store"]
 
     CR --> H{More resources?}
     G --> H
@@ -250,7 +250,7 @@ flowchart TD
     E -->|false| D
     F --> T{Transport?}
     T -->|K8s| H["K8s DeleteResource(propagationPolicy)"]
-    T -->|Maestro| M["Maestro delete endpoint"]
+    T -->|Remote| M["Write DeleteDesire to desire store"]
 
     D --> D1[Render manifest template]
     D1 --> D2[Check if resource exists]
@@ -642,7 +642,7 @@ Detailed metric naming, labels, alert thresholds, and SLO/SLI definitions will b
 | 6 | Concurrent deletion events | Idempotent operations, K8s handles safely | Low |
 | 7 | Independent subresource deletion | Same pattern, check subresource `deleted_time` | Low |
 | 8 | Cancel deletion | Not cancellable in 1.0.0 | Low |
-| 9 | Maestro-managed resources | Transport layer handles transparently | Low |
+| 9 | Remote-transport resources | Delete is desire-based and confirms asynchronously; `propagationPolicy` does not apply | Low |
 | 10 | Multi-generation resources | Use label selectors to discover all | Medium |
 | 11 | **Deletion error reporting** | **Adapter reports `Finalized=False` when unhealthy; API gates hard-delete on aggregate `Reconciled=True`** | **Critical** |
 | 12 | **API rejects mutations during Finalizing** | **Return 409 Conflict** | **Critical** |
@@ -752,24 +752,38 @@ For customers, the API should indicate a resource/subresource is being deleted w
 
 Not cancellable in 1.0.0. Consistent with Kubernetes behavior (namespace deletion is not cancellable). Future enhancement could add a grace period before adapters start cleanup.
 
-#### Maestro-Managed Resources (#9)
+#### Remote-Transport Resources (#9)
 
-The `lifecycle.delete.propagationPolicy` only applies to direct K8s transport, where the adapter controls the delete call. For Maestro transport, the adapter calls Maestro's delete endpoint and Maestro manages deletion through ManifestWork with its own propagation/cleanup semantics — the adapter's `propagationPolicy` is not used.
+The `lifecycle.delete.propagationPolicy` only applies to the local Kubernetes transport, where the adapter controls the delete call. A remote transport does not call the target cluster's API: the adapter writes a `DeleteDesire` to the transport's desire store, and the HyperFleet Applier deletes the object on the target cluster and updates the `DeleteDesire` status. The adapter's `ProbeDeletion` reads only that delete status to confirm completion; it deliberately does not consult the read mirror, which can lag a confirmed delete. The adapter's `propagationPolicy` is not used.
 
-- **K8s transport**: calls `DeleteResource()` with the specified `propagationPolicy`
-- **Maestro transport**: calls Maestro delete endpoint; propagation is managed by ManifestWork, not by the adapter's `lifecycle.delete`
+- **Kubernetes transport**: calls `DeleteResource()` with the specified `propagationPolicy`
+- **Remote transport**: writes a `DeleteDesire` to the desire store; the Applier performs the delete and `ProbeDeletion` confirms it from the `DeleteDesire` status. After confirmation, `CleanupAfterDeletion` removes the read and delete desires, even if the read mirror still shows the object. When no delete desire exists, discovery and cleanup checks handle the already-absent case rather than treating a missing delete desire alone as proof of deletion. Selector-based discovery is unsupported for remote deletes — `discovery.by_name` is required when `lifecycle.delete` is configured on a remote resource
 
 #### Multi-Generation Resources (#10)
 
-During deletion, use **label selectors** rather than exact name matching to discover all resources across generations:
+During deletion, use **label selectors** rather than exact name matching to discover all resources across generations. This guidance applies to the **local Kubernetes transport only**: a remote resource with `lifecycle.delete` must use `discovery.by_name`, and selector-based lifecycle deletion is rejected at load time. On a remote transport, give the resource a stable name across generations (the generation is carried by the `hyperfleet.io/generation` annotation, not the name) so `discovery.by_name` always resolves to the current object:
 
 ```yaml
+# Local transport: sweep every generation with label selectors
 discovery:
   by_selectors:
     label_selector:
       hyperfleet.io/cluster-id: '{{ .clusterId }}'
       hyperfleet.io/managed-by: '{{ .adapter.name }}'
 ```
+
+```yaml
+# Remote transport: stable name, discovered by name
+discovery:
+  namespace: '{{ .namespace }}'
+  by_name: '{{ .clusterId }}-job'
+```
+
+For a namespaced resource such as this Job, `discovery.namespace` must render to the same namespace as `manifest.metadata.namespace`, and `discovery.by_name` to the same name as `manifest.metadata.name`. Remote deletion builds its target identity from discovery, not from the rendered manifest. Omitting the namespace addresses a different target and can incorrectly take the already-deleted path. Leave the namespace empty only for cluster-scoped resources such as Namespace.
+
+This match is required but not validated: neither the config loader nor the executor compares the rendered discovery target with the rendered manifest metadata. Both transports delete through the discovery target, so a mismatch affects the local Kubernetes transport the same way — `by_selectors` only masks it while the labels still match. The failure is silent: the delete probes the discovery identity, finds nothing, and succeeds with the already-deleted outcome while the object applied under the manifest identity is left behind. A runtime check comparing the rendered discovery target with the rendered manifest metadata for resources with `lifecycle.delete` is tracked in [HYPERFLEET-1782](https://redhat.atlassian.net/browse/HYPERFLEET-1782).
+
+The stable-name pattern above covers discovery and deletion only; it does not give a remote immutable resource a way to move to a new generation. `recreate_on_change` is rejected for remote transports, and the proposed `lifecycle.recreate.when` is not implemented, so a changed pod template applied against the same Job name fails at the target cluster with no path to converge. Remote immutable resources have no recreation path until [HYPERFLEET-1194](https://redhat.atlassian.net/browse/HYPERFLEET-1194) lands `lifecycle.recreate.when`.
 
 #### Cross-Adapter Deletion Ordering (#13)
 
@@ -819,7 +833,7 @@ Not required. Each adapter only cleans up its own resources. Unlike creation (wh
 
 **What**: Adapters register finalizers on resource objects in the HyperFleet API. The API won't delete until all finalizers are removed.
 
-**Why Not Chosen**: HyperFleet API resources are stored in a relational database, not as Kubernetes objects. Implementing a finalizer pattern on database records adds complexity without clear benefit over the current pending deletion + `Reconciled` gate model. Maestro follows the same `deleted_time` two-phase pattern without finalizers.
+**Why Not Chosen**: HyperFleet API resources are stored in a relational database, not as Kubernetes objects. Implementing a finalizer pattern on database records adds complexity without clear benefit over the current pending deletion + `Reconciled` gate model.
 
 ### Sentinel Publishes Different Event Type for Deletion
 
@@ -902,5 +916,7 @@ Existing adapters continue to work unchanged during rollout — deletion support
 - [HYPERFLEET-543](https://issues.redhat.com/browse/HYPERFLEET-543) - Implement Cluster DELETE endpoint with cascade cleanup
 - [HYPERFLEET-544](https://issues.redhat.com/browse/HYPERFLEET-544) - Implement NodePool DELETE endpoint
 - [HYPERFLEET-904](https://redhat.atlassian.net/browse/HYPERFLEET-904) - SPIKE: Design API hard-deletion mechanism — see [Hard-Delete Design](../../../api-service/hard-delete-design.md)
-- [Maestro Resource Deletion](https://github.com/openshift-online/maestro) - Two-phase deletion pattern reference
+- [HYPERFLEET-1782](https://redhat.atlassian.net/browse/HYPERFLEET-1782) - Adapter: validate discovery identity against manifest metadata for `lifecycle.delete` resources
+- [HYPERFLEET-1194](https://redhat.atlassian.net/browse/HYPERFLEET-1194) - Adapter: implement resource recreation lifecycle (`lifecycle.recreate.when`)
+- [Desire Store Architecture Overview](../../../../docs/desire-store-hld.md) - Desire Store architecture and trust boundaries
 - [Kubernetes Deletion](https://kubernetes.io/docs/concepts/architecture/garbage-collection/) - Kubernetes garbage collection and propagation policies

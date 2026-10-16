@@ -1,5 +1,7 @@
 # Spike: Dedicated GKE Node Pool for Maestro
 
+> Historical evidence only: Maestro has been removed from HyperFleet. The measurements and rollout/rollback examples below record the rejected node-pool proposal; they are not current deployment instructions. See the [current remote transport model](../components/adapter/framework/adapter-frame-design.md#transport-client) for its replacement.
+
 **Ticket:** [HYPERFLEET-1124](https://redhat.atlassian.net/browse/HYPERFLEET-1124)
 **Epic:** [HYPERFLEET-1118](https://redhat.atlassian.net/browse/HYPERFLEET-1118) — Maestro Reliability: protect critical pods from autoscaler eviction
 **Date:** 2026-06-16

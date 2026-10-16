@@ -1,12 +1,16 @@
 ---
-Status: Active
+Status: Draft
 Owner: HyperFleet Team
-Last Updated: 2026-06-10
+Last Updated: 2026-10-16
 ---
 
 # Adapter Resource Recreation Flow Design
 
 **Jira**: [HYPERFLEET-837](https://issues.redhat.com/browse/HYPERFLEET-837)
+
+## Implementation Status
+
+This document is a proposal, not the shipped adapter contract. `lifecycle.recreate.when` is not implemented. This design and the [adapter authoring guide](https://github.com/openshift-hyperfleet/hyperfleet-adapter/blob/main/docs/adapter-authoring-guide.md) must be updated together when the feature is implemented. The shipped `recreate_on_change` flag is local-Kubernetes-only and is rejected for remote resources. The examples and sequences below describe the proposed local flow, not working configuration for the current binary. Remote recreation semantics must be revisited when the feature is implemented; in particular, remote delete confirmation uses `DeleteDesire` status rather than read-mirror disappearance.
 
 ## What & Why
 
@@ -29,7 +33,6 @@ Last Updated: 2026-06-10
 - CEL expression evaluation for recreation triggers (`lifecycle.recreate.when`)
 - Stateless, transport-agnostic delete+apply flow
 - Handling async deletion (finalizers, eventual consistency)
-- Both Kubernetes and Maestro transports
 - Safe retry across Sentinel's polling loop
 
 ### Out of Scope
@@ -66,8 +69,6 @@ Configure resource recreation by adding a `lifecycle.recreate.when` expression t
 ```yaml
 resources:
   - name: "job"
-    transport:
-      client: "kubernetes"
     manifest:
       apiVersion: batch/v1
       kind: Job
@@ -89,7 +90,7 @@ resources:
               - name: hello
                 image: alpine:3.19
                 command: ["/bin/sh", "-c", "echo 'Hello World!' && exit 0"]
-    
+
     # Required: discovery allows the CEL expression to compare current vs. desired state
     discovery:
       namespace: "{{ .namespace }}"
@@ -97,7 +98,7 @@ resources:
         label_selector:
           hyperfleet.io/cluster-id: "{{ .clusterId }}"
           hyperfleet.io/resource-type: "job"
-    
+
     lifecycle:
       # Deletion configuration
       delete:
@@ -114,11 +115,10 @@ resources:
             && string(generation) != resources.job.metadata.annotations["hyperfleet.io/generation"]
 ```
 
-**Requirements (validated at adapter startup):**
+### Proposed Validation Requirements
 
 - **Discovery block required**: If `discovery` is absent, the adapter rejects the config and fails to start — this prevents silent runtime failure where the CEL expression evaluates against an empty resource context
 - **Expression required**: `lifecycle.recreate.when.expression` must be present and non-empty
-- **Transport-agnostic**: Recreation works identically for K8s and Maestro transports
 
 ### Conflict Resolution: Delete vs. Recreate
 
@@ -195,7 +195,7 @@ post:
                   : (resources.?job.?metadata.?creationTimestamp.hasValue()
                       ? "Resource successfully applied"
                       : "Resource not yet created")
-          
+
           # Available: Check if resource is actually available (not during deletion)
           - type: "Available"
             status:
@@ -228,48 +228,48 @@ See [Adapter Status Contract](./adapter-status-contract.md) for details on the s
 sequenceDiagram
     participant Sentinel as Sentinel
     participant Adapter as Adapter
-    participant Transport as K8s/Maestro
+    participant Transport as Local Kubernetes Transport
     participant API as HyperFleet API
 
     Sentinel->>Adapter: Event (generation=2)
-    
+
     Note over Adapter,Transport: Phase 1: Parameter Extraction
     Adapter->>Adapter: Extract params from event<br/>(clusterId, generation, namespace, etc.)
-    
+
     Note over Adapter,Transport: Phase 2: Preconditions
     Adapter->>Adapter: Evaluate preconditions (CEL)
-    
+
     Note over Adapter,Transport: Phase 3: Resources
     Note over Adapter,Transport: Pre-Discovery
     Adapter->>Transport: GetResource(Job)
     Transport-->>Adapter: {generation=1, Active}
     Adapter->>Adapter: Store in execCtx.Resources["job"]
-    
+
     Note over Adapter: Evaluate lifecycle.delete.when → false
     Note over Adapter: Evaluate lifecycle.recreate.when → true<br/>(generation mismatch detected)
-    
+
     Note over Adapter,Transport: Recreation Flow: Delete + Wait + Create
     Adapter->>Transport: DeleteResource(Job, propagationPolicy=Background)
     Transport-->>Adapter: 200 OK
-    
+
     Adapter->>Transport: GetResource(Job) - poll for deletion
     Transport-->>Adapter: 404 Not Found
     Note over Adapter: Deletion confirmed
-    
+
     Adapter->>Adapter: Render manifest template (generation=2)
     Adapter->>Transport: CreateResource(Job, generation=2)
     Transport-->>Adapter: 201 Created
-    
+
     Note over Adapter,Transport: Post-Apply Discovery
     Adapter->>Transport: GetResource(Job)
     Transport-->>Adapter: {generation=2, Active}
     Adapter->>Adapter: Update execCtx.Resources["job"]
-    
+
     Note over Adapter,API: Phase 4: Post Actions
     Adapter->>Adapter: Build status payload (CEL)
     Adapter->>API: POST /api/v1/clusters/{id}/status
     API-->>Adapter: 200 OK
-    
+
     Note over Adapter: Success: Recreate
 ```
 
@@ -281,31 +281,31 @@ This is the critical case: deletion can potentially take multiple adapter reconc
 sequenceDiagram
     participant Sentinel as Sentinel
     participant Adapter as Adapter
-    participant Transport as K8s/Maestro
+    participant Transport as Local Kubernetes Transport
     participant API as HyperFleet API
 
     Sentinel->>Adapter: Event (generation=2)
-    
+
     Note over Adapter: Phase 1: Parameter Extraction
     Adapter->>Adapter: Extract params (generation=2, etc.)
-    
+
     Note over Adapter: Phase 2: Preconditions
     Adapter->>Adapter: Evaluate preconditions → met
-    
+
     Note over Adapter,Transport: Phase 3: Resources
     Adapter->>Transport: GetResource(Job) - pre-discovery
     Transport-->>Adapter: {generation=1, Active}
     Adapter->>Adapter: Store in execCtx.Resources["job"]
-    
+
     Note over Adapter: Evaluate lifecycle.recreate.when → true
     Adapter->>Transport: DeleteResource(Job, propagationPolicy=Background)
     Transport-->>Adapter: 200 OK (deletion initiated)
-    
+
     Adapter->>Transport: GetResource(Job) - poll for deletion
     Transport-->>Adapter: {deletionTimestamp=2026-06-10T10:00:00Z, finalizers=[...]}
     Note over Adapter: Still present (finalizers pending)<br/>Skip CreateResource, store partial state
     Adapter->>Adapter: Update execCtx.Resources["job"]<br/>(contains deletionTimestamp)
-    
+
     Note over Adapter,API: Phase 4: Post Actions
     Adapter->>Adapter: Build status payload<br/>Detect deletionTimestamp in resources.job
     Adapter->>API: POST status (Applied=True, reason=RecreationPending)
@@ -313,49 +313,49 @@ sequenceDiagram
 
     Note over Sentinel,API: Retry 1 after 10s - deletion still pending
     Sentinel->>Adapter: Event (generation=2, same)
-    
+
     Note over Adapter: Phase 1-2: Extract & Preconditions
     Adapter->>Adapter: Extract params, evaluate preconditions
-    
+
     Note over Adapter,Transport: Phase 3: Resources
     Adapter->>Transport: GetResource(Job) - pre-discovery
     Transport-->>Adapter: {deletionTimestamp=2026-06-10T10:00:00Z, finalizers=[...]}
     Note over Adapter: Evaluate lifecycle.recreate.when → true
     Adapter->>Transport: DeleteResource(Job) - idempotent re-issue
     Transport-->>Adapter: 200 OK (no-op, already deleting)
-    
+
     Adapter->>Transport: GetResource(Job) - poll for deletion
     Transport-->>Adapter: {deletionTimestamp=2026-06-10T10:00:00Z}
     Note over Adapter: Still present, skip CreateResource
-    
+
     Note over Adapter,API: Phase 4: Post Actions
     Adapter->>API: POST status (Applied=True, reason=RecreationPending)
     API-->>Adapter: 200 OK
 
     Note over Sentinel,API: Retry 2 after 20s - deletion complete, creating new resource
     Sentinel->>Adapter: Event (generation=2, same)
-    
+
     Note over Adapter: Phase 1-2: Extract & Preconditions
     Adapter->>Adapter: Extract params, evaluate preconditions
-    
+
     Note over Adapter,Transport: Phase 3: Resources
     Adapter->>Transport: GetResource(Job) - pre-discovery
     Transport-->>Adapter: 404 Not Found
     Note over Adapter: No existing resource found<br/>Evaluate lifecycle.recreate.when → false (no current)<br/>Skip delete, proceed to create
-    
+
     Adapter->>Adapter: Render manifest template (generation=2)
     Adapter->>Transport: CreateResource(Job, generation=2)
     Transport-->>Adapter: 201 Created
-    
+
     Adapter->>Transport: GetResource(Job) - post-discovery
     Transport-->>Adapter: {generation=2, Active}
     Adapter->>Adapter: Update execCtx.Resources["job"]
-    
+
     Note over Adapter,API: Phase 4: Post Actions
     Adapter->>Adapter: Build status payload<br/>No deletionTimestamp in resources.job
     Adapter->>API: POST status (Applied=True, Available=True)
     API-->>Adapter: 200 OK
-    
+
     Note over Adapter: Success: Recreate
 ```
 
@@ -406,7 +406,7 @@ true
 
 ## Responsibilities & Trade-offs
 
-**What the framework provides:** Declarative recreation via CEL expressions. Works identically for K8s and Maestro. Safe to retry (delete is idempotent). Explicit delete-before-recreate evaluation ordering enforced by the framework.
+**What the proposed framework would provide:** Declarative recreation via CEL expressions. Safe to retry (delete is idempotent). Explicit delete-before-recreate evaluation ordering enforced by the framework. This is not shipped behavior.
 
 **What config authors own:**
 
@@ -415,4 +415,4 @@ true
 
 **Trade-off:** Deletion is fire-and-forget; actual deletion may span multiple reconciliation loops. The framework cannot recover from stuck deletions — prevention through proper design in the staging environment is the only viable approach.
 
-**Why `lifecycle.recreate.when` replaces `RecreateOnChange`:** The previous transport-layer flag only worked for K8s (ignored by Maestro) and was not safe to retry across Sentinel's polling loop. The new CEL-based approach is transport-agnostic and stateless.
+**Why propose replacing `recreate_on_change`:** The shipped flag is local-Kubernetes-only. The proposed CEL-based lifecycle would make recreation explicit and stateless; its implementation and transport-specific behavior remain pending.

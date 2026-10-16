@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-08-12
+Last Updated: 2026-10-16
 ---
 
 # SPIKE: DSL v2 Resource Ordering Model
@@ -40,7 +40,7 @@ DSL v2 replaces ManifestWork bundling with per-resource delivery. That surfaces 
 | Ordering primitive | None (`order`, `depends_on` do not exist) | None |
 
 - Pre-discovery populates all resources into context before any `when` expression runs
-- Post-delete rediscovery updates context after delete (cascade same reconciliation, or wait for next)
+- Local post-delete rediscovery updates context after delete (cascade same reconciliation, or wait for next). Remote deletion instead confirms from `DeleteDesire` status via `ProbeDeletion`, then cleans up desires and updates context; read-mirror disappearance is not its confirmation signal
 - Each event triggers one full pass from the top; no checkpoint or resume
 
 ```yaml
@@ -68,7 +68,7 @@ resources:
 
 ## Survey of Existing Adapters
 
-Surveyed all 8 `adapter-task-config.yaml` files in `hyperfleet-infra`. This spike covers ordering within one adapter's `resources` list only; sequencing across adapters via preconditions is out of scope.
+Surveyed all 8 `adapter-task-config.yaml` files in `hyperfleet-infra` at the time of the August 2026 investigation. The counts and Maestro configuration names below are historical evidence; Maestro has since been removed, and this table is not a current deployment inventory. This spike covers ordering within one adapter's `resources` list only; sequencing across adapters via preconditions is out of scope.
 
 | Pattern | Count | Notes |
 |---|---|---|
@@ -151,7 +151,7 @@ Formalize and extend the [executor model](#executor-model) in the authoring guid
 Applies regardless of which ordering model is chosen.
 
 - **Retry semantics:** no checkpoint or resume. The next event triggers a full pass from the top, re-evaluating every resource's `when` from scratch.
-- **Mixed transports:** executor processes in list order per resource; no infra adapter mixes K8s and Maestro today; async Maestro may need multiple reconciliations.
+- **Mixed transports:** executor processes local Kubernetes and named remote resources in list order; asynchronous desire-based remote delivery may need multiple reconciliations. The historical survey above does not establish today's transport mix.
 - **Delete symmetry:** parents-first apply / children-first delete is convention, not enforced.
 
 ---
@@ -160,7 +160,7 @@ Applies regardless of which ordering model is chosen.
 
 Applies regardless of which ordering model is chosen.
 
-Ordering guarantees sequential apply/delete **attempts** only. With Maestro, a successful write means the transport accepted the work, not that the remote cluster has converged. Dependents may need another reconciliation before `when` passes. New primitives do not change this.
+Ordering guarantees sequential apply/delete **attempts** only. With a named remote transport, a successful desire write means the store accepted the intent, not that the remote cluster has converged. Dependents may need another reconciliation before `when` passes. New primitives do not change this. The Applier's separate apply-before-delete safety guarantee is defined in [ADR 0028](../adrs/0028-apply-delete-ordering.md).
 
 ---
 

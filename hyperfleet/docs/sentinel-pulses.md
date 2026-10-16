@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-01-22
+Last Updated: 2026-10-16
 ---
 
 # Sentinel pulses, adapter behavior and API resource status
@@ -53,7 +53,7 @@ Adapters performs some actions in their "resources" phase in order to query the 
 The actions performed in the "resources" phase make calls to an API:
 
 - k8s to create k8s objects like CRs or Job
-- Maestro API (gRPC)
+- Named remote transport: write desires to the desire store for the HyperFleet Applier, then discover the mirrored resource state (see [Transport Client](../components/adapter/framework/adapter-frame-design.md#transport-client))
 - Other APIs
 
 After the actions, the state is collected to report to the HyperFleet API
@@ -130,8 +130,8 @@ If using an arbitrary API call in the adapter resource phase, the calling servic
 The GCP team proposed also to have the logic behind the `Available/Ready` configurable using some type of expressions, eg something like:
 
 ```cel
-available=self.items.all(i, 
-  i.observed_generation == self.items[0].observed_generation && 
+available=self.items.all(i,
+  i.observed_generation == self.items[0].observed_generation &&
   i.conditions.exists(c, c.type == 'Available' && c.status == 'True')
 )
 ready= available && self.items.all(i, i.observed_generation == generationN)
