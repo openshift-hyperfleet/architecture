@@ -1,7 +1,7 @@
 ---
 Status: Draft
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-09-28
+Last Updated: 2026-10-14
 ---
 
 # Generic Resource Registry — Design Document
@@ -1177,6 +1177,18 @@ Store `labels JSONB` and `status_conditions JSONB` on the `resources` row.
 - Con : DB cannot enforce uniqueness of condition `type` per resource — duplicates possible
 - Con : Updating a single condition requires full JSON replace at the application level
 - Con : `UpdateConditions` and `Replace` write to the same column — status aggregation and user edits can race or interfere
+
+**Alternative — Generated/stored columns computed from `status_conditions JSONB`**
+
+Keep the JSONB column — an array of condition records (`[{"type": "Reconciled", "status": "False", ...}, ...]`), matching the shape `jsonb_path_query_first` already used for the expression indexes HYPERFLEET-536 removed — but add `GENERATED ALWAYS AS (...) STORED` columns for specific condition type/subfield pairs, e.g. a `reconciled_status` column defined as `jsonb_path_query_first(status_conditions, '$[*] ? (@.type == "Reconciled")') ->> 'status'`, with a normal B-tree index on each.
+
+- Pro : A plain B-tree index on the generated column sidesteps the jsonpath/Squirrel placeholder conflict entirely — no expression-index tricks needed
+- Pro : Less invasive than full normalization — additive, no new table or association preloading
+- Con : Doesn't generalize — every new condition type or subfield that needs fast lookup requires its own generated column and migration, which works against a registry meant to support arbitrary condition types across N entity kinds
+- Con : Updating conditions is still a full-JSON replace from the application; none of the plain-JSONB write-complexity cons above are solved
+- Con : DB still cannot enforce uniqueness of a condition `type` inside the JSONB blob — only the pre-chosen generated columns get structure, everything else stays an unconstrained blob
+
+**Why chosen:** Both JSONB-based alternatives only make a handful of pre-selected condition lookups fast; neither solves the general case the registry needs — arbitrary condition types, uniqueness per `(resource_id, type)`, and simple writes — without the application re-encoding and replacing the whole blob on every update. Dedicated tables solve all of that uniformly, with ordinary indexes and ordinary SQL, at the cost of a join most callers already pay for via `Preload`.
 
 ---
 
