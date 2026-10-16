@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-08-03
+Last Updated: 2026-10-16
 ---
 
 # Performance Baselines
@@ -35,6 +35,8 @@ Both environments run the same stack: API, Sentinel (clusters + nodepools), 3 ad
 | Execution | `kubectl run` (ClusterIP) | Prow `tier1-nightly` job |
 | Database | ~1k seeded clusters | Fresh deploy per run |
 | Date captured | 2026-06-18 | 2026-06-23 |
+
+Prow perf numbers measured after HYPERFLEET-1495 come from the `perf-nightly` job, which runs only the perf specs.
 
 ## Baselines
 
@@ -73,7 +75,7 @@ Channel, Version, and WifConfig carry no `RequiredAdapters` — unlike Cluster/N
 
 Version rows below cover only the nested `/channels/{parent_id}/versions` routes. `hyperfleet-api` also exposes flat `/versions` read/update/delete routes (`POST /versions` is rejected — creation needs parent context) for cross-channel access, but no perf coverage exists for that flat path yet; treat it as a gap for a follow-up story, not a value reflected in this table.
 
-Captured 2026-07-27 on a dedicated GKE dev cluster (`dev-tithakka`, e2-standard-4 nodes, no adapters/Sentinel dependency for these kinds) with ~1k seeded rows per kind (1000 Channels, 1000 WifConfigs, 1000 Versions under one parent Channel — the worst-case shape for a single list query). **No Prow CI numbers exist yet** for these operations: the perf specs are new (added by HYPERFLEET-1305) and haven't run in `tier1-nightly` yet — they'll be picked up automatically (no CI config changes needed, same Ginkgo `perf` label) on the first nightly run after this branch merges to `main`. Revisit this table once that run lands.
+Captured 2026-07-27 on a dedicated GKE dev cluster (`dev-tithakka`, e2-standard-4 nodes, no adapters/Sentinel dependency for these kinds) with ~1k seeded rows per kind (1000 Channels, 1000 WifConfigs, 1000 Versions under one parent Channel — the worst-case shape for a single list query). **No Prow CI numbers are recorded here yet** for these operations. The perf specs came with HYPERFLEET-1305 and have run in `tier1-nightly` since it merged on 2026-08-03. After HYPERFLEET-1495 they run in `perf-nightly`.
 
 | Operation                                   | GKE dev |
 | -------------------------------------------- | ------- |
@@ -99,7 +101,7 @@ All operations comfortably clear the shared `ThresholdAPIRead`/`ThresholdAPIList
 
 ### Prow CI
 
-Prow baselines are captured automatically by the `tier1-nightly` job. To trigger a run on demand, use the [Gangway API](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/docs/release/test-release/trigger-e2e-jobs-via-gangway.md). Results are available in the [Prow dashboard](https://prow.ci.openshift.org/?job=periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier1-nightly) build logs (search for `[PERF]` lines).
+Prow baselines are captured automatically by the `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-perf-nightly` job. To trigger a run on demand, use the [Gangway API](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/docs/release/test-release/trigger-e2e-jobs-via-gangway.md). Results are available in the [Prow dashboard](https://prow.ci.openshift.org/?job=periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-perf-nightly) build logs (search for `[PERF]` lines).
 
 ### GKE dev
 

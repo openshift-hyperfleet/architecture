@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-06-15
+Last Updated: 2026-10-16
 ---
 
 # Trigger HyperFleet E2E Jobs via Gangway API
@@ -17,7 +17,7 @@ This guide shows how to trigger these jobs on demand through the OpenShift CI
 [Gangway REST API](https://docs.ci.openshift.org/docs/how-tos/triggering-prowjobs-via-rest/#triggering-a-periodic-job),
 without waiting for their schedule:
 
-- **Nightly** — `tier0` / `tier1` / `tier2` suites, scheduled daily, runnable on demand.
+- **Nightly** — `tier0` / `tier1` / `tier2` suites and the `perf` suite, scheduled daily, runnable on demand.
 - **Release Candidate (RC)** — manual-only validation run (`@yearly` cron, i.e. it never fires
   on its own), driven by image-tag and namespace overrides.
 
@@ -28,8 +28,9 @@ All of these are **periodic** jobs and use `job_execution_type: "1"`.
 | Job name | Schedule | Scope |
 |----------|----------|-------|
 | `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier0-nightly` | `30 9 * * *` | `tier0` |
-| `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier1-nightly` | `30 11 * * *` | `tier1` |
+| `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier1-nightly` | `30 11 * * *` | `tier1 && !perf` |
 | `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-tier2-nightly` | `30 13 * * *` | `tier2` |
+| `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-e2e-perf-nightly` | `30 7 * * *` | `perf` |
 | `periodic-ci-openshift-hyperfleet-hyperfleet-e2e-main-rc-e2e-rc-e2e` | `@yearly` (manual only) | `tier0 \|\| tier1` |
 
 The source of truth for these is the
