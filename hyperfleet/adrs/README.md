@@ -105,3 +105,4 @@ What did we decide? State it plainly.
 | [0027](0027-tenant-dimension-cardinality.md) | Mixed Tenant Dimension Cardinality: Owner-Inherited Child Tenancy and an Unscoped Referencer Check | Active | 2026-09-30 |
 | [0028](0028-apply-delete-ordering.md) | Serialize Apply Then Delete | Active | 2026-10-05 |
 | [0029](0029-desire-store-authorization.md) | Desire Store Authorization | Active | 2026-10-08 |
+| [0030](0030-desire-based-remote-delivery.md) | Desire-Based Remote Delivery | Active | 2026-10-15 |

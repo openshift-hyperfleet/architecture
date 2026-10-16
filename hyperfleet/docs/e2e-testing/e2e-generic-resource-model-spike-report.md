@@ -47,7 +47,7 @@ Unless noted otherwise, file paths in this section are relative to the `hyperfle
 | Required adapters | `entities[].required_adapters`, set per deployment; empty in the current chart for Channel, Version, and WifConfig |
 | Reconciliation | Kinds a Sentinel is configured for (Cluster and NodePool in the current deployment) reach `Reconciled` via adapters |
 
-Source: [hyperfleet-api `charts/values.yaml`](https://github.com/openshift-hyperfleet/hyperfleet-api/blob/main/charts/values.yaml) for the descriptors and chart defaults, plus the [infra base API config](https://github.com/openshift-hyperfleet/hyperfleet-infra/blob/main/helmfile/values/base-api.yaml.gotmpl) that adds the Cluster → WifConfig reference; the delete rules live in the [Generic Resource Registry](generic-resource-registry-design.md#8-delete-model-for-owned-resources).
+Source: [hyperfleet-api `charts/values.yaml`](https://github.com/openshift-hyperfleet/hyperfleet-api/blob/main/charts/values.yaml) for the descriptors and chart defaults, plus the [infra base API config](https://github.com/openshift-hyperfleet/hyperfleet-infra/blob/main/helmfile/values/base-api.yaml.gotmpl) that adds the Cluster → WifConfig reference; the delete rules live in the [Generic Resource Registry](../generic-resource-registry-design.md#8-delete-model-for-owned-resources).
 
 ### 2.2 E2E client is already generic
 

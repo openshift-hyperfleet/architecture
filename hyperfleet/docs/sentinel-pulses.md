@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-01-22
+Last Updated: 2026-10-15
 ---
 
 # Sentinel pulses, adapter behavior and API resource status
@@ -53,7 +53,7 @@ Adapters performs some actions in their "resources" phase in order to query the 
 The actions performed in the "resources" phase make calls to an API:
 
 - k8s to create k8s objects like CRs or Job
-- Maestro API (gRPC)
+- Desire store API for remote-cluster resources
 - Other APIs
 
 After the actions, the state is collected to report to the HyperFleet API

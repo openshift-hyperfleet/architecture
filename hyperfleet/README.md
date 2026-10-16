@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-03-27
+Last Updated: 2026-10-15
 ---
 # HyperFleet Architecture
 
@@ -14,6 +14,7 @@ HyperFleet is a scalable, event-driven system for managing OpenShift cluster lif
 - API layer managing desired state for resources (clusters, nodepools)
 - Sentinel watching state changes and triggering asynchronous work
 - Adapters executing the provider-specific provisioning tasks and reporting status
+- Applier reconciling desired state on remote management clusters, fed by the desire store
 
 ---
 
@@ -92,7 +93,7 @@ Event-driven services that consume reconciliation events, evaluate preconditions
 
 - **Responsibilities**: Event consumption, precondition evaluation, job creation, status reporting
 - **Stack**: Go, Kubernetes client-go, CloudEvents
-- **Features**: Config-driven preconditions, Kubernetes transport layers, idempotent operations
+- **Features**: Config-driven preconditions, Kubernetes/Remote transport layers, idempotent operations
 
 **Adapter Types** (MVP):
 
@@ -111,6 +112,18 @@ Event-driven services that consume reconciliation events, evaluate preconditions
 
 ---
 
+### HyperFleet Applier
+
+Per-management-cluster agent that reconciles desired state on remote clusters. Adapters write desires (ApplyDesire, DeleteDesire, ReadDesire) to the desire store; each Applier reads its partition's desires and reconciles them against the local Kubernetes API server, writing status back to each desire.
+
+- **Responsibilities**: Desire reconciliation (server-side apply, delete, read/mirror), status write-back
+- **Stack**: Go, controller-runtime
+- **Features**: Server-side apply with force for ApplyDesires, deletes confirmed past finalizers for DeleteDesires, live-object mirroring for ReadDesires, partition-scoped polling of the desire store
+
+**Repository**: [hyperfleet-applier](https://github.com/openshift-hyperfleet/hyperfleet-applier)
+
+---
+
 ### Kubernetes Resources
 
 Kubernetes resources (Jobs, Secrets, ConfigMaps, Services) created by adapters to execute provisioning tasks.
@@ -126,6 +139,7 @@ Kubernetes resources (Jobs, Secrets, ConfigMaps, Services) created by adapters t
 - [hyperfleet-api](https://github.com/openshift-hyperfleet/hyperfleet-api) - REST API implementation
 - [hyperfleet-sentinel](https://github.com/openshift-hyperfleet/hyperfleet-sentinel) - Orchestration and decision engine
 - [hyperfleet-adapter](https://github.com/openshift-hyperfleet/hyperfleet-adapter) - Adapter framework implementation
+- [hyperfleet-applier](https://github.com/openshift-hyperfleet/hyperfleet-applier) - Applier for remote resource delivery
 - [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra) - Infrastructure as Code (Terraform + Helm)
 - [hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e) - End-to-end testing framework
 
@@ -143,10 +157,15 @@ Kubernetes resources (Jobs, Secrets, ConfigMaps, Services) created by adapters t
 5. Each Adapter:
    - Fetches cluster details from API
    - Evaluates preconditions
-   - Creates Kubernetes resources if conditions met
+   - Creates resources if conditions met
    - Reports status → PUT /clusters/{id}/statuses
 6. API aggregates adapter statuses → Updates cluster status
 7. Cycle repeats until cluster reaches Reconciled state
+
+Remote delivery is asynchronous: adapters write desires to the desire store; each
+management-cluster Applier reconciles them on the management cluster and writes
+status back to each desire; adapters observe that status on a later cycle and
+report it to the API
 ```
 
 ---

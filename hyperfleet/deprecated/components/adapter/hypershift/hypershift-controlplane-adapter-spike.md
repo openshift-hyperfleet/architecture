@@ -765,7 +765,7 @@ resource management**. Maestro provides the transportation layer between regiona
 authentication, resource propagation, and status feedback.
 
 **For detailed Maestro integration patterns, see
-**: [Maestro Integration Guide](../../../../components/adapter/framework/maestro-integration-guide.md)
+**: [Maestro Integration Guide](../maestro-integration/maestro-integration-guide.md)
 
 ### 5.2 Adapter Framework Integration
 

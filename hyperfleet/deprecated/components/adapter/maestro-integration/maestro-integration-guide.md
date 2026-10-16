@@ -573,6 +573,6 @@ This example shows:
 
 - [Maestro SDK Examples](https://github.com/openshift-online/maestro/tree/main/examples/manifestworkclient) - Official
   SDK usage examples
-- [HyperFleet Adapter Framework Design](adapter-frame-design.md) - Adapter framework documentation
+- [HyperFleet Adapter Framework Design](../../../../components/adapter/framework/adapter-frame-design.md) - Adapter framework documentation
 - [Open Cluster Management ManifestWork API](https://open-cluster-management.io/concepts/manifestwork/) - ManifestWork
   specification
