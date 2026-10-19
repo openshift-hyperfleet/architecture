@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-15
+Last Updated: 2026-10-19
 ---
 
 # HyperFleet Glossary
@@ -46,6 +46,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Envoy** | The API ingress proxy in HyperFleet. All API traffic, external and internal, passes through Envoy; no other route to the API is permitted. Strips client-supplied identity and tenant headers before forwarding to Authorino for authorization. See: [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) | API, Sentinel, Adapter Framework |
 | **External Platform** | The generic OpenShift infrastructure provider type (`platformStatus.type: External` in `config.openshift.io/v1`). Its `platformName` is informational only and is not used to drive operator decisions; the in-cluster operators (cloud controller manager, storage, image registry, ingress, machine API) render nothing platform-specific, so the partner or HyperFleet supplies the CCM, CSI driver, and cloud config. HyperFleet presents this type to OCI hosted clusters. See: [ADR-0021](../adrs/0021-oci-external-platform.md) | Operator |
 | **Fan-out** | The messaging pattern used in HyperFleet where a single reconciliation event published to one topic is independently delivered to multiple adapter subscriptions simultaneously. Each adapter receives its own copy of the event via a dedicated subscription. | Broker |
+| **Fleet-Scoped Caller** | A Desire Store caller that may target any management-cluster partition, chosen per request: the Adapter and the centralized sweeper. Contrast with a remote Applier, which is bound to exactly one partition. See: [Desire Store DD](desire-store-dd.md) | API, Adapter Framework |
 | **GCP Pub/Sub** | Google Cloud Pub/Sub — the primary Message Broker implementation used in GCP-hosted HyperFleet deployments. Configured with `broker.type: googlepubsub` in `broker.yaml`. | Broker |
 | **Generation** | An integer field on HyperFleet API resources that increments each time the resource's spec changes. Adapters include `observed_generation` in their status reports to indicate which version of the spec they reconciled. Sentinel uses generation changes to detect new desired state requiring reconciliation. | API, Sentinel, Adapter Framework |
 | **Finalized (Condition)** | An adapter condition introduced in v1.0.0 for the deletion lifecycle. Adapters report `Finalized: True` after completing cleanup of their managed resources during deletion. The API's hard-delete mechanism checks that all required adapters have reported `Finalized: True` before permanently removing a resource from the database. | Adapter Framework, API |
