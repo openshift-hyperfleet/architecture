@@ -15,7 +15,7 @@ Last Updated: 2026-10-19
     - [Caller-to-Operation Matrix](#caller-to-operation-matrix)
   - [Cross-Cluster Applier Identity](#cross-cluster-applier-identity)
     - [Credential Lifecycle](#credential-lifecycle)
-    - [Token Lifetime and Cache Behavior](#token-lifetime-and-cache-behavior)
+    - [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior)
   - [Partition Binding](#partition-binding)
   - [Partition Selection](#partition-selection)
   - [Identity Model Coordination](#identity-model-coordination)
@@ -74,7 +74,7 @@ This matrix specifies the operation-level permissions enforced by the gateway an
 |--------|--------------------|
 | Adapter | Read desires; write desired state; delete desires |
 | Remote Applier | Read its own partition; write status only |
-| Sweeper / GC | List and get desires; write `DeleteDesire` records only (orphan cleanup); delete desires — scoped to one partition per request; see the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md) |
+| Centralized sweeper | List and get desires; write `DeleteDesire` records only (orphan cleanup); delete desires — scoped to one partition per request; see the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md) |
 
 ### Cross-Cluster Applier Identity
 
@@ -83,23 +83,22 @@ The selected identity model is defined by [ADR-0029: Desire Store Authorization]
 #### Credential Lifecycle
 
 - **Onboarding:** Configure the identity-to-partition mapping in AuthConfig; see [Partition Binding](#partition-binding).
-- **Rotation and revocation:** See [Token Lifetime and Cache Behavior](#token-lifetime-and-cache-behavior).
+- **Rotation and revocation:** See [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior).
 
-#### Token Lifetime and Cache Behavior
+#### Token Lifetime and Revocation Behavior
 
 - **Token:** The management cluster projects and rotates the Applier's service-account token. The Hub rejects expired or over-age tokens.
 - **Lifetime:** Use one hour as the starting maximum lifetime and accepted age. This value may be revisited if future security or operational requirements change.
-- **Cache:** The gateway may cache an active authorization binding for up to 60 seconds.
+- **Residual window:** Revocation is accepted to take up to 60 seconds. No cache is planned or required; the window covers any delay in removing a deleted binding from the gateway's policy (verified in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)).
 - **Revocation:**
-  - The operator disables the AuthConfig binding and triggers emergency invalidation.
-  - The gateway removes or marks the cached binding revoked, so subsequent requests are denied.
+  - Deleting the registration record removes the binding; subsequent requests are denied.
   - In-flight requests are not canceled.
-  - If invalidation fails, the 60-second cache lifetime limits the fallback delay.
+  - If policy removal lags, the 60-second window is the accepted fallback delay.
 - **Outage:** If authorization or issuer validation is unavailable, the gateway grants no new access.
 
 ### Partition Binding
 
-The Hub operator manages identity-to-partition bindings in AuthConfig. For each remote Applier, the entry contains:
+Identity-to-partition bindings are managed as Hub-owned registration records, which the operator renders into AuthConfig. For each remote Applier, the entry contains:
 
 - **AuthConfig fields:**
   - The exact issuer URL.
@@ -111,7 +110,7 @@ The Hub operator manages identity-to-partition bindings in AuthConfig. For each 
 The following rules apply to each binding:
 
 - **Matching:** The issuer, audience, and subject must match the AuthConfig entry exactly. A partial match or a match to another entry is denied. Each active identity maps to exactly one partition from AuthConfig; client headers and management-cluster token claims cannot provide the partition.
-- **Lifecycle:** The operator creates bindings during onboarding, replaces them when identity or partition details change, and disables them by removing or updating the policy when a cluster is decommissioned or compromised. AuthConfig status reports resource readiness, not binding state.
+- **Lifecycle:** The operator renders the binding when the administrator registers the cluster, replaces it when identity or partition details change, and removes it when the record is deleted on decommission or compromise. AuthConfig status reports resource readiness, not binding state.
 - **Propagation:** AuthConfig reconciliation applies changes without restarting the Applier or Desire Store API. A new or changed binding is unusable until the gateway accepts the updated policy.
 
 The concrete `AuthConfig` CR rendered for each binding is defined in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation).
@@ -146,7 +145,7 @@ The management-cluster operator must publish the registered issuer's discovery a
 - Each binding `AuthConfig` contains exactly one issuer configuration, selected by per-partition hostname lookup before authentication (see [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)); a request cannot trigger JWKS resolution for an unrelated issuer.
 - JWKS refresh is bounded and canceled when the authorization request no longer needs it.
 - A refresh failure denies requests that require unavailable keys but does not invalidate unrelated issuer configurations.
-- Binding revocation behavior is defined in [Token Lifetime and Cache Behavior](#token-lifetime-and-cache-behavior).
+- Binding revocation behavior is defined in [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior).
 
 ### Gateway Trust Contract
 
@@ -154,14 +153,14 @@ Envoy strips client-supplied identity, caller-class, and partition headers. Auth
 
 #### Wristband Claims and Validation
 
-The Wristband carries the validated caller identity, caller class, authorized partition, issuer, audience, expiry, and signing-key identifier. The API validates the signature and required claims before authorizing an operation. The caller identity (`hf_identity`) distinguishes the Adapter from the sweeper within the fleet-scoped class, so the API can enforce the sweeper's `DeleteDesire`-only restriction in the [Caller-to-Operation Matrix](#caller-to-operation-matrix).
+The Wristband carries the validated caller identity, caller class, authorized partition, issuer, audience, expiry, and signing-key identifier. The API validates the signature and required claims before authorizing an operation. The Wristband is minted per request and has its own lifetime, 300 seconds as the starting value, matching the general gateway; it is independent of the management-cluster token's one-hour lifetime. The caller identity (`hf_identity`) distinguishes the Adapter from the sweeper within the fleet-scoped class, so the API can enforce the sweeper's `DeleteDesire`-only restriction in the [Caller-to-Operation Matrix](#caller-to-operation-matrix).
 
 #### Signing-Key Rotation and Failure Handling
 
 Authorino signs Wristbands with the Hub private key, and the API verifies them with the matching public key identified by `kid`.
 
 - **Key publication:** Publish the new public key before Authorino starts signing Wristbands with its key identifier.
-- **Key retention:** Keep the previous public key for at least the maximum Wristband lifetime plus the allowed clock skew. With the current one-hour starting lifetime, the key must remain available for at least that period before removal.
+- **Key retention:** Keep the previous public key for at least the maximum Wristband lifetime plus the allowed clock skew.
 - **Trust source:** Configure the API with the Hub public-key or JWKS source before serving requests. The API loads trusted keys from that source and refreshes them according to the key-rotation policy.
 - **Validation:** Reject an unknown key identifier, invalid signature, expired Wristband, missing claim, or inconsistent claim set before data access.
 - **Refresh failure:** If the key set cannot be refreshed, continue only with already trusted keys; do not accept an unverified Wristband.
@@ -180,7 +179,10 @@ The Desire Store gateway uses two kinds of Authorino `AuthConfig` custom resourc
 - **One CR per remote-Applier binding**, selected by per-partition hostname.
 - **One fleet-scoped CR on the base host**, for the Adapter and sweeper.
 
-Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR selection key. The API routes stay path-addressed and the path partition must still match the caller's authorization ([ADR-0022](../adrs/0022-api-mediated-desire-store-access.md)).
+Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR selection key. The API routes stay path-addressed and the path partition must still match the caller's authorization ([ADR-0022](../adrs/0022-api-mediated-desire-store-access.md)). These CRs are served by the Desire Store's dedicated Authorino instance, not the general gateway's. The `hyperfleet.io/desire-store` label on every Desire Store CR is the shard selector:
+
+- The dedicated instance watches only CRs carrying the label.
+- The general gateway's Authorino excludes them, so the two instances never overlap.
 
 **Alternatives considered:**
 
@@ -194,11 +196,17 @@ Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR 
 
 - Each binding has an independent lifecycle.
 - Cross-caller protection is fail-closed by credential type — a management-cluster JWT cannot authenticate on the base host (TokenReview only), and a Hub service-account token cannot authenticate on a partition host (issuer check only).
-- All Desire Store `AuthConfig` resources share one Wristband issuer value and signing-key set, so the API validates a single issuer and key set regardless of which CR issued the Wristband.
+- All Desire Store `AuthConfig` resources share one Wristband issuer value and signing-key set, so the API validates a single issuer and key set regardless of which CR issued the Wristband. The shared value is the fleet-scoped CR's Authorino discovery URL, so the API validates with its standard discovery-based JWT configuration, matching the main gateway.
 
 #### Remote-Applier Binding AuthConfig
 
-The operator renders one CR per binding from the management-cluster registration record. The fields map one-to-one to the binding fields in [Partition Binding](#partition-binding). The example is illustrative; exact Authorino v1beta3 syntax and claim paths are verified at implementation:
+A registration record is a Hub-owned custom resource for each registered management cluster:
+
+- **Carries:** the binding fields (issuer URL, service-account subject, audience, partition).
+- **Created by:** the Hub administrator at management-cluster onboarding, never the management cluster itself; self-registration would let a cluster choose its own partition and issuer trust.
+- **New capability:** the operator does not manage AuthConfigs today; reconciling them from these records is new work for the implementation stories.
+
+The example maps one-to-one to the binding fields in [Partition Binding](#partition-binding); exact Authorino v1beta3 syntax and claim paths are verified at implementation:
 
 ```yaml
 apiVersion: authorino.kuadrant.io/v1beta3
@@ -230,8 +238,9 @@ spec:
     success:
       headers:
         "x-wristband":
+          # injected into the upstream request; the API validates it directly (the general gateway's wristband stays in Envoy metadata)
           wristband:
-            issuer: https://authorino-oidc.hyperfleet.svc:8083/desire-store
+            issuer: https://authorino-oidc.hyperfleet.svc:8083/hyperfleet/desire-store-fleet-scoped/x-wristband
             customClaims:
               "aud":
                 value: desire-store-api
@@ -241,7 +250,7 @@ spec:
                 expression: auth.identity.sub
               "hf_partition":
                 value: mc-01
-            tokenDuration: 3600
+            tokenDuration: 300
             signingKeyRefs:
             - name: desire-store-wristband-key
               algorithm: ES256
@@ -252,19 +261,18 @@ How the example enforces the binding:
 - The authentication phase rejects a wrong issuer or audience.
 - The authorization rule enforces the exact subject and path-partition equality.
 - The Wristband's fixed `hf_partition` is the binding's partition; the remaining claims follow [Wristband Claims and Validation](#wristband-claims-and-validation).
-- The path-segment index depends on the v1 base path.
 
 #### Fleet-Scoped Caller AuthConfig
 
 The Adapter and sweeper run on the Hub and authenticate using Hub service accounts. Unlike a remote Applier, which is restricted to one partition, they can access different partitions, one per request.
 
-For each request, Authorino reads the target partition from the URL path (`request.path.split('/')[6]`) and includes it in the Wristband.
+For each request, Authorino reads the target partition from the URL path (`request.path.split('/')[6]`) and includes it in the Wristband. The index form is illustrative: the implementation must anchor the extraction to the `/partitions/` marker rather than a position and reject paths that do not match the expected shape, so route changes fail closed instead of injecting a wrong partition.
 
 Their AuthConfig differs from a remote-Applier binding's in four ways:
 
 - **Host:** uses the shared hostname `desire-store.hub.example.com`.
 - **Authentication:** validates Hub service-account tokens using Kubernetes TokenReview with the `hyperfleet-desire-store` audience.
-- **Authorization:** allows the Adapter and sweeper service-account subjects (`system:serviceaccount:hyperfleet:adapter`, `system:serviceaccount:hyperfleet:sweeper`).
+- **Authorization:** allows the deployed adapters' and the sweeper's service-account subjects.
 - **Wristband claims:** sets `hf_caller_class` to `fleet-scoped`, `hf_identity` to the caller's service-account subject, and `hf_partition` to the partition from the request path.
 
 The Adapter and sweeper have different permissions, enforced from `hf_identity` ([Wristband Claims and Validation](#wristband-claims-and-validation)). Being fleet-scoped grants different partitions, not unrestricted access to every operation.
@@ -274,18 +282,19 @@ The Adapter and sweeper have different permissions, enforced from `hf_identity` 
 - **Operator, per binding:** reconcile one binding `AuthConfig` per management-cluster registration record:
   - Create at management-cluster onboarding.
   - Replace on identity or partition change.
-  - Delete on decommission — deleting the CR removes the only issuer configuration that accepts that management cluster's tokens, so delete-CR is revocation; the residual window is the cached-authorization lifetime in [Token Lifetime and Cache Behavior](#token-lifetime-and-cache-behavior).
-- **Operator, fleet-scoped:** render and reconcile the base-host `AuthConfig` and its TokenReview subject allowlist.
+  - Delete on decommission — deleting the CR removes the only issuer configuration that accepts that management cluster's tokens, so delete-CR is revocation; the residual window is defined in [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior).
+- **Operator, fleet-scoped:** render and reconcile the base-host `AuthConfig` and its TokenReview subject allowlist, generated from the deployed adapters (each has its own `<name>-hyperfleet-adapter` service account) and the sweeper, as the general gateway's allowlist is.
+- **Operator, registration validation:** reject a registration whose issuer is already claimed by another binding, and reject issuers whose signing keys overlap an existing registration (the main gateway chart already rejects duplicate `issuerUrl` at render, same pattern). With one CR per binding, no request-time component sees two bindings, so issuer uniqueness is what keeps one management cluster's Applier out of another's partition.
 - **Operator, keys:** own the shared Wristband signing-key `Secret`s; rotate by putting the new key first in `signingKeyRefs` and retaining the previous key for the retention window ([Signing-Key Rotation and Failure Handling](#signing-key-rotation-and-failure-handling)).
 - **Gateway:** a private Envoy listener for the Desire Store:
   - Serves the base host and the `{partition}.desire-store` wildcard hostnames.
-  - Uses a wildcard DNS record and a wildcard TLS certificate.
+  - Uses a wildcard DNS record and a wildcard TLS certificate; issuance follows the platform ingress/TLS architecture ([HYPERFLEET-1681](https://redhat.atlassian.net/browse/HYPERFLEET-1681)), and because HTTP-01 cannot issue wildcards, it needs the DNS-01 path or equivalent. A publicly trusted certificate needs no trust distribution: management clusters verify it with their standard CA bundles.
   - Strips the client-supplied headers defined in the [Gateway Trust Contract](#gateway-trust-contract) before authorization ([ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)).
 
 **Verify at implementation:**
 
-- The 60-second cached-authorization binding in [Token Lifetime and Cache Behavior](#token-lifetime-and-cache-behavior) is not a built-in Authorino capability — its caching covers OIDC configurations and JWKS, not authorization decisions — so it needs a custom mechanism or a revised residual window.
-- The shared Wristband issuer value is not one of Authorino's per-CR OIDC discovery endpoints; configure the API's key trust source to match ([Signing-Key Rotation and Failure Handling](#signing-key-rotation-and-failure-handling)).
+- The accepted 60-second revocation window in [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior) relies on policy-removal speed, not a cache: Authorino has no auth-decision cache (only OIDC and JWKS caching). Verify by deleting a binding CR mid-traffic and confirming requests fail within the window.
+- Confirm the deployed Authorino version enforces the `issuer` field on JWT authentication; if it predates that field, enforce the `iss` claim in the authorization rule instead.
 
 ## API Contract and Runtime Behavior
 
@@ -328,7 +337,7 @@ The `{desire-id}` encodes the desire's identity as a single string:
 - **Fields, in order:** `type`, `group`, `resource`, `namespace`, `name` — five of the six identity fields from the [Desire Identity Spike](spike-desire-identity-ownership.md).
 - **Format:** the fields joined by `:`, with an empty field as an empty segment.
   - Example: `apply:rbac.authorization.k8s.io:clusterroles::admin` (no namespace — the resource is cluster-scoped).
-- **Why `:` is safe:** no identity field may contain a colon (RFC 1123/1035 names), so the encoding is unambiguous and reversible.
+- **Why `:` is safe:** `type`, `group`, `resource`, and `namespace` are DNS names and cannot contain colons. The `name` is last and may contain colons (for example, the built-in ClusterRoles named `system:controller:*`), so decoding takes the first four segments positionally and joins the remainder as the name. The encoding stays unambiguous and reversible.
 - **The sixth field:** `managementCluster` is the partition, so it travels in the path rather than the identifier.
 
 #### Wire Schemas
