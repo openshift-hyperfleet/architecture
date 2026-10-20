@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-19
+Last Updated: 2026-10-20
 ---
 
 # Desire Store Architecture Overview
@@ -83,7 +83,7 @@ sequenceDiagram
     participant PG as Postgres
 
     AP->>ENV: HTTPS request with projected management-cluster JWT
-    ENV->>ENV: Strip client identity, caller-class, and partition headers
+    ENV->>ENV: Strip client identity, caller-class, partition, and x-wristband headers
     ENV->>AUTH: Authorize request
     Note over AUTH, MCISS: JWKS may be served from cache - refresh requires issuer reachability
     AUTH->>MCISS: Resolve issuer JWKS (cached or refresh)

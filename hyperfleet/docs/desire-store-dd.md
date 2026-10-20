@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-19
+Last Updated: 2026-10-20
 ---
 
 # Desire Store Detailed Design
@@ -87,14 +87,14 @@ The selected identity model is defined by [ADR-0029: Desire Store Authorization]
 
 #### Token Lifetime and Revocation Behavior
 
-- **Token:** The management cluster projects and rotates the Applier's service-account token. The Hub rejects expired or over-age tokens.
+- **Token:** The management cluster projects and rotates the Applier's service-account token. The Hub rejects expired tokens and tokens whose total lifetime exceeds the maximum, enforced by the binding AuthConfig; the issuer's one-hour TTL is an onboarding expectation.
 - **Lifetime:** Use one hour as the starting maximum lifetime and accepted age. This value may be revisited if future security or operational requirements change.
-- **Residual window:** Revocation is accepted to take up to 60 seconds. No cache is planned or required; the window covers any delay in removing a deleted binding from the gateway's policy (verified in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)).
+- **Residual window:** Revocation is accepted to take up to 60 seconds under a healthy control plane; a stalled watch or API-server partition can extend it, which is an infrastructure failure caught by reconciliation monitoring and recovery, not a bound the gateway enforces. No cache is planned or required (verified in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)).
 - **Revocation:**
   - Deleting the registration record removes the binding; subsequent requests are denied.
   - In-flight requests are not canceled.
   - If policy removal lags, the 60-second window is the accepted fallback delay.
-- **Outage:** If authorization or issuer validation is unavailable, the gateway grants no new access.
+- **Outage:** If the gateway detects that authorization or issuer validation is unavailable, it grants no new access.
 
 ### Partition Binding
 
@@ -109,7 +109,7 @@ Identity-to-partition bindings are managed as Hub-owned registration records, wh
 
 The following rules apply to each binding:
 
-- **Matching:** The issuer, audience, and subject must match the AuthConfig entry exactly. A partial match or a match to another entry is denied. Each active identity maps to exactly one partition from AuthConfig; client headers and management-cluster token claims cannot provide the partition.
+- **Matching:** The issuer, audience, and subject must match the AuthConfig entry exactly; a partial match is denied. Each active identity maps to exactly one partition from AuthConfig; client headers and management-cluster token claims cannot provide the partition.
 - **Lifecycle:** The operator renders the binding when the administrator registers the cluster, replaces it when identity or partition details change, and removes it when the record is deleted on decommission or compromise. AuthConfig status reports resource readiness, not binding state.
 - **Propagation:** AuthConfig reconciliation applies changes without restarting the Applier or Desire Store API. A new or changed binding is unusable until the gateway accepts the updated policy.
 
@@ -140,7 +140,7 @@ Remote Appliers use the existing [ADR-0020](../adrs/0020-envoy-authorino-api-gat
 
 ### Revocation and JWKS Failure Behavior
 
-The management-cluster operator must publish the registered issuer's discovery and JWKS endpoints over the approved private path and keep them reachable for key refresh.
+The management cluster must publish the registered issuer's discovery and JWKS endpoints over the approved private path and keep them reachable for key refresh.
 
 - Each binding `AuthConfig` contains exactly one issuer configuration, selected by per-partition hostname lookup before authentication (see [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)); a request cannot trigger JWKS resolution for an unrelated issuer.
 - JWKS refresh is bounded and canceled when the authorization request no longer needs it.
@@ -149,7 +149,7 @@ The management-cluster operator must publish the registered issuer's discovery a
 
 ### Gateway Trust Contract
 
-Envoy strips client-supplied identity, caller-class, and partition headers. Authorino validates the caller's credential — a management-cluster JWT for remote Appliers, a Hub service-account token for fleet-scoped callers — and issues a signed Hub Wristband. Envoy forwards the Wristband to the API, which authorizes only from its validated claims.
+Envoy strips client-supplied identity, caller-class, partition, and `x-wristband` headers before authorization. Authorino validates the caller's credential — a management-cluster JWT for remote Appliers, a Hub service-account token for fleet-scoped callers — and issues a signed Hub Wristband. Envoy forwards only the Authorino-issued `x-wristband` to the API, which authorizes only from its validated claims.
 
 #### Wristband Claims and Validation
 
@@ -234,6 +234,7 @@ spec:
           operator: eq
           value: system:serviceaccount:hyperfleet:applier
         - predicate: request.path.split('/')[6] == 'mc-01' # path partition must equal the binding
+        - predicate: auth.identity.exp - auth.identity.iat <= 3600 # one-hour maximum token lifetime
   response:
     success:
       headers:
@@ -255,12 +256,6 @@ spec:
             - name: desire-store-wristband-key
               algorithm: ES256
 ```
-
-How the example enforces the binding:
-
-- The authentication phase rejects a wrong issuer or audience.
-- The authorization rule enforces the exact subject and path-partition equality.
-- The Wristband's fixed `hf_partition` is the binding's partition; the remaining claims follow [Wristband Claims and Validation](#wristband-claims-and-validation).
 
 #### Fleet-Scoped Caller AuthConfig
 
@@ -293,7 +288,7 @@ The Adapter and sweeper have different permissions, enforced from `hf_identity` 
 
 **Verify at implementation:**
 
-- The accepted 60-second revocation window in [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior) relies on policy-removal speed, not a cache: Authorino has no auth-decision cache (only OIDC and JWKS caching). Verify by deleting a binding CR mid-traffic and confirming requests fail within the window.
+- The accepted 60-second revocation window in [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior) relies on policy-removal speed, not a cache: Authorino has no auth-decision cache (only OIDC and JWKS caching). Verify by deleting a binding CR mid-traffic and confirming requests fail within the window, and by stalling the watch or partitioning the API server to observe how long stale policy persists and how re-list and re-watch bound the recovery.
 - Confirm the deployed Authorino version enforces the `issuer` field on JWT authentication; if it predates that field, enforce the `iss` claim in the authorization rule instead.
 
 ## API Contract and Runtime Behavior
