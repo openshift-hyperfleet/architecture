@@ -85,15 +85,16 @@ sequenceDiagram
     AP->>ENV: HTTPS request with projected management-cluster JWT
     ENV->>ENV: Strip client identity, caller-class, partition, and x-wristband headers
     ENV->>AUTH: Authorize request
+    AUTH->>AUTH: Select per-partition AuthConfig by hostname
     Note over AUTH, MCISS: JWKS may be served from cache - refresh requires issuer reachability
     AUTH->>MCISS: Resolve issuer JWKS (cached or refresh)
     MCISS-->>AUTH: Return JWKS or unavailable
-    AUTH->>AUTH: Validate issuer, signature, audience, and subject
+    AUTH->>AUTH: Validate issuer, signature, audience, subject, and token age
     alt Invalid credential
         AUTH-->>ENV: Deny request
         ENV-->>AP: Reject request
     else Valid credential
-        AUTH->>AUTH: Resolve operator-managed AuthConfig policy
+        AUTH->>AUTH: Evaluate selected AuthConfig authorization policy
         alt Matching policy
             AUTH->>AUTH: Create signed Hub Wristband with trusted claims
             AUTH-->>ENV: Allow and return trusted identity, partition, and signed Wristband
