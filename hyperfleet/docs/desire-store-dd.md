@@ -87,7 +87,7 @@ The selected identity model is defined by [ADR-0029: Desire Store Authorization]
 
 #### Token Lifetime and Revocation Behavior
 
-- **Token:** The management cluster projects and rotates the Applier's service-account token. The Hub rejects expired tokens and tokens whose total lifetime exceeds the maximum, enforced by the binding AuthConfig; the issuer's one-hour TTL is an onboarding expectation.
+- **Token:** The management cluster projects and rotates the Applier's service-account token. The Hub rejects expired tokens and tokens whose total lifetime exceeds the maximum, enforced by the binding AuthConfig, which fails closed when the age claims are missing or malformed; the issuer's one-hour TTL is an onboarding expectation.
 - **Lifetime:** Use one hour as the starting maximum lifetime and accepted age. This value may be revisited if future security or operational requirements change.
 - **Residual window:** Revocation is accepted to take up to 60 seconds under a healthy control plane; a stalled watch or API-server partition can extend it, which is an infrastructure failure caught by reconciliation monitoring and recovery, not a bound the gateway enforces. No cache is planned or required (verified in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)).
 - **Revocation:**

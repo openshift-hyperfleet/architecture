@@ -146,7 +146,7 @@ Use projected Kubernetes service-account JWTs issued by the management cluster. 
 
 Use OIDC discovery/JWKS for registered management-cluster issuers. The Hub retrieves public keys, supports key rotation, and requires issuer reachability.
 
-The management-cluster operator must publish the registered issuer's discovery/JWKS endpoint and keep it reachable over the approved private path. If discovery or JWKS retrieval fails, the gateway denies authorization. An issuer discovery failure denies that issuer's requests without invalidating unrelated AuthConfig entries.
+The management-cluster operator must publish the registered issuer's discovery/JWKS endpoint and keep it reachable over the approved private path. An initial discovery failure denies that issuer's requests without invalidating unrelated AuthConfig entries. A later refresh failure continues with already trusted keys; only requests that need unavailable keys are denied, as defined in the Detailed Design.
 
 Issuer selection must avoid trying unrelated AuthConfig entries for each request. JWKS refresh must be bounded and cancellation-aware to prevent request fan-out across management-cluster issuers.
 
