@@ -94,7 +94,7 @@ The selected identity model is defined by [ADR-0029: Desire Store Authorization]
   - Deleting the registration record removes the binding; subsequent requests are denied.
   - In-flight requests are not canceled.
   - If policy removal lags, the 60-second window is the accepted fallback delay.
-- **Outage:** If the gateway detects that authorization or issuer validation is unavailable, it grants no new access.
+- **Outage:** If Authorino is unavailable or initial issuer discovery fails, the gateway grants no new access.
 
 ### Partition Binding
 
@@ -290,6 +290,7 @@ The Adapter and sweeper have different permissions, enforced from `hf_identity` 
 
 - The accepted 60-second revocation window in [Token Lifetime and Revocation Behavior](#token-lifetime-and-revocation-behavior) relies on policy-removal speed, not a cache: Authorino has no auth-decision cache (only OIDC and JWKS caching). Verify by deleting a binding CR mid-traffic and confirming requests fail within the window, and by stalling the watch or partitioning the API server to observe how long stale policy persists and how re-list and re-watch bound the recovery.
 - Confirm the deployed Authorino version enforces the `issuer` field on JWT authentication; if it predates that field, enforce the `iss` claim in the authorization rule instead.
+- Verify that the deployed Authorino version denies requests when a CEL predicate or expression fails to evaluate. Test missing or malformed JWT age claims and malformed paths that cause partition extraction to fail. If evaluation errors do not result in denial, add explicit presence and shape checks before performing the arithmetic or extraction.
 
 ## API Contract and Runtime Behavior
 
@@ -308,6 +309,8 @@ The Desire Store API exposes these transport-neutral operations:
 | Delete desire | Adapter, sweeper | Deletes a desire. To remove an applied resource, the Adapter creates a `DeleteDesire`. |
 
 The API derives the partition from the Wristband's trusted partition claim, never from a normal client request. All callers address the target partition in the route path; [Partition Selection](#partition-selection) defines the addressing and per-caller rules.
+
+The sweeper is exempt from the owner-collision check on its writes and deletes, per the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md). Sweeper-created `DeleteDesire` records carry the sweeper's identity as `owner`, and the sweeper removes them after the applier confirms deletion, so the transient record does not block a future owner.
 
 ### REST API (v1)
 
@@ -329,7 +332,7 @@ Query parameters: `type` filters by desire type (`apply`, `delete`, `read`); omi
 
 The `{desire-id}` encodes the desire's identity as a single string:
 
-- **Fields, in order:** `type`, `group`, `resource`, `namespace`, `name` — five of the six identity fields from the [Desire Identity Spike](spike-desire-identity-ownership.md).
+- **Fields, in order:** `type`, `group`, `resource`, `namespace`, `name` — five of the six identity fields from the [Desire Identity Spike](spike-desire-identity-ownership.md). This document supersedes the spike's format for `name`: Kubernetes object-name validation (path-segment names, which permit colons in RBAC objects), not the spike's RFC 1035 label.
 - **Format:** the fields joined by `:`, with an empty field as an empty segment.
   - Example: `apply:rbac.authorization.k8s.io:clusterroles::admin` (no namespace — the resource is cluster-scoped).
 - **Why `:` is safe:** `type`, `group`, `resource`, and `namespace` are DNS names and cannot contain colons. The `name` is last and may contain colons (for example, the built-in ClusterRoles named `system:controller:*`), so decoding takes the first four segments positionally and joins the remainder as the name. The encoding stays unambiguous and reversible.
@@ -360,7 +363,7 @@ The desire resource returned by Get:
   - This is the references-only rule the [transport evaluation](spike-desire-store-transport.md) makes load-bearing; the Applier therefore applies from the GET response, not the list.
   - Carry `next_cursor`, omitted on the last page ([Pagination and Consistency](#pagination-and-consistency)).
 - **Write-desire requests:**
-  - Carry `owner`, `resource_id`, `kubeContent`, and `version`; the identity fields come from the path, and a body that disagrees with the path is rejected.
+  - Carry `owner`, `resource_id`, `kubeContent`, and `version` only; write bodies carry no identity fields, and the path is the sole identity source.
   - An omitted or zero `version` means create; a provided `version` means update ([CAS / Version Semantics](#cas--version-semantics)).
 - **Write-status requests:**
   - Carry only the `status` object.
@@ -375,12 +378,12 @@ The implementation story specifies these schemas in an OpenAPI document first, f
 | 200 OK | Get and list responses; successful desire update |
 | 201 Created | Desire created by a write |
 | 204 No Content | Successful delete or status write |
-| 400 Bad Request | Malformed request: invalid identifier encoding, query parameters, JSON, or body/path identity mismatch |
+| 400 Bad Request | Malformed request: invalid identifier encoding, query parameters, or JSON |
 | 401 Unauthorized | Missing, invalid, or expired Wristband |
 | 403 Forbidden | Caller class not permitted for the operation, or path partition outside the caller's authorization |
 | 404 Not Found | Desire absent on a get, update, status write, or delete |
 | 409 Conflict | Version mismatch, create on an existing desire, or owner collision |
-| 422 Unprocessable Entity | Well-formed JSON that fails semantic validation, such as kubeContent for the wrong resource |
+| 422 Unprocessable Entity | Well-formed JSON that fails semantic validation, such as kubeContent whose Kubernetes identity does not match the path |
 | 429 Too Many Requests | Rate limited |
 | 500 / 503 | Internal error; 503 when the API is degraded |
 
