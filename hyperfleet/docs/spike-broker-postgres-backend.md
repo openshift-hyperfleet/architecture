@@ -1,0 +1,122 @@
+---
+Status: Active
+Owner: HyperFleet Architecture Team
+Last Updated: 2026-10-26
+---
+
+# SPIKE: Choose the Broker's PostgreSQL Backend Design: River or Purpose-Built
+
+**Jira**: [HYPERFLEET-1656](https://redhat.atlassian.net/browse/HYPERFLEET-1656)
+
+## Table of Contents
+
+- [Related Documents](#related-documents)
+- [Overview](#overview)
+- [Evaluation Method](#evaluation-method)
+- [Candidates](#candidates)
+- [Comparison](#comparison)
+- [Evidence Run](#evidence-run)
+- [Decision](#decision)
+
+---
+
+## Related Documents
+
+- [ADR-0002: Pluggable Message Broker Library](../adrs/0002-pluggable-message-broker-library.md): the Publisher and Subscriber seam every candidate must plug into.
+- [ADR-0026: Co-Located Service Databases on Shared Postgres](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md): decides the shared-instance database layout.
+- [Co-located service databases design](co-located-service-databases-postgres-design.md): defers `event_store` backend details to this spike.
+- Parent epic: [HYPERFLEET-1655](https://redhat.atlassian.net/browse/HYPERFLEET-1655).
+
+## Overview
+
+This document compares the three candidates for the Broker's PostgreSQL backend — River, a purpose-built work queue, and a purpose-built event log with cursors — and records the evidence and the decision.
+
+The proof of concept (POC) proved River works, but not that it is the right amount of machinery for the Broker's contract. The choice sets schema ownership, the migration story, and the dependency footprint for the operator bundle and disconnected installs.
+
+## Evaluation Method
+
+Compare all three candidates against the criteria in the [comparison](#comparison); the event log POC supplies the evidence for the purpose-built candidates.
+
+Each candidate is evaluated against the Broker's actual contract:
+
+- Events are small and idempotent by generation.
+- Volume is tens of events per second at pipeline scale.
+- Delivery loss is tolerable — Sentinel re-publishes on later cycles.
+
+Fixed input: `event_store` is a dedicated database on the shared instance, decided in [ADR-0026](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md).
+
+### Event log POC
+
+- **Scope:** build the event-log-with-cursors backend behind the existing Publisher and Subscriber interfaces.
+- **Design:** store each event once in an append-only `broker_events` table with a per-topic monotonic sequence; track each (topic, subscription)'s progress in `broker_cursors` (reserved and acknowledged positions), with replicas reserving ranges whose claims carry the lease expiry.
+- **Delivery and recovery:** advance cursors with contiguity plus grace — a hole older than the grace period is treated as a rolled-back insert and skipped; retry handler failures a bounded number of times, then skip, log, and surface them on the subscriber error channel. Delivery is at-least-once within a subscription; duplicates are safe because events are idempotent by generation.
+- **Database behavior:** short transactions and plain SQL, no LISTEN/NOTIFY; retention by partition rotation.
+
+## Candidates
+
+### River
+
+- Job queue library behind the broker seam.
+- Fan-out via a subscription registry: each (topic, subscription) pair is a queue; replicas sharing a subscription compete on it.
+
+### Purpose-built work queue
+
+- Our own per-subscription table with SELECT FOR UPDATE SKIP LOCKED claims.
+- Optional LISTEN/NOTIFY as a wake-up hint; polling is the guarantee.
+- Same fan-out shape as River.
+
+### Purpose-built event log with cursors
+
+- One append-only events table with a sequence; one cursor row per (topic, subscription).
+- Retention by partition rotation.
+- Sentinel is the producer today; an API-emitted outbox later reuses the same mechanics.
+
+## Comparison
+
+| Criterion | River | Purpose-built work queue | Purpose-built event log with cursors |
+|---|---|---|---|
+| Dependency and license delta | External: [riverqueue/river](https://github.com/riverqueue/river) (MPL-2.0), with retry and scheduling machinery the contract does not use | None — all code in-repo | None — all code in-repo |
+| Schema ownership and operator migrations | River's — upstream releases can change it | Ours | Ours, plus partition-rotation DDL |
+| Fan-out cost per subscription | One row per subscription per event | One row per subscription per event | One append per event |
+| Managed Postgres and PgBouncer | LISTEN/NOTIFY claiming — needs direct or session-pooled connections ([guide](https://riverqueue.com/docs/pgbouncer)) | SKIP LOCKED — transaction-pooling safe | Plain SQL, short transactions — transaction-pooling safe by construction |
+| Retention, bloat, and vacuum | Delete-behind — tunable only via River's knobs | Delete-behind — tunable by us | Partition rotation — few dead tuples |
+| Observability (SQL and metrics) | Built in: riverui, OpenTelemetry; queue-shaped | SQL visibility; metrics ours to build | SQL visibility; metrics ours to build; consumer lag = max sequence minus cursor |
+| Visibility-ordering correctness | No cross-job ordering | No cross-job ordering | Sequence order; advance bounded by contiguity and a grace window |
+| Effort to production | Lowest — the nine scenarios already pass on the POC branch | Build tables, claims, and polling, pass the nine scenarios, plus alerts and a runbook | Build events, cursors, and rotation, pass the nine scenarios, plus alerts and a runbook |
+| Path to an API-emitted outbox | None | None | Direct — the API becomes the producer |
+
+**Details and caveats:**
+
+- Every candidate's migrations ship through the operator's `event_store_migrate` path; River's are generated by its own tooling and wired into it.
+- River's insert-only clients tolerate transaction pooling; its running clients can be configured to poll instead of listening.
+- The work queue's LISTEN/NOTIFY hint needs a session-level connection when enabled.
+- Event-log cursor advance must wait out the sequence-gap window: a sequence is assigned before its transaction commits, so a lower sequence can still be in flight behind the cursor.
+
+**Paper comparison outcome:** the event log with cursors is the candidate to build. The work queue is eliminated: it carries River's write amplification and delete-behind retention at self-build cost, and has no outbox path. The evidence run decides between the event log and River.
+
+## Evidence Run
+
+All evidence is on [`poc/eventlog-backend`](https://github.com/pnguyen44/hyperfleet-broker/tree/poc/eventlog-backend).
+
+- Correctness: the nine shared integration scenarios, the goroutine leak tests, and the targeted tests pass — visibility under concurrent publishers, crash recovery, and injected hole resolution.
+- Storage: in equivalent 30-second runs at 500 events/sec with 5-way fan-out, the event log stored 14,577 events in 5.5MB — about 0.4KB per event — with zero dead tuples. River stored 73,340 job rows in 97MB — about 1.4KB per row, one per subscription per event, about 7KB per event. Neither run triggered retention cleanup (24h default in both). Consumer lag read 0 via SQL after drain.
+- Pooling: PgBouncer 1.26 in transaction mode passes the shared scenarios with pgx's default statement caching; no `default_query_exec_mode` override. Live validation on OCI Database with PostgreSQL ([ADR-0023](../adrs/0023-oci-managed-postgresql.md)) is deferred to the implementation stories.
+
+Load — one harness for both backends (parallelism 8, 30s runs; the event log at batch 10 / cooldown 10ms; local runs on a fresh instance, kind runs through a port-forward to a single Postgres pod):
+
+| Environment | Backend | Scenario | Delivery | p50 | p99 |
+|---|---|---|---|---|---|
+| Local | Event log | 500 events/sec, 5-way fan-out | 73,755 / 73,755, 0 errors | 6ms | 211ms |
+| Local | Event log | 200 events/sec, 3-way fan-out | 17,628 / 17,628, 0 errors | 8ms | 176ms |
+| Local | River | 500 events/sec, 5-way fan-out | 73,425 / 73,425, 0 errors | 35ms | 94ms |
+| Local | River | 200 events/sec, 3-way fan-out | 17,817 / 17,817, 0 errors | 43ms | 92ms |
+| Kind | Event log | 200 events/sec, 3-way fan-out | 17,334 / 17,334, 0 errors | 12ms | 213ms |
+| Kind | River | 200 events/sec, 3-way fan-out | 17,283 / 17,283, 0 errors | 44ms | 101ms |
+
+The event log's median is about 5x lower (no queue round trip); River's tail is about 2x tighter (LISTEN/NOTIFY push versus batch polling), and repeat runs on a fresh instance are within a few percent. The event log's p99 is insensitive to the fetch cooldown (211ms at 5ms and at 10ms) with a max about 0.5s, well under the 5-second Sentinel poll floor. The River numbers reproduce `RIVER-POC.md`'s recorded local run (p50 43ms, p99 92ms) and its recorded in-kind run (p50 41ms, p99 88ms).
+
+## Decision
+
+The event log with per-topic sequences and per-subscription cursors. It is the only candidate that satisfies the epic's outbox constraint, and it wins on dependency footprint (pgx only), write amplification (one row per event), retention (rotation, zero dead tuples), ordering, and median latency; the accepted cost is the polling tail (p99 176-211ms against River's 92-94ms), immaterial under the 5-second Sentinel poll floor.
+
+Proposed as [ADR-0031](../adrs/0031-broker-postgres-event-log.md) with the operational rules.
