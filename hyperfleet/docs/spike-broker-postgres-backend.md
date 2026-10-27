@@ -113,7 +113,7 @@ Load — one harness for both backends (parallelism 8, 30s runs; the event log a
 | Kind | Event log | 200 events/sec, 3-way fan-out | 17,334 / 17,334, 0 errors | 12ms | 213ms |
 | Kind | River | 200 events/sec, 3-way fan-out | 17,283 / 17,283, 0 errors | 44ms | 101ms |
 
-The event log's median is about 5x lower (no queue round trip); River's tail is about 2x tighter (LISTEN/NOTIFY push versus batch polling), and repeat runs on a fresh instance are within a few percent. The event log's p99 is insensitive to the fetch cooldown (211ms at 5ms and at 10ms) with a max about 0.5s, well under the 5-second Sentinel poll floor. The River numbers reproduce `RIVER-POC.md`'s recorded local run (p50 43ms, p99 92ms) and its recorded in-kind run (p50 41ms, p99 88ms).
+The event log's median is about 5x lower (no queue round trip); River's tail is about 2x tighter (LISTEN/NOTIFY push versus idle-poll wait), and repeat runs on a fresh instance are within a few percent. The event log's p99 is set by the idle `poll_interval` (1s default): at 200ms the p99 drops to 16ms but costs 34 percent more transaction IDs, so 1s stands against the 5-second Sentinel poll floor. The River numbers reproduce `RIVER-POC.md`'s recorded local run (p50 43ms, p99 92ms) and its recorded in-kind run (p50 41ms, p99 88ms).
 
 ## Decision
 

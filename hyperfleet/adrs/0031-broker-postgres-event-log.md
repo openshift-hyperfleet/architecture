@@ -20,13 +20,14 @@ Use the purpose-built event log with per-topic sequences and per-subscription cu
 - **Coordination:** each (topic, subscription) tracks progress in `broker_cursors` (acked and reserved positions); replicas reserve disjoint sequence ranges through `broker_ranges` claims with per-range leases; a reservation is one transaction holding the cursor row lock.
 - **Delivery:** acks only on handler success — at-least-once within a subscription while events are within the retention window, safe because events are idempotent by generation; bounded retries tracked by an attempts counter scoped per (topic, subscription), then skip and surface on the subscriber error channel.
 - **Ordering:** the acked cursor advances only over contiguous ids; a hole older than the grace period (default 5s, configurable) is treated as a rolled-back insert and is skipped. The grace period must exceed the longest publish transaction so a live insert is never mistaken for a rolled-back one.
-- **Retention:** daily partitions created a day ahead, dropped after the retention window (default 24h). Partition DDL runs as `event_store_migrate` on a schedule — the runtime role (`event_store_app`) holds DML only, per [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md). A cursor behind the oldest retained sequence advances to that sequence, accepting the documented loss.
+- **Retention:** daily partitions created a day ahead, dropped after the retention window (default 24h). Partition DDL runs as `event_store_migrate` on a schedule — the runtime role (`event_store_app`) holds DML only, per [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md). When both cursor positions fall behind the oldest retained sequence, they advance to one below it, accepting the documented loss.
 - **Pooling:** no LISTEN/NOTIFY and no extensions — short transactions and plain SQL only, so transaction pooling (PgBouncer) is safe by construction and [ADR-0023](0023-oci-managed-postgresql.md)'s OCI Database with PostgreSQL constraints are met; live validation on that offering is deferred to the implementation stories.
 
 Operational rules:
 
 - No NOTIFY inside hot write transactions.
 - Claim and reservation transactions stay short.
+- Idle checks take no locks — the cursor row lock is taken only when there is work.
 - Retention by rotation rather than delete-behind.
 - Alert on the age of the oldest unacknowledged event per subscription and on holes stalled past the grace period — the grace rule is the time-based stand-in for the xmin horizon.
 
@@ -57,7 +58,7 @@ POC records in `hyperfleet-broker`: [`EVENTLOG-POC.md`](https://github.com/opens
 
 **Trade-offs:**
 
-- A polling latency tail — p99 about 200ms at the tested knobs, insensitive to the fetch cooldown, max about 0.5s — acceptable against the 5-second Sentinel poll floor.
+- A polling latency tail — p99 about 200ms, set by the idle `poll_interval` (1s default; the load harness does not override it). At 200ms the p99 drops to 16ms but costs 34 percent more transaction IDs and 38 percent more WAL. The 1s default is chosen because the 5-second Sentinel poll floor does not require tighter latency, and idle polls with no locks (see the operational rules) make the cost acceptable.
 - Per-topic publish serialization on the counter row, immaterial at contract volume.
 - Range coordination adds two small tables and one transaction per batch.
 - Metrics and tooling are in-repo (`MetricsRecorder` plus SQL) rather than provided by a library.
