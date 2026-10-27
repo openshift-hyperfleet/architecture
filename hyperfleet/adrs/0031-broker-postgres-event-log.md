@@ -18,9 +18,9 @@ Use the purpose-built event log with per-topic sequences and per-subscription cu
 
 - **Storage:** `broker_events` is an append-only table, partitioned daily, one row per event with a per-topic sequence from `broker_topic_seq`; publish is one transaction (bootstrap, allocate, insert) whose cost is independent of subscription count.
 - **Coordination:** each (topic, subscription) tracks progress in `broker_cursors` (acked and reserved positions); replicas reserve disjoint sequence ranges through `broker_ranges` claims with per-range leases; a reservation is one transaction holding the cursor row lock.
-- **Delivery:** acks only on handler success — at-least-once within a subscription while events are within the retention window, safe because events are idempotent by generation; bounded retries tracked by a shared attempts counter, then skip and surface on the subscriber error channel.
+- **Delivery:** acks only on handler success — at-least-once within a subscription while events are within the retention window, safe because events are idempotent by generation; bounded retries tracked by an attempts counter scoped per (topic, subscription), then skip and surface on the subscriber error channel.
 - **Ordering:** the acked cursor advances only over contiguous ids; a hole older than the grace period (default 5s, configurable) is treated as a rolled-back insert and is skipped. The grace period must exceed the longest publish transaction so a live insert is never mistaken for a rolled-back one.
-- **Retention:** daily partitions created a day ahead, dropped after the retention window (default 24h).
+- **Retention:** daily partitions created a day ahead, dropped after the retention window (default 24h). Partition DDL runs as `event_store_migrate` on a schedule — the runtime role (`event_store_app`) holds DML only, per [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md). A cursor behind the oldest retained sequence advances to that sequence, accepting the documented loss.
 - **Pooling:** no LISTEN/NOTIFY and no extensions — short transactions and plain SQL only, so transaction pooling (PgBouncer) is safe by construction and [ADR-0023](0023-oci-managed-postgresql.md)'s OCI Database with PostgreSQL constraints are met; live validation on that offering is deferred to the implementation stories.
 
 Operational rules:
@@ -42,7 +42,7 @@ Evidence (both backends run on one machine with one harness; repeat runs on a fr
 
 River's figures are our same-machine runs; they reproduce `RIVER-POC.md`'s recorded local run (p50 43ms, p99 92ms). In-kind (single Postgres pod, port-forward): event log p50 12ms / p99 213ms, River p50 44ms / p99 101ms — River reproduces its recorded in-kind figures (p50 41ms, p99 88ms).
 
-POC records in `hyperfleet-broker`: [`EVENTLOG-POC.md`](https://github.com/pnguyen44/hyperfleet-broker/blob/poc/eventlog-backend/EVENTLOG-POC.md) and [`RIVER-POC.md`](https://github.com/ciaranRoche/hyperfleet-broker/blob/poc/river-backend/RIVER-POC.md).
+POC records in `hyperfleet-broker`: [`EVENTLOG-POC.md`](https://github.com/openshift-hyperfleet/hyperfleet-broker/blob/poc/eventlog-backend/EVENTLOG-POC.md) and [`RIVER-POC.md`](https://github.com/openshift-hyperfleet/hyperfleet-broker/blob/poc/eventlog-backend/RIVER-POC.md).
 
 ## Consequences
 

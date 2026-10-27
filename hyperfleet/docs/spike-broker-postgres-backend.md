@@ -49,7 +49,7 @@ Fixed input: `event_store` is a dedicated database on the shared instance, decid
 
 - **Scope:** build the event-log-with-cursors backend behind the existing Publisher and Subscriber interfaces.
 - **Design:** store each event once in an append-only `broker_events` table with a per-topic monotonic sequence; track each (topic, subscription)'s progress in `broker_cursors` (reserved and acknowledged positions), with replicas reserving ranges whose claims carry the lease expiry.
-- **Delivery and recovery:** advance cursors with contiguity plus grace — a hole older than the grace period is treated as a rolled-back insert and skipped; retry handler failures a bounded number of times, then skip, log, and surface them on the subscriber error channel. Delivery is at-least-once within a subscription; duplicates are safe because events are idempotent by generation.
+- **Delivery and recovery:** advance cursors with contiguity plus grace — a hole older than the grace period is treated as a rolled-back insert and skipped; retry handler failures a bounded number of times, then skip, log, and surface them on the subscriber error channel. Delivery is at-least-once within a subscription; duplicates are safe because events are idempotent by generation. Retry counts are scoped per (topic, subscription) so fan-out subscriptions do not consume each other's retry budget.
 - **Database behavior:** short transactions and plain SQL, no LISTEN/NOTIFY; retention by partition rotation.
 
 ## Candidates
@@ -96,7 +96,7 @@ Fixed input: `event_store` is a dedicated database on the shared instance, decid
 
 ## Evidence Run
 
-All evidence is on [`poc/eventlog-backend`](https://github.com/pnguyen44/hyperfleet-broker/tree/poc/eventlog-backend).
+All evidence is on [`poc/eventlog-backend`](https://github.com/openshift-hyperfleet/hyperfleet-broker/tree/poc/eventlog-backend).
 
 - Correctness: the nine shared integration scenarios, the goroutine leak tests, and the targeted tests pass — visibility under concurrent publishers, crash recovery, and injected hole resolution.
 - Storage: in equivalent 30-second runs at 500 events/sec with 5-way fan-out, the event log stored 14,577 events in 5.5MB — about 0.4KB per event — with zero dead tuples. River stored 73,340 job rows in 97MB — about 1.4KB per row, one per subscription per event, about 7KB per event. Neither run triggered retention cleanup (24h default in both). Consumer lag read 0 via SQL after drain.
