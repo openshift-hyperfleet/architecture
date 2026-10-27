@@ -1,5 +1,5 @@
 ---
-Status: Active
+Status: Proposed
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-10-26
 ---
