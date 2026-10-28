@@ -49,7 +49,7 @@ Fixed input: `event_store` is a dedicated database on the shared instance, decid
 
 - **Scope:** build the event-log-with-cursors backend behind the existing Publisher and Subscriber interfaces.
 - **Design:** store each event once in an append-only `broker_events` table with a per-topic monotonic sequence; track each (topic, subscription)'s progress in `broker_cursors` (reserved and acknowledged positions), with replicas reserving ranges whose claims carry the lease expiry.
-- **Delivery and recovery:** advance cursors with contiguity plus grace — a hole older than the grace period is treated as a rolled-back insert and skipped; retry handler failures a bounded number of times, then skip, log, and surface them on the subscriber error channel. Delivery is at-least-once within a subscription; duplicates are safe because events are idempotent by generation. Retry counts are scoped per (topic, subscription) so fan-out subscriptions do not consume each other's retry budget.
+- **Delivery and recovery:** advance cursors with contiguity plus grace — a hole older than the grace period is treated as a rolled-back insert and skipped; retry handler failures a bounded number of times, then skip, log, and surface them on the subscriber error channel. Delivery is at-least-once within a subscription; duplicates are safe because events are idempotent by generation. Retry counts are scoped per (topic, subscription, sequence), so events do not share a budget and fan-out subscriptions do not consume each other's; the POC simplifies this to a shared per-event counter on the row (`EVENTLOG-POC.md`).
 - **Database behavior:** short transactions and plain SQL, no LISTEN/NOTIFY; retention by partition rotation.
 
 ## Candidates
