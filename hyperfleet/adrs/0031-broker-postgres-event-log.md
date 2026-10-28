@@ -29,7 +29,7 @@ Operational rules:
 - Claim and reservation transactions stay short.
 - Idle checks take no locks — the cursor row lock is taken only when there is work.
 - Retention by rotation rather than delete-behind.
-- Alert on the age of the oldest unacknowledged event per subscription and on holes stalled past the grace period — the grace rule is the time-based stand-in for the xmin horizon.
+- Alert on the age of the oldest unacknowledged event per subscription, on holes stalled past the grace period, and on `event_store`'s xmin horizon age — the grace rule covers cursor holes, while a transaction pinning the horizon blocks vacuum with or without one (defined in the [co-located databases design](../docs/co-located-service-databases-postgres-design.md)).
 
 Evidence (both backends run on one machine with one harness; repeat runs on a fresh instance; 30-second runs at 200-500 events/sec with 3-5 way fan-out, pre-pruning against default 24h retention):
 
