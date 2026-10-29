@@ -73,18 +73,18 @@ Fixed input: `event_store` is a dedicated database on the shared instance, decid
 
 ### watermill-sql
 
-- Watermill's SQL implementation, plugging into the Watermill seam the broker already wraps.
-- One messages table per topic with an auto-incrementing offset; each consumer group's progress in a per-topic offsets table; only transactions below the snapshot's xmin horizon are readable.
+- Watermill's SQL implementation, plugging into the Watermill seam the broker already wraps. The paper evaluation covered the upstream default PostgreSQL path; its version was not pinned, no code run was performed, and custom `SchemaAdapter` implementations and externally managed migrations were out of scope.
+- In that setup, one messages table is created per topic with an auto-incrementing offset, each consumer group's progress is stored in a per-topic offsets table, and only transactions below the snapshot's xmin horizon are readable.
 
 ## Comparison
 
 | Criterion | River | Purpose-built work queue | Purpose-built event log with cursors | watermill-sql |
 |---|---|---|---|---|
 | Dependency and license delta | External: [riverqueue/river](https://github.com/riverqueue/river) (MPL-2.0), with retry and scheduling machinery the contract does not use | None — all code in-repo | None — all code in-repo | External: [ThreeDotsLabs/watermill-sql](https://github.com/ThreeDotsLabs/watermill-sql) (MIT) atop Watermill core (MIT, already a dependency) |
-| Schema ownership and operator migrations | River's — upstream releases can change it | Ours | Ours, plus partition-rotation DDL | Library's — per-topic messages and offsets tables; its opt-in initialization creates them at runtime from the app role, or they are pre-created per topic |
+| Schema ownership and operator migrations | River's — upstream releases can change it | Ours | Ours, plus partition-rotation DDL | Default path: library-owned per-topic messages and offsets tables; initialization creates them at runtime from the app role, or they are pre-created per topic |
 | Fan-out cost per subscription | One row per subscription per event | One row per subscription per event | One append per event | One append per event |
 | Managed Postgres and PgBouncer | LISTEN/NOTIFY claiming — needs direct or session-pooled connections ([guide](https://riverqueue.com/docs/pgbouncer)) | SKIP LOCKED — transaction-pooling safe | Plain SQL, short transactions — transaction-pooling safe by construction | No LISTEN/NOTIFY and transaction-pooling compatible, but handler batches run inside the polling transaction holding the offsets row lock; needs PostgreSQL 13+ |
-| Retention, bloat, and vacuum | Delete-behind — tunable only via River's knobs | Delete-behind — tunable by us | Partition rotation — few dead tuples | None — messages accumulate until deleted by hand or a custom partitioned schema adapter |
+| Retention, bloat, and vacuum | Delete-behind — tunable only via River's knobs | Delete-behind — tunable by us | Partition rotation — few dead tuples | None in the evaluated default setup — messages accumulate until deleted by hand; a custom partitioned schema adapter was not evaluated |
 | Observability (SQL and metrics) | Built in: riverui, OpenTelemetry; queue-shaped | SQL visibility; metrics ours to build | SQL visibility; metrics ours to build; consumer lag = max sequence minus cursor | SQL visibility (offsets table); metrics ours to build |
 | Visibility-ordering correctness | No cross-job ordering | No cross-job ordering | Sequence order; advance bounded by contiguity and the grace period | Correct by construction — only transactions below the snapshot's xmin horizon are readable, ordered by (transaction id, offset) |
 | Effort to production | Lowest — the nine scenarios already pass on the POC branch | Build tables, claims, and polling, pass the nine scenarios, plus alerts and a runbook | Build events, cursors, and rotation, pass the nine scenarios, plus alerts and a runbook | Wire the Watermill backend on the existing rabbitmq/googlepubsub pattern; role-split compliance (pre-created tables) and retention are work outside the library |
