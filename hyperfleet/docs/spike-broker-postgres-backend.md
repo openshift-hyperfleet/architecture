@@ -99,6 +99,18 @@ Fixed input: `event_store` is a dedicated database on the shared instance, decid
 - The outbox criterion is de-weighted: the ticket predates [ADR-0026](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md), and with the API and the Broker on separate databases no backend gets an atomic API-emitted outbox by changing the producer alone — every path needs a cross-database handoff. The event log keeps the cheapest path (same table, new producer), but the criterion no longer decides the choice.
 - watermill-sql's schema initialization is opt-in: enabled, it runs CREATE TABLE from the app role at runtime, against the role split; disabled, every new topic needs its tables pre-created through the migrate path.
 
+### HTTP transport comparison
+
+The strongest HTTP case is a hub-hosted service behind the existing Envoy and Authorino gateway, with adapters consuming over outbound-only HTTPS and no database credentials leaving the hub. Against that case, the shared-PostgreSQL transport compares as follows:
+
+| Axis | HTTP transport | Shared PostgreSQL |
+|---|---|---|
+| Deployment footprint | A separately deployed service to install, secure, upgrade, and mirror | No new service; events are tables in the existing shared instance |
+| Partner connectivity | Outbound-only HTTPS through the gateway | In-process access for hub components; a future remote consumer would use a gateway-mediated events endpoint rather than a direct database pool |
+| Durability and recovery | No persistence or replay; a lost event is recovered only when Sentinel regenerates it | Retention window with SQL inspection and replay for slow or restarted consumers |
+| Outbox path | Requires a service-side persistence and producer handoff design | Reuses the event table once the producer and cross-database handoff are designed |
+| Operational ownership | A second stateful service alongside the database | One stateful service in the box, with delivery observable in SQL |
+
 **Paper comparison outcome:** the event log with cursors is the candidate to build; the evidence run decides between the event log and River.
 
 - **Work queue — eliminated:** River's write amplification and delete-behind retention at self-build cost, and no outbox path.
@@ -106,6 +118,7 @@ Fixed input: `event_store` is a dedicated database on the shared instance, decid
   - **Schema:** per-topic tables need runtime creation from the app role or a migration per topic, against the `event_store_migrate`/`event_store_app` role split.
   - **Retention:** none — messages accumulate until deleted by hand.
   - **Transactions:** handler batches run inside the polling transaction holding the offsets row lock.
+  - **Replica serialization:** that lock is the consumer group's offset row, and adapter deployments run multiple replicas per subscription (2-5 in the adapter deployment guide), so those replicas process serially where the event log gives them disjoint ranges.
   - Its only clear win, transaction-id-horizon ordering, does not offset those costs.
 
 ## Evidence Run
@@ -127,7 +140,7 @@ Load — one harness for both backends (parallelism 8, 30-second runs; the event
 | Kind | Event log | 200 events/sec, 3-way fan-out | 17,334 / 17,334, 0 errors | 12ms | 213ms |
 | Kind | River | 200 events/sec, 3-way fan-out | 17,283 / 17,283, 0 errors | 44ms | 101ms |
 
-The event log's median is about 5x lower (no queue round trip); River's tail is about 2x tighter (LISTEN/NOTIFY push versus idle-poll wait), and repeat runs on a fresh instance are within a few percent. The event log's p99 is set by the idle `poll_interval` (1s default): at 200ms the p99 drops to 16ms but costs 34 percent more transaction IDs, so 1s stands against the 5-second Sentinel poll floor. River's numbers are in family with `RIVER-POC.md`'s recorded runs: at the recorded local scenario (500 events/sec, 5-way fan-out) this run measures p50 35ms / p99 94ms against the recorded p50 43ms / p99 92ms, and in kind (200 events/sec, 3-way) p50 44ms / p99 101ms against the recorded p50 41ms / p99 88ms.
+The event log's median is about 5x lower (no queue round trip); River's p99 is about 2x tighter (LISTEN/NOTIFY push versus idle-poll wait), though its worst case is wider — max 881ms against the event log's 496ms locally and 1.07s against 505ms in kind — and repeat runs on a fresh instance are within a few percent. The event log's p99 is set by the idle `poll_interval` (1s default): at 200ms the p99 drops to 16ms but costs 34 percent more transaction IDs, so 1s stands against the 5-second Sentinel poll floor. River's numbers are in family with `RIVER-POC.md`'s recorded runs: at the recorded local scenario (500 events/sec, 5-way fan-out) this run measures p50 35ms / p99 94ms against the recorded p50 43ms / p99 92ms, and in kind (200 events/sec, 3-way) p50 44ms / p99 101ms against the recorded p50 41ms / p99 88ms.
 
 ## Decision
 
@@ -138,4 +151,4 @@ The event log with per-topic sequences and per-subscription cursors is the chose
 - **Outbox criterion:** de-weighted rather than decisive (see the comparison caveats).
 - **Retention evidence:** a design expectation rather than a measured result — neither run aged out partitions (24h default in both); rotation was verified separately with an injected stale partition ([`EVENTLOG-POC.md`](https://github.com/openshift-hyperfleet/hyperfleet-broker/blob/poc/eventlog-backend/EVENTLOG-POC.md)).
 
-The watermill-sql evaluation (HYPERFLEET-1859) confirmed the choice. Recorded as [ADR-0031](../adrs/0031-broker-postgres-event-log.md) (Active) with the operational rules.
+The watermill-sql evaluation — paper only, no run ([HYPERFLEET-1859](https://redhat.atlassian.net/browse/HYPERFLEET-1859)) — confirmed the choice. Recorded as [ADR-0031](../adrs/0031-broker-postgres-event-log.md) (Active) with the operational rules.
