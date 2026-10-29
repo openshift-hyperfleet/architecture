@@ -15,7 +15,7 @@ Constraints and requirements:
 - The Broker is an in-process library in Sentinel and Adapters, with no pods or chart of its own ([ADR-0002](0002-pluggable-message-broker-library.md))
 - Service state consolidates on the shared instance ([ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md))
 - Remote callers reach hub stores through the authenticated gateway, never directly ([ADR-0022](0022-api-mediated-desire-store-access.md), decided for the Desire Store)
-- HYPERFLEET-1654 scopes the PostgreSQL backend to the self-managed box (operator bundle, disconnected installs); GCP environments use managed Pub/Sub today, and any change there is a separate decision in that ticket
+- HYPERFLEET-1654 scopes the PostgreSQL backend to the self-managed box (operator bundle, disconnected installs); this ADR extends the PostgreSQL transport decision to the Oracle deployment path. GCP environments use managed Pub/Sub today, and any change there is a separate decision in that ticket
 - The Broker's contract is fan-out signaling: small, idempotent events whose job is to wake consumers, at tens of events per second
 
 Assumptions:
