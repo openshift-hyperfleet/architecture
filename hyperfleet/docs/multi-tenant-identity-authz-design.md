@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-09-30
+Last Updated: 2026-10-26
 ---
 
 # Multi-Tenant Identity and Authorization Design
@@ -46,7 +46,7 @@ HyperFleet currently has no tenant isolation. All authenticated API consumers se
 
 - [HYPERFLEET-1134](https://issues.redhat.com/browse/HYPERFLEET-1134) explored OPA/Rego integration
 
-**[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) (2026-08-05):** All API traffic, external and internal, goes through an Envoy and Authorino gateway. Authorino authenticates every caller and injects identity and tenant headers. The API trusts these headers and does not extract claims itself.
+**[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) (2026-08-05):** All API traffic goes through Envoy. In `EDGE` and `EDGE+API`, Authorino authenticates every caller and supplies tenant headers. In `EDGE+API`, the API receives only an Authorino-issued Wristband and takes caller identity from its `sub` claim.
 
 This supersedes this document's original app-middleware and service-mesh phasing. Gateway deployment, AuthConfig CRs, machine-identity plumbing, and NetworkPolicy are covered by the sibling [Envoy and Authorino Gateway Deployment](https://redhat.atlassian.net/browse/HYPERFLEET-1476) epic and are out of scope here.
 
@@ -145,15 +145,21 @@ Add tenant identity to the data model and filter at the query layer. No external
 
 ### JWT Claim Mapping
 
-**Current state:** Per the gateway decision, Authorino is the primary authenticator. It validates every caller and, on success, injects identity and tenant dimension values as trusted headers: `x-hyperfleet-identity` for caller identity, `x-hyperfleet-system` for the system-identity marker, and, in the reference implementation today, per-dimension headers such as `x-tenant-org` and `x-tenant-project`. See "Dimension-list propagation" below for why tenant dimensions are moving to a single JSON header instead. The API's tenant enforcement middleware reads only these injected headers for identity and tenant resolution. It does not extract tenant claims from the token itself.
+**Current state:** The authentication contract depends on `AUTH_MODE`, the deployment setting that selects where authentication runs (see [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)):
 
-Envoy also forwards the original bearer token to the API alongside the injected headers. The API retains in-app JWT validation as defense-in-depth (see [Gateway vs Application-Layer Boundary](#gateway-vs-application-layer-boundary)). If that validation fails, the request is rejected regardless of what the gateway already approved.
+| Mode | Authentication | API caller identity |
+|------|----------------|---------------------|
+| `API` | The API validates the client's `Bearer` token. | Configured claim of the client token |
+| `EDGE` | Authorino validates `ServiceAccount` tokens (TokenReview) and `Bearer` tokens (OIDC). API JWT validation is disabled. | None; audit fields use `system@hyperfleet.local` |
+| `EDGE+API` | Authorino validates the same schemes; Envoy replaces the client credential with a signed Wristband, which the API validates. | Wristband `sub`. Never the client credential or a gateway identity header |
 
-If the token's own claims (e.g. `sub`, tenant-related claims) disagree with the Authorino-injected headers, the injected headers govern. They are what the API trusts for identity and tenant dimensions, per [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)'s "API trusts only injected headers" rule. The in-app validation is a second check on the token's validity, not a second source of identity.
+In edge modes, Authorino also sends `x-hyperfleet-system` and per-dimension tenant headers such as `x-tenant-org` and `x-tenant-project`. See "Dimension-list propagation" below for why tenant dimensions are moving to a single JSON header. Tenant enforcement reads these headers; they never establish caller identity in `EDGE+API`.
+
+The Wristband also carries `hf_system` and the tenant dimension claims, but the API does not read tenancy from them yet.
 
 Per-issuer claim mapping (which JWT claim maps to which tenant dimension) is declared in Authorino `AuthConfig` custom resources, not in HyperFleet application configuration. Each deployment's `AuthConfig` defines its own tenant dimensions and claim mappings. For example, an on-prem partner might map `hd`/`tid`/`org` claims to an `org` dimension, while an Oracle Cloud deployment maps tenancy OCID and compartment claims to `tenancy` and `compartment` dimensions.
 
-The API's own JWT configuration must separately list each accepted issuer and its JWKS source, since its defense-in-depth validation needs to verify a token's signature independently of the gateway. Adding a tenant model or issuer is a configuration change on both sides (`AuthConfig` at the gateway, `JWTIssuerConfig` and tenant dimensions on the API), with zero code changes and no rebuild in any component.
+In `EDGE+API`, the API trusts one issuer: the Authorino Wristband issuer, with JWKS fetched over HTTPS using the namespace-local gateway CA. Adding a human identity provider is an `AuthConfig` change only. In `API` mode, the API lists each accepted issuer and its JWKS source. Adding a tenant model is a configuration change on both sides (`AuthConfig` at the gateway, tenant dimensions on the API), with zero code changes and no rebuild in any component.
 
 **Header-to-tenant resolution:** Tenant identity is stored as a single JSONB tenancy map per resource. See [Schema Changes](#schema-changes) for the full evaluation.
 
@@ -324,12 +330,12 @@ Where does each responsibility live in the request pipeline?
 
 | Responsibility | Gateway (Envoy + Authorino) | Application (hyperfleet-api) |
 |----------------|------------------------------|-------------------------------|
-| JWT / token validation | Authorino validates every caller: OIDC for external callers, Kubernetes TokenReview for internal callers | Retains in-app JWT validation as defense-in-depth; rejects the request if the token itself is invalid, but does not override the gateway's decision |
-| Tenant claim extraction | Authorino resolves tenant dimensions from validated claims per `AuthConfig` and injects them as trusted headers | None. The API does not extract identity or tenant claims from the token; injected headers are authoritative even if token claims disagree |
+| JWT / token validation | Authorino, in edge modes | Client token in `API`; the Wristband in `EDGE+API`; disabled in `EDGE` |
+| Caller identity and tenant context | Authorino resolves tenant dimensions and sends tenant and system headers | Wristband `sub` in `EDGE+API`; tenant enforcement reads the injected headers |
 | Rate limiting | Per-tenant throttling at network edge | Per-handler or global in-process |
 | Tenant filtering | N/A (no DB access) | DAO layer scopes reads and lists to the caller's tenant by containment; a child inherits its owner's tenancy, and the delete-path referencer check runs unscoped (see [Query Filtering](#query-filtering)) |
 
-See [JWT Claim Mapping](#jwt-claim-mapping) for the full authentication contract, including bearer token forwarding and the precedence of injected headers over token claims.
+See [JWT Claim Mapping](#jwt-claim-mapping) for the per-mode authentication contract.
 
 ### Option: Gateway-first (JWT validation + tenant extraction at ingress)
 
@@ -338,7 +344,7 @@ Pros:
 - Bad requests rejected before hitting application pods. Saves compute.
 - Centralized auth config if HyperFleet adds more services in the future.
 - Applies uniformly to external and internal traffic: Sentinel and Adapters authenticate at the same gateway via TokenReview, they are not a separate code path.
-- Switching a tenant model or adding an identity provider is a configuration change on both sides (`AuthConfig` at the gateway, `JWTIssuerConfig` and tenant dimensions on the API), with zero code changes and no rebuild.
+- Tenant model and identity provider changes are configuration-only (see [JWT Claim Mapping](#jwt-claim-mapping)).
 
 Cons:
 
@@ -377,7 +383,7 @@ Cons:
 
 ### Recommendation
 
-**Gateway-first**, per [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md). Envoy is the API ingress proxy and Authorino the external authorization service for all traffic, external and internal. Authorino performs authentication and tenant claim extraction. The API consumes trusted injected headers and does not extract claims itself. In-app JWT validation is retained as defense-in-depth, not as the primary authentication mechanism.
+**Gateway-first**, per [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md). Envoy is the API ingress proxy, and in `EDGE` and `EDGE+API` Authorino authenticates all traffic, external and internal, and supplies tenant headers.
 
 This supersedes this document's original phased plan (application middleware first, service mesh sidecar later). The gateway decision also resolves the sidecar/proxy option's biggest open question (how to establish a trusted identity-propagation boundary). It does so directly, through early header stripping before the authorization filter runs, trusted header injection after, and a NetworkPolicy restricting API pod ingress to the gateway only.
 
@@ -424,7 +430,7 @@ Matches this epic's ([HYPERFLEET-1164](https://issues.redhat.com/browse/HYPERFLE
 | Add the resources tenancy column and GIN index | Add a JSONB `tenancy` column with a GIN index and migration | 3 pts |
 | Add the read-only tenancy map to the Resource spec | Add a server-populated, read-only tenancy map to the Resource spec, absent from create and patch schemas | 3 pts |
 | Scope all resource DAO access by tenancy containment | Scope every read and list by JSONB containment; inherit a child's tenancy from its owner; run the delete-path referencer check across all tenancies; system identities bypass scoping on reads only | 8 pts |
-| Server-set tenancy on the resource write path | Derive tenancy from gateway-injected identity on create; keep it immutable and rejected on patch | 3 pts |
+| Server-set tenancy on the resource write path | Derive tenancy from gateway-injected tenant headers on create; keep it immutable and rejected on patch | 3 pts |
 | Restrict system-identity writes to status and conditions | Restrict system identities to writing only `status` and `conditions`, enforced in code | 5 pts |
 | Make resource name uniqueness tenant-scoped | Scope resource name uniqueness to tenancy so it doesn't leak existence across tenants | 3 pts |
 | Expose tenant configuration in the Helm chart | Expose the tenant model decided in [JWT Claim Mapping](#jwt-claim-mapping) (a single JSON tenancy header) via the Helm chart | 3 pts |

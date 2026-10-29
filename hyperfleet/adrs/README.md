@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-26
+Last Updated: 2026-10-27
 ---
 
 # Architecture Decision Records (ADRs)
@@ -93,9 +93,9 @@ What did we decide? State it plainly.
 | [0015](0015-eventual-consistency-for-read-path.md) | Eventual Consistency for the API Read Path | Active | 2026-05-08 |
 | [0016](0016-helm-oci-distribution.md) | Helm OCI Distribution via Konflux | Active | 2026-05-11 |
 | [0017](0017-adapter-error-taxonomy.md) | Selective Message Acknowledgment in Adapters | Active | 2026-05-25 |
-| [0018](0018-e2e-jwt-tls-architecture.md) | E2E JWT/TLS Architecture | Active | 2026-07-07 |
+| [0018](0018-e2e-jwt-tls-architecture.md) | E2E JWT/TLS Architecture | Active | 2026-10-27 |
 | [0019](0019-package-hyperfleet-as-operator.md) | Package HyperFleet as a Kubernetes Operator | Proposed | 2026-08-11 |
-| [0020](0020-envoy-authorino-api-gateway.md) | Envoy and Authorino as the API Authentication Gateway | Active | 2026-08-11 |
+| [0020](0020-envoy-authorino-api-gateway.md) | Envoy and Authorino as the API Authentication Gateway | Active | 2026-10-27 |
 | [0021](0021-oci-external-platform.md) | External Platform for the Guest in OCI Hosted Clusters | Active | 2026-09-01 |
 | [0022](0022-api-mediated-desire-store-access.md) | API-Mediated Desire Store Access | Active | 2026-09-10 |
 | [0023](0023-oci-managed-postgresql.md) | OCI Database with PostgreSQL as the Managed Instance for the Oracle Deployment Path | Active | 2026-09-09 |
