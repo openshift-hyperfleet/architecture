@@ -32,7 +32,7 @@ Direct connections must verify the server's identity: `sslmode=verify-full` agai
 
 - The instance owner supplies the CA bundle alongside the connection details, and the component charts mount it as configuration.
   - The instance owner is the platform admin or partner in [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md)'s model, or HyperFleet itself on the Oracle path ([ADR-0023](0023-oci-managed-postgresql.md)).
-- Only public CA certificates are distributed to clients in the trust bundle.
+- Only CA certificates the deployment trusts are distributed to clients in the trust bundle. Public and private CA certificates are both allowed.
 - CA private keys remain with the certificate issuer and are never placed in client Secrets, images, or pods.
 
 **CA rotation:**
