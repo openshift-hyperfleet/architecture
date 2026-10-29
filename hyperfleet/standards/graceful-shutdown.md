@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-01-09
+Last Updated: 2026-10-27
 ---
 
 # HyperFleet Graceful Shutdown Standard
@@ -66,7 +66,7 @@ defer stop()
 
 // Start application with cancellable context
 if err := app.Start(ctx); err != nil {
-    log.Error("application error", "error", err)
+    slog.ErrorContext(ctx, "application error", "error", err)
 }
 
 // When signal received, ctx is cancelled

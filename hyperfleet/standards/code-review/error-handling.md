@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-05-29
+Last Updated: 2026-10-27
 ---
 
 # Code Review: Error Handling
@@ -119,7 +119,7 @@ if err := db.GetCluster(id); err != nil {
 // ✅ Good — close error logged
 defer func() {
     if err := file.Close(); err != nil {
-        slog.Warn("failed to close file", "error", err)
+        slog.WarnContext(ctx, "failed to close file", "error", err)
     }
 }()
 

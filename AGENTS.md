@@ -266,7 +266,7 @@ Reference these when working with standards (non-exhaustive - see `hyperfleet/st
 | `health-endpoints.md` | Health check endpoints |
 | `helm-chart-conventions.md` | Helm chart structure and conventions |
 | `linting.md` | Linting requirements |
-| `logging-specification.md` | Logging format and levels |
+| `logging-specification.md` | Logging: `log/slog` with the shared `hyperfleet-logger` handler, fields, levels |
 | `makefile-conventions.md` | Makefile patterns |
 | `metrics.md` | Prometheus metrics |
 | `ticket-hygiene.md` | JIRA ticket field requirements and sprint readiness |
@@ -330,7 +330,7 @@ When creating a new standard:
 ### Good Example
 ```go
 // Structured logging with context
-log.Info("request processed", "duration", duration, "status", status)
+slog.InfoContext(ctx, "request processed", "duration", duration, "status", status)
 ```
 
 ### Bad Example

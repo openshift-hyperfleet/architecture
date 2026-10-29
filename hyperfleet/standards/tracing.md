@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-07-27
+Last Updated: 2026-10-27
 ---
 
 # HyperFleet Tracing and Telemetry Standard
@@ -447,21 +447,25 @@ Traces MUST be correlated with logs via `trace_id` and `span_id` fields.
 
 ### Adding Trace Context to Logs
 
+Set the trace and span IDs on the context where a span starts or arrives, and again after you start a child span. The [`hyperfleet-logger`](https://github.com/openshift-hyperfleet/hyperfleet-logger) handler then adds `trace_id` and `span_id` to each `slog.*Context` record, so each record has the span that is current when it is logged. The [Logging Specification](./logging-specification.md#correlation) shows the child span case.
+
 ```go
 import (
-    "log/slog"
+    "net/http"
+
+    hfl "github.com/openshift-hyperfleet/hyperfleet-logger"
     "go.opentelemetry.io/otel/trace"
 )
 
-func logWithTrace(ctx context.Context, logger *slog.Logger, msg string, args ...any) {
-    spanCtx := trace.SpanContextFromContext(ctx)
-    if spanCtx.HasTraceID() {
-        args = append(args,
-            "trace_id", spanCtx.TraceID().String(),
-            "span_id", spanCtx.SpanID().String(),
-        )
-    }
-    logger.InfoContext(ctx, msg, args...)
+func Trace(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        ctx := r.Context()
+        if sc := trace.SpanContextFromContext(ctx); sc.IsValid() {
+            ctx = hfl.WithTraceID(ctx, sc.TraceID().String())
+            ctx = hfl.WithSpanID(ctx, sc.SpanID().String())
+        }
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
 }
 ```
 
@@ -471,7 +475,7 @@ func logWithTrace(ctx context.Context, logger *slog.Logger, msg string, args ...
 {
   "timestamp": "2025-01-15T10:30:00.123Z",
   "level": "info",
-  "message": "Processing cluster event",
+  "message": "processing cluster event",
   "component": "adapter-validation",
   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
   "span_id": "00f067aa0ba902b7",

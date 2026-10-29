@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-05-27
+Last Updated: 2026-10-27
 ---
 
 # Code Review: Exhaustiveness
@@ -76,7 +76,7 @@ case StatusActive:
 case StatusDeleting:
     cleanup(cluster)
 default:
-    log.Warn("unknown cluster status", "status", cluster.Status)
+    slog.WarnContext(ctx, "unknown cluster status", "status", cluster.Status)
     return fmt.Errorf("unrecognized status: %s", cluster.Status)
 }
 

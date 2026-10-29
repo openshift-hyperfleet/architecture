@@ -456,7 +456,7 @@ Error responses MUST be logged following the [Logging Specification](./logging-s
 {
   "timestamp": "2025-01-15T10:30:00.123Z",
   "level": "error",
-  "message": "Request validation failed",
+  "message": "request validation failed",
   "component": "api",
   "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
   "error_code": "HYPERFLEET-VAL-001",
