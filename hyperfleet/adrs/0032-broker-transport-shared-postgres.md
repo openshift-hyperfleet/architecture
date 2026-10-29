@@ -26,7 +26,7 @@ Assumptions:
 
 ## Decision
 
-In the self-managed box and on the Oracle deployment path ([ADR-0023](0023-oci-managed-postgresql.md)'s shared instance), the Broker's transport is the shared PostgreSQL instance: publishers and subscribers exchange events through tables in `event_store` ([ADR-0031](0031-broker-postgres-event-log.md)'s event log), with no network service in the messaging path.
+In the self-managed box and on the Oracle deployment path ([ADR-0023](0023-oci-managed-postgresql.md)'s shared instance), the Broker's transport is the shared PostgreSQL instance: publishers and subscribers exchange events through tables in `event_store` ([ADR-0031](0031-broker-postgres-event-log.md)'s event log), with no network service in the messaging path. This is a target state: PostgreSQL cannot be selected until the event log backend ships in `hyperfleet-broker` and the Sentinel and Adapter configuration supports its broker type.
 
 **In the box (operator bundle, disconnected installs):** [HYPERFLEET-1654](https://redhat.atlassian.net/browse/HYPERFLEET-1654)'s goal is one stateful service, and the choice keeps it: the box already carries the database, and events become tables in it — nothing added to install, secure, or mirror.
 
@@ -47,7 +47,7 @@ In the self-managed box and on the Oracle deployment path ([ADR-0023](0023-oci-m
 
 **Acceptable because:**
 
-- The messaging load is bounded by design — one row per event, retention by partition rotation ([ADR-0031](0031-broker-postgres-event-log.md)) — and the proof of concept sustained 500 events per second against a pipeline volume of tens of events per second ([HYPERFLEET-1654](https://redhat.atlassian.net/browse/HYPERFLEET-1654)).
+- The messaging load is bounded by design — one row per event, retention by partition rotation ([ADR-0031](0031-broker-postgres-event-log.md)) — and the proof of concept, measured on a dedicated instance, sustained 500 events per second against a pipeline volume of tens of events per second ([HYPERFLEET-1656](https://redhat.atlassian.net/browse/HYPERFLEET-1656)). Shared-instance capacity remains unverified pending the contention test in HYPERFLEET-1672.
 - A remote event consumer needs a gateway endpoint under either transport — an HTTP transport would be one too; the endpoint's design and cost are the open assumption above.
 
 ## Alternatives Considered
