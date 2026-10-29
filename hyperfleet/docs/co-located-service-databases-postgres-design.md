@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-01
+Last Updated: 2026-10-29
 ---
 
 # Co-Located Service Databases on the Shared Postgres Instance — Design
@@ -104,7 +104,7 @@ The runtime-role restrictions below apply to `desire_store_app` and `event_store
 - Service application roles must not be direct or transitive members of API or migration roles — including memberships that permit `SET ROLE` — and must not own API databases, schemas, or objects. They must not administer API roles or hold role-membership administration rights.
 - Migration credentials are supplied only to migration executors, not to runtime containers or remote Desire Store clients.
 - Connection configuration explicitly selects the database; do not assume implicit database selection from a URI. Backend-specific connection validation belongs to the implementation work.
-- Connections should be encrypted, and a deployment that terminates database TLS in a proxy must document the authenticated transport boundary it provides. Whether encryption must also perform **server identity verification** (`sslmode=verify-full` with a trusted CA, or an equivalent certificate and hostname check), and how the CA is distributed and rotated, is a decision in its own right and lives with the Postgres transport-security work ([HYPERFLEET-1709](https://redhat.atlassian.net/browse/HYPERFLEET-1709)). This is a recommendation today, not an enforced requirement: the charts default to `sslmode=disable`, so enforcing it means changing those defaults and adding coverage before it can be treated as required. Note that `disable` and `require` do not authenticate the server — `require` encrypts but does not stop an attacker who can intercept or redirect the connection from impersonating PostgreSQL.
+- Direct connections require **server identity verification** — `sslmode=verify-full` with a trusted CA, or an equivalent certificate and hostname check — decided in [ADR-0033](../adrs/0033-postgres-transport-security.md), which allows TLS terminated in a proxy only under its exception. The requirement is not yet enforced by the charts, which still default to `sslmode=disable`. Note that `disable` and `require` do not authenticate the server — `require` encrypts but does not stop an attacker who can intercept or redirect the connection from impersonating PostgreSQL.
 
 These database isolation recommendations describe the reference deployment, not checks already implemented by the operator or component charts. The platform admin or partner sets the role attributes, memberships, and grants and should validate them when provisioning or upgrading. HyperFleet does not automatically enforce this policy on arbitrary partner-provided instances; the partner contract and its verification belong to [HYPERFLEET-1710](https://redhat.atlassian.net/browse/HYPERFLEET-1710).
 
@@ -287,7 +287,7 @@ The decision-level alternatives (schema isolation in a single database, and a se
 | **Operator-run migrations for all three databases** | `hyperfleet-operator` holds no database credential by design, and centralizing the artifacts would take ownership from the components that already version them; migrations stay per-chart (the API's init container pattern), as today. |
 | **Operator-owned database provisioning (roles, ACLs, connection limits)** | Puts the most privileged database credentials in the management cluster running the operator and requires a Postgres driver and reconciliation path; provisioning stays with the platform admin or partner per [ADR-0019](../adrs/0019-package-hyperfleet-as-operator.md). |
 | **Fixed per-database connection limits** | Fixed constants cannot fit the range of instance shapes; limits are derived from the provisioned `max_connections` and the configured demand, and an infeasible configuration is rejected rather than degraded. |
-| **TLS terminated in a proxy without end-to-end verification** | A proxy boundary is acceptable only when documented and authenticated. Whether direct connections require server identity verification, and the proxy-terminated-TLS exception, are deferred to the transport-security decision in [HYPERFLEET-1709](https://redhat.atlassian.net/browse/HYPERFLEET-1709). |
+| **TLS terminated in a proxy without end-to-end verification** | A proxy boundary is acceptable only under [ADR-0033](../adrs/0033-postgres-transport-security.md)'s exception: a confined unverified hop, outward verification by the proxy, and a documented boundary. |
 
 ## References
 
@@ -299,6 +299,6 @@ The decision-level alternatives (schema isolation in a single database, and a se
 - [HYPERFLEET-1671](https://redhat.atlassian.net/browse/HYPERFLEET-1671) (Desire Store backend implementation) — consumes this design
 - [HYPERFLEET-1656](https://redhat.atlassian.net/browse/HYPERFLEET-1656) (PostgreSQL backend for the Broker, River or purpose-built) — consumes this design
 - [HYPERFLEET-1672](https://redhat.atlassian.net/browse/HYPERFLEET-1672) — shared-instance contention benchmark
-- [HYPERFLEET-1709](https://redhat.atlassian.net/browse/HYPERFLEET-1709) — Postgres transport security
+- [ADR-0033: PostgreSQL Transport Security](../adrs/0033-postgres-transport-security.md) — server identity verification for direct connections ([HYPERFLEET-1709](https://redhat.atlassian.net/browse/HYPERFLEET-1709))
 - [HYPERFLEET-1710](https://redhat.atlassian.net/browse/HYPERFLEET-1710) — enforcing the contract on partner-provided instances
 - [HYPERFLEET-1717](https://redhat.atlassian.net/browse/HYPERFLEET-1717) — split the API database credential into migration and runtime roles
