@@ -32,20 +32,24 @@ Direct connections must verify the server's identity: `sslmode=verify-full` agai
 
 - The instance owner supplies the CA bundle alongside the connection details, and the component charts mount it as configuration.
   - The instance owner is the platform admin or partner in [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md)'s model, or HyperFleet itself on the Oracle path ([ADR-0023](0023-oci-managed-postgresql.md)).
-- CA material is public and never baked into an image.
+- Only public CA certificates are distributed to clients in the trust bundle.
+- CA private keys remain with the certificate issuer and are never placed in client Secrets, images, or pods.
 
 **CA rotation:**
 
-- The bundle may hold more than one CA, so rotation needs no coordination window: add the new CA to the bundles, switch the server certificate, then remove the old CA.
-  - Adding first means every client already trusts the new certificate when the server switches; removing last retires the old CA as soon as it is safe.
-- A pod restart to pick up a changed bundle is acceptable; hot reload is a per-component option, not a requirement.
+- The bundle may hold more than one CA, so rotation needs no coordination window:
+  - Add the new CA to every client trust bundle.
+  - Restart each client or reload its trust configuration.
+  - Verify that all six connection classes trust the new CA before switching the server certificate.
+  - Remove the old CA after the server and every client use the new trust configuration.
+- Each connection class must document its trust-reload mechanism. A pod restart is acceptable when live reload is not supported; live reload is not required.
 
 **Proxy-terminated TLS exception:**
 
 A deployment may terminate database TLS in a proxy or connection pooler (e.g., PgBouncer) instead of verifying end to end, but only when all of the following hold:
 
-- The unverified hop is confined to the pod or an equivalently private scope, so no untrusted network can carry it.
-- The proxy verifies the server on its outward hop.
+- The unverified hop uses same-pod loopback or a Unix socket; it must not cross a node, namespace, or Service network.
+- The proxy-to-PostgreSQL connection uses `sslmode=verify-full`, or the equivalent certificate-chain and hostname verification in the proxy, with an explicit trusted CA bundle. Encryption-only or CA-only validation is insufficient.
 - The deployment documents the boundary: where TLS terminates, what is verified, and what confines the unverified hop.
 
 For example, a proxy listening on the pod's loopback interface: the application connects to it over plaintext, the unverified hop never leaves the pod, and the proxy holds the verified connection to the database.

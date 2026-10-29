@@ -108,5 +108,3 @@ What did we decide? State it plainly.
 | [0030](0030-desire-based-remote-delivery.md) | Desire-Based Remote Delivery | Active | 2026-10-15 |
 | [0031](0031-broker-postgres-event-log.md) | Event Log with Per-Subscription Cursors as the Broker's PostgreSQL Backend | Proposed | 2026-10-26 |
 | [0033](0033-postgres-transport-security.md) | PostgreSQL Transport Security: Server Identity Verification for Direct Connections | Proposed | 2026-10-29 |
-
-> Note: 0032 is allocated to the in-flight Broker transport decision ([HYPERFLEET-1859](https://redhat.atlassian.net/browse/HYPERFLEET-1859)); ADR-0033 skips it to avoid a collision.
