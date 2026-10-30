@@ -19,6 +19,8 @@ Last Updated: 2026-10-29
 
 Direct connections must verify the server's identity: `sslmode=verify-full` against a certificate authority (CA) the deployment trusts — certificate chain plus hostname check — or the driver's equivalent. `sslmode=require` and `sslmode=disable` are not acceptable for direct connections. The floor is uniform across connection classes:
 
+A client that connects to a proxy or pooler with full verification — `sslmode=verify-full` against the proxy's certificate and hostname — satisfies the floor when the proxy verifies PostgreSQL; no exception is needed.
+
 | Connection class | Connections | Minimum mode |
 |------------------|-------------|--------------|
 | API runtime | API pods to `hyperfleet` | `verify-full` |
@@ -46,7 +48,7 @@ Direct connections must verify the server's identity: `sslmode=verify-full` agai
 
 **Proxy-terminated TLS exception:**
 
-A deployment may terminate database TLS in a proxy or connection pooler (e.g., PgBouncer) instead of verifying end to end, but only when all of the following hold:
+A deployment may connect to a proxy or connection pooler (e.g., PgBouncer) without verifying it, instead of connecting directly, but only when all of the following hold:
 
 - The unverified hop uses same-pod loopback or a Unix socket; it must not cross a node, namespace, or Service network.
 - The proxy-to-PostgreSQL connection uses `sslmode=verify-full`, or the equivalent certificate-chain and hostname verification in the proxy, with an explicit trusted CA bundle. Encryption-only or CA-only validation is insufficient.
@@ -57,6 +59,7 @@ For example, a proxy listening on the pod's loopback interface: the application 
 **Scope and enforcement:**
 
 - The floor applies to the reference deployment and to partner-provided instances alike: the partner supplies the CA with the connection contract ([ADR-0019](0019-package-hyperfleet-as-operator.md)), and an instance that cannot meet the floor goes through the partner-contract path ([HYPERFLEET-1710](https://redhat.atlassian.net/browse/HYPERFLEET-1710)) rather than a silent downgrade.
+- Each component must validate its effective connection settings before opening a direct database connection and refuse to start unless the connection uses `verify-full` with a trusted CA bundle. An absent, unsupported, or weaker `sslmode` is a startup error.
 - Shipped chart defaults move to the floor, so a missing CA bundle fails the connection at startup — fail closed.
 - Ephemeral local development (kind's embedded PostgreSQL, testcontainers) may opt down to `sslmode=disable` explicitly in dev-only values; every other exception is the documented proxy path above.
 - Chart and coverage changes are implementation work outside this record.
