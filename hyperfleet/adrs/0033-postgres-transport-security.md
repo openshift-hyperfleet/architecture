@@ -32,7 +32,7 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 
 **CA distribution:**
 
-- The instance owner supplies the CA bundle alongside the connection details, and the component charts mount it as configuration.
+- The instance owner supplies the CA bundle alongside the connection details, and every PostgreSQL client — component runtime, migration executor, or proxy — mounts it as configuration.
   - The instance owner is the platform admin or partner in [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md)'s model, or HyperFleet itself on the Oracle path ([ADR-0023](0023-oci-managed-postgresql.md)).
 - Only CA certificates the deployment trusts are distributed to clients in the trust bundle. Public and private CA certificates are both allowed.
 - CA private keys remain with the certificate issuer and are never placed in client Secrets, images, or pods.
@@ -42,7 +42,7 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 - The bundle may hold more than one CA, so rotation needs no coordination window:
   - Add the new CA to every client trust bundle.
   - Restart each client or reload its trust configuration.
-  - Verify that all six connection classes and every proxy-to-PostgreSQL client trust the new CA before switching the server certificate.
+  - Verify that every applicable connection class and every deployed proxy-to-PostgreSQL client trusts the new CA before switching the server certificate.
   - Remove the old CA after the server and every client use the new trust configuration.
 - Each connection class and every proxy-to-PostgreSQL client must document its trust-reload mechanism. A pod restart is acceptable when live reload is not supported; live reload is not required.
 
