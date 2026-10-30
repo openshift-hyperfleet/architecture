@@ -10,7 +10,7 @@ Last Updated: 2026-10-29
 
 [HYPERFLEET-1709](https://redhat.atlassian.net/browse/HYPERFLEET-1709) decides the transport-security contract for the direct PostgreSQL connections in the [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md) layout:
 
-- **Who connects directly:** the API, the Desire Store, and the Broker library inside Sentinel and Adapters, each with its migration executor. `hyperfleet-operator` opens no connection.
+- **Who connects directly:** the API, the Desire Store, and the Broker library inside Sentinel and Adapters, each with its migration executor — Broker pools exist only when the PostgreSQL backend is selected. `hyperfleet-operator` opens no connection.
 - **Current state:** encryption is a recommendation today, not a requirement — the charts default to `sslmode=disable` — and the [co-located databases design](../docs/co-located-service-databases-postgres-design.md) deferred the verification question to this record.
 - **The gap:** authentication, not confidentiality. `sslmode=require` encrypts but does not authenticate the server, so an attacker who can intercept or redirect the connection receives the role's credentials while impersonating PostgreSQL. ADR-0026's role split limits what a stolen runtime credential reaches, but migration credentials own their database's schema — credentials worth stealing cross every direct hop.
 - **The proxy case:** not every deployment connects directly — some front PostgreSQL with a TLS-terminating proxy or connection pooler, so the floor needs an exception defining when that is acceptable.
@@ -27,8 +27,8 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 | API migrations | `db-migrate` init container to `hyperfleet` | `verify-full` |
 | Desire Store runtime | Desire Store service pods to `desire_store` | `verify-full` |
 | Desire Store migrations | migration executor to `desire_store` | `verify-full` |
-| Broker runtime | `hyperfleet-broker` pools in Sentinel and Adapters to `event_store` | `verify-full` |
-| Broker migrations | migration executor to `event_store` | `verify-full` |
+| Broker runtime | `hyperfleet-broker` pools in Sentinel and Adapters to `event_store` (PostgreSQL backend selected) | `verify-full` |
+| Broker migrations | migration executor to `event_store` (PostgreSQL backend selected) | `verify-full` |
 
 **CA distribution:**
 
@@ -42,9 +42,9 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 - The bundle may hold more than one CA, so rotation needs no coordination window:
   - Add the new CA to every client trust bundle.
   - Restart each client or reload its trust configuration.
-  - Verify that all six connection classes trust the new CA before switching the server certificate.
+  - Verify that all six connection classes and every proxy-to-PostgreSQL client trust the new CA before switching the server certificate.
   - Remove the old CA after the server and every client use the new trust configuration.
-- Each connection class must document its trust-reload mechanism. A pod restart is acceptable when live reload is not supported; live reload is not required.
+- Each connection class and every proxy-to-PostgreSQL client must document its trust-reload mechanism. A pod restart is acceptable when live reload is not supported; live reload is not required.
 
 **Proxy-terminated TLS exception:**
 
@@ -61,7 +61,7 @@ For example, a proxy listening on the pod's loopback interface: the application 
 - The floor applies to the reference deployment and to partner-provided instances alike: the partner supplies the CA with the connection contract ([ADR-0019](0019-package-hyperfleet-as-operator.md)), and an instance that cannot meet the floor goes through the partner-contract path ([HYPERFLEET-1710](https://redhat.atlassian.net/browse/HYPERFLEET-1710)) rather than a silent downgrade.
 - Each component must validate its effective connection settings before opening a direct database connection and refuse to start unless the connection uses `verify-full` with a trusted CA bundle. An absent, unsupported, or weaker `sslmode` is a startup error.
 - Shipped chart defaults move to the floor, so a missing CA bundle fails the connection at startup — fail closed.
-- Ephemeral local development (kind's embedded PostgreSQL, testcontainers) may opt down to `sslmode=disable` explicitly in dev-only values; every other exception is the documented proxy path above.
+- Ephemeral local development (kind's embedded PostgreSQL, testcontainers) may opt down to `sslmode=disable` explicitly in dev-only values, gated so production deployments cannot enable it; every other exception is the documented proxy path above.
 - Chart and coverage changes are implementation work outside this record.
 
 ## Consequences
