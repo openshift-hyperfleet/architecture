@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-26
+Last Updated: 2026-10-29
 ---
 
 # Architecture Decision Records (ADRs)
@@ -106,4 +106,5 @@ What did we decide? State it plainly.
 | [0028](0028-apply-delete-ordering.md) | Serialize Apply Then Delete | Active | 2026-10-05 |
 | [0029](0029-desire-store-authorization.md) | Desire Store Authorization | Active | 2026-10-08 |
 | [0030](0030-desire-based-remote-delivery.md) | Desire-Based Remote Delivery | Active | 2026-10-15 |
-| [0031](0031-broker-postgres-event-log.md) | Event Log with Per-Subscription Cursors as the Broker's PostgreSQL Backend | Proposed | 2026-10-26 |
+| [0031](0031-broker-postgres-event-log.md) | Event Log with Per-Subscription Cursors as the Broker's PostgreSQL Backend | Active | 2026-10-29 |
+| [0032](0032-broker-transport-shared-postgres.md) | The Shared PostgreSQL Instance as the Broker's Transport | Active | 2026-10-29 |
