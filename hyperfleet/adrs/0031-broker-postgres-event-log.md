@@ -1,7 +1,7 @@
 ---
-Status: Proposed
+Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-28
+Last Updated: 2026-10-29
 ---
 
 # 0031 — Event Log with Per-Subscription Cursors as the Broker's PostgreSQL Backend
@@ -10,7 +10,7 @@ Last Updated: 2026-10-28
 
 [HYPERFLEET-1654](https://redhat.atlassian.net/browse/HYPERFLEET-1654) replaces standalone broker infrastructure with a PostgreSQL backend inside the `hyperfleet-broker` library ([ADR-0002](0002-pluggable-message-broker-library.md)), storing state in `event_store` on the shared instance ([ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md)). The Broker's contract is fan-out signaling: events are small and idempotent by generation, volume is tens of events per second, and delivery loss is tolerable because Sentinel re-publishes on later cycles. The chosen design must not preclude an API-emitted outbox.
 
-[HYPERFLEET-1656](https://redhat.atlassian.net/browse/HYPERFLEET-1656) compared River, a purpose-built work queue, and a purpose-built event log with cursors; the [spike doc](../docs/spike-broker-postgres-backend.md) records the comparison and the evidence run.
+[HYPERFLEET-1656](https://redhat.atlassian.net/browse/HYPERFLEET-1656) compared River, a purpose-built work queue, and a purpose-built event log with cursors; the [spike doc](../docs/spike-broker-postgres-backend.md) records the comparison and the evidence run. [HYPERFLEET-1859](https://redhat.atlassian.net/browse/HYPERFLEET-1859) added watermill-sql to the comparison. The transport-level decision is [ADR-0032](0032-broker-transport-shared-postgres.md).
 
 ## Decision
 
@@ -18,9 +18,9 @@ Use the purpose-built event log with per-topic sequences and per-subscription cu
 
 - **Storage:** `broker_events` is an append-only table, partitioned daily, one row per event with a per-topic sequence from `broker_topic_seq`; publish is one transaction (bootstrap, allocate, insert) whose cost is independent of subscription count.
 - **Coordination:** each (topic, subscription) tracks progress in `broker_cursors` (acked and reserved positions); replicas reserve disjoint sequence ranges through `broker_ranges` claims with per-range leases; a reservation is one transaction holding the cursor row lock.
-- **Delivery:** acks only on handler success — at-least-once within a subscription while events are within the retention window, safe because events are idempotent by generation; bounded retries tracked by an attempts counter scoped per (topic, subscription, sequence), then skip and surface on the subscriber error channel; a skipped event advances the cursor like an acknowledged one, so the cursor is the highest contiguous id that has been acknowledged or skipped. The dead-letter path ([ADR-0017](0017-adapter-error-taxonomy.md)) is the log itself: an exhausted event remains in `broker_events` until the retention window (24h default), inspectable by SQL, and replay is Sentinel regenerating still-unreconciled work on later cycles — no separate DLQ topic.
+- **Delivery:** acks only on handler success — at-least-once within a subscription while events are within the retention window, safe because events are idempotent by generation; bounded retries tracked by an attempts counter scoped per (topic, subscription, sequence), then skip and surface on the subscriber error channel; a skipped event advances the cursor like an acknowledged one, so the cursor is the highest contiguous id that has been acknowledged or skipped. The dead-letter path is the log itself: an exhausted event remains in `broker_events` until the retention window, inspectable by SQL, and replay is Sentinel regenerating still-unreconciled work on later cycles — no separate DLQ topic. For this backend it supersedes [ADR-0017](0017-adapter-error-taxonomy.md)'s broker-native DLQ: the guide's operator re-publish replay and 7-day expiry ([Adapter Error Handling](../components/adapter/framework/adapter-error-handling.md)) become Sentinel regeneration and the retention window, and the DLQ-depth alert becomes a skipped-events count per (topic, subscription) for alerting — a skipped event advances the cursor, so the oldest-unacknowledged alert does not see it. The guide update is tracked in [HYPERFLEET-1873](https://redhat.atlassian.net/browse/HYPERFLEET-1873).
 - **Ordering:** the acked cursor advances only over contiguous ids. The current publisher allocates the per-topic sequence and inserts the event in one transaction holding the counter row lock, so it cannot leave an in-flight or rolled-back gap behind the cursor; a future producer, such as an API-emitted outbox, must keep the same invariant. A hole older than the grace period (default 5s, configurable) is treated as a rolled-back insert and skipped — the guard for a producer that violates the invariant. The grace period must exceed the longest publish transaction so the guard never fires on a live insert.
-- **Retention:** daily partitions created a day ahead, dropped after the retention window (default 24h). Partition DDL runs as `event_store_migrate` on a schedule — the runtime role (`event_store_app`) holds DML only, per [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md). Cursor positions reconcile independently: a position below the oldest retained sequence advances to one below it, accepting the documented loss — acked stalled behind an already-advanced reserved (handler failure with the range lease outstanding) recovers on its own. Lease expiry never retreats a position, it only releases the range for reclaim; a pending range lying entirely below the oldest retained sequence is deleted rather than retried. When a topic has no retained rows, both positions advance to the topic's sequence head and its pending ranges are deleted, so the next published event is the first delivered.
+- **Retention:** daily partitions created a day ahead, dropped after the retention window (default 24h). Partition creation and rotation run through a `SECURITY DEFINER` maintenance routine owned by `event_store_migrate`, invoked by the retention reaper; the runtime role (`event_store_app`) has `EXECUTE` on the routine but no DDL or direct `DELETE` on `broker_events` or `broker_ranges`, per [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md). The same routine performs pending-range cleanup and deletes only ranges entirely below the oldest retained sequence. The implementation must revoke `EXECUTE` from `PUBLIC`, use a fixed function-level `search_path`, and fully qualify table references. No operator job or migration credential is mounted in the runtime pod. Packaging the routine and reaper invocation will be part of the backend implementation under [HYPERFLEET-1655](https://redhat.atlassian.net/browse/HYPERFLEET-1655). Cursor positions reconcile independently: a position below the oldest retained sequence advances to one below it, accepting the documented loss — acked stalled behind an already-advanced reserved (handler failure with the range lease outstanding) recovers on its own. Lease expiry never retreats a position, it only releases the range for reclaim; a pending range lying entirely below the oldest retained sequence is deleted rather than retried. When a topic has no retained rows, reconciliation takes the same per-topic `broker_topic_seq` counter-row lock as publishing and holds it across the empty check, sequence-head read, cursor updates, and pending-range deletion, so the next published event is the first delivered.
 - **Pooling:** no LISTEN/NOTIFY and no extensions — short transactions and plain SQL only, so transaction pooling (PgBouncer) is safe by construction and [ADR-0023](0023-oci-managed-postgresql.md)'s OCI Database with PostgreSQL constraints are met; live validation on that offering is deferred to the implementation stories.
 
 Operational rules:
@@ -28,20 +28,24 @@ Operational rules:
 - No NOTIFY inside hot write transactions.
 - Claim and reservation transactions stay short.
 - Idle checks take no locks — the cursor row lock is taken only when there is work.
-- Retention by rotation rather than delete-behind.
+- Retention by rotation rather than delete-behind: a partition drop is metadata-only — no per-row WAL, no dead tuples, no autovacuum load on the shared instance — and the runtime role has no direct `DELETE` on event-log tables or DDL privilege; pending-range cleanup is confined to the authorized routine.
 - Alert on the age of the oldest unacknowledged event per subscription, on holes stalled past the grace period, and on `event_store`'s xmin horizon age — the grace rule covers cursor holes, while a transaction pinning the horizon blocks vacuum with or without one (defined in the [co-located databases design](../docs/co-located-service-databases-postgres-design.md)).
+- Count broker events skipped after retry exhaustion per (topic, subscription) when the subscription commits the skip, including events whose cursor advances; alert when this count increases within a configurable evaluation window. Exclude adapter precondition skips and sequence holes skipped after the grace period.
+- Alert when partition pre-creation falls behind: a missed rotation stops publishing — inserts find no partition — rather than just growing disk. A DEFAULT partition as the guard is an implementation-story choice.
 
 Evidence (both backends run on one machine with one harness; repeat runs on a fresh instance; 30-second runs at 200-500 events/sec with 3-5 way fan-out, pre-pruning against default 24h retention):
 
 - The nine shared integration scenarios, the goroutine leak tests, and the targeted correctness tests pass for both candidates.
 - 100 percent delivery and zero publish errors in every run, locally and in-kind.
 
+**Local runs:**
+
 | Backend | p50 | p99 | Storage per event |
 |---------|-----|-----|-------------------|
 | Event log | 6-8ms | 176-211ms | 0.4KB, zero dead tuples |
 | River | 35-43ms | 92-94ms | about 7KB at 5-way fan-out |
 
-River's figures are our same-machine runs; they reproduce `RIVER-POC.md`'s recorded local run (p50 43ms, p99 92ms). In-kind (single Postgres pod, port-forward): event log p50 12ms / p99 213ms, River p50 44ms / p99 101ms — River reproduces its recorded in-kind figures (p50 41ms, p99 88ms).
+River's figures are our same-machine runs. Local (500 events/sec, 5-way fan-out): River measures p50 35ms / p99 94ms against `RIVER-POC.md`'s recorded p50 43ms / p99 92ms. In-kind (single Postgres pod, port-forward, 200 events/sec, 3-way fan-out): event log p50 12ms / p99 213ms, River p50 44ms / p99 101ms against its recorded p50 41ms / p99 88ms.
 
 POC records in `hyperfleet-broker`: [`EVENTLOG-POC.md`](https://github.com/openshift-hyperfleet/hyperfleet-broker/blob/poc/eventlog-backend/EVENTLOG-POC.md) and [`RIVER-POC.md`](https://github.com/openshift-hyperfleet/hyperfleet-broker/blob/poc/eventlog-backend/RIVER-POC.md).
 
@@ -58,10 +62,17 @@ POC records in `hyperfleet-broker`: [`EVENTLOG-POC.md`](https://github.com/opens
 
 **Trade-offs:**
 
-- A polling latency tail — p99 about 200ms, set by the idle `poll_interval` (1s default; the load harness does not override it). At 200ms the p99 drops to 16ms but costs 34 percent more transaction IDs. The 1s default is chosen because the 5-second Sentinel poll floor does not require tighter latency, and idle polls with no locks (see the operational rules) make the cost acceptable.
-- Per-topic publish serialization on the counter row, immaterial at contract volume.
+- A polling latency tail — p99 about 200ms, set by the idle `poll_interval` (1s default; the load harness does not override it). At 200ms the p99 drops to 16ms but costs 34 percent more transaction IDs.
+- Per-topic publish serialization on the counter row.
 - Range coordination adds two small tables and one transaction per batch.
 - Metrics and tooling are in-repo (`MetricsRecorder` plus SQL) rather than provided by a library.
+
+**Acceptable because:**
+
+- The 5-second Sentinel poll floor does not require tighter latency, and idle polls take no locks, so the 1s default's cost is bounded.
+- Publish serialization is immaterial at contract volume.
+- Range coordination buys crash recovery and competing consumers without a central coordinator.
+- In-repo metrics are the price of the no-dependency gain (pgx only).
 
 ## Alternatives Considered
 
@@ -69,3 +80,5 @@ POC records in `hyperfleet-broker`: [`EVENTLOG-POC.md`](https://github.com/opens
 |-------------|--------------|
 | River ([riverqueue/river](https://github.com/riverqueue/river), MPL-2.0) | External dependency controls its schema and migrations; higher storage from one job row per subscription per event (about 7KB vs 0.4KB at 5-way fan-out); delete-behind retention adds vacuum overhead; LISTEN/NOTIFY imposes connection-pooling constraints; no direct path to the API-emitted outbox |
 | Purpose-built work queue (per-subscription tables, SELECT FOR UPDATE SKIP LOCKED) | Retains the per-subscription storage and delete-behind retention while requiring custom implementation; no outbox path |
+| watermill-sql ([ThreeDotsLabs/watermill-sql](https://github.com/ThreeDotsLabs/watermill-sql), MIT) | Library-owned per-topic schema — opt-in initialization runs CREATE TABLE from the app role at runtime, against the `event_store_migrate`/`event_store_app` role split, and disabling it means a migration per topic; no retention mechanism (delete-behind by hand); handler batches run inside the polling transaction holding the offsets row lock, against the short-transaction rule; its correct-by-construction ordering (transaction-id horizon) does not offset the operational costs |
+| watermill-http ([ThreeDotsLabs/watermill-http](https://github.com/ThreeDotsLabs/watermill-http), MIT) | Not a Postgres backend — an HTTP transport with no storage, so the comparison criteria do not apply; decided in [ADR-0032](0032-broker-transport-shared-postgres.md) |
