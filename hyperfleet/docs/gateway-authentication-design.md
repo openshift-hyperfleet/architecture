@@ -130,8 +130,6 @@ flowchart LR
     E -->|"TLS"| F
     E -->|"TLS"| A
 
-    classDef planned stroke-dasharray: 5 5,fill:#f5f5f5
-    class I planned
 ```
 
 Authorino is present only in `EDGE` and `EDGE+API`. The ingress-to-Envoy hop may remain HTTP or use TLS re-encryption; that choice is undecided. [HYPERFLEET-1681](https://redhat.atlassian.net/browse/HYPERFLEET-1681) tracks the entry design, and [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536) tracks implementation.
