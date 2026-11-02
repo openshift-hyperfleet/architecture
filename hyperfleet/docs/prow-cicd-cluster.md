@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-10-15
+Last Updated: 2026-11-02
 ---
 
 # Prow CI/CD Cluster Documentation
@@ -220,17 +220,23 @@ After provisioning the cluster via Terraform, install the namespace cleaner manu
 
 The namespace cleaner is a CronJob that removes stale namespaces every hour. It deletes each namespace that carries any label key in `CLEANER_LABEL_SELECTOR` and is older than **2 hours**. E2E adapters set `hyperfleet.io/cluster-id` on the resources they create, and the E2E suite sets `e2e.hyperfleet.io/run-id` on its test namespaces. The remaining key, `hyperfleet.io/test-run`, is not E2E-specific: the `check-hyperfleet-namespace` target in the `hyperfleet-infra` Makefile labels the install namespace with it during stack installs (`make install-hyperfleet`, `install-api`, `install-desire-delivery`), so the cleaner also deletes installed HyperFleet stacks once they pass the 2-hour age threshold — not just E2E leftovers.
 
+On this cluster the cleaner also deletes orphaned E2E resources: what an interrupted E2E run leaves outside its run namespace. See [Orphaned E2E Resource Cleanup](#orphaned-e2e-resource-cleanup).
+
 The cleaner is defined in the `helm/namespace-cleaner/` Helm chart in `hyperfleet-infra` ([PR #55](https://github.com/openshift-hyperfleet/hyperfleet-infra/pull/55)). `make install-cleaner` also applies the `hyperfleet-critical` PriorityClass, which the cleaner pod uses.
 
 The Makefile runs `kubectl` and `helm` against the current context. Use a kubeconfig that holds only the prow context, so the cleaner can't land on another cluster:
+
+**⚠️ REMINDER**: This changes a shared cluster. Review the [Usage Policy](#usage-policy) before proceeding. Leader approval and team-wide Slack broadcast are recommended.
 
 ```bash
 export KUBECONFIG="$(mktemp)"
 gcloud container clusters get-credentials hyperfleet-dev-prow --zone us-central1-a --project hcm-hyperfleet
 
 cd hyperfleet-infra
-make install-cleaner CLEANER_NAMESPACE=hyperfleet-cleaner
+make install-cleaner CLEANER_NAMESPACE=hyperfleet-cleaner CLEANER_ORPHANS_ENABLED=true CLEANER_PUBSUB_PROJECT=hcm-hyperfleet CLEANER_OWNER_CLUSTER=hyperfleet-dev-prow
 ```
+
+`make install-cleaner` passes every `CLEANER_*` value to `helm upgrade`, so a reinstall without `CLEANER_ORPHANS_ENABLED=true`, `CLEANER_PUBSUB_PROJECT` and `CLEANER_OWNER_CLUSTER` turns the orphan rules off.
 
 **Configurable variables** (override on the `make` command line):
 
@@ -240,6 +246,10 @@ make install-cleaner CLEANER_NAMESPACE=hyperfleet-cleaner
 | `CLEANER_SCHEDULE` | `0 * * * *` | Cron schedule (every hour) |
 | `CLEANER_LABEL_SELECTOR` | `hyperfleet.io/cluster-id hyperfleet.io/test-run e2e.hyperfleet.io/run-id` | Space-separated label keys. A namespace with any of them is eligible |
 | `CLEANER_AGE_MINUTES` | `120` | Minimum age in minutes before a namespace is deleted |
+| `CLEANER_ORPHANS_ENABLED` | `false` | Delete the Pub/Sub topics and subscriptions and the Helm-managed ClusterRoles and ClusterRoleBindings of E2E run namespaces that no longer exist. Prow uses `true` |
+| `CLEANER_PUBSUB_PROJECT` | (empty) | GCP project of the E2E Pub/Sub resources. Required when `CLEANER_ORPHANS_ENABLED=true`. Prow uses `hcm-hyperfleet` |
+| `CLEANER_OWNER_CLUSTER` | (empty) | GKE cluster that runs the E2E jobs for `CLEANER_PUBSUB_PROJECT`. Required when `CLEANER_ORPHANS_ENABLED=true`. Prow uses `hyperfleet-dev-prow` |
+| `CLEANER_DRY_RUN` | `false` | Log what both rules would delete without deleting anything |
 
 To trigger a run immediately without waiting for the next scheduled tick:
 
@@ -252,6 +262,31 @@ To uninstall:
 ```bash
 make uninstall-cleaner CLEANER_NAMESPACE=hyperfleet-cleaner
 ```
+
+### Orphaned E2E Resource Cleanup
+
+**What it deletes.** When an E2E run namespace (`e2e-<19 digits>` or `rc-e2e-<19 digits>`) no longer exists on this cluster, the cleaner deletes:
+
+- Pub/Sub topics and subscriptions in `hcm-hyperfleet` whose name starts with `<run namespace>-`
+- ClusterRoles and ClusterRoleBindings labelled `app.kubernetes.io/managed-by=Helm` whose `meta.helm.sh/release-namespace` annotation is that namespace
+
+**What it keeps.** It lists these resources before the namespaces, and a namespace that is still Terminating counts as present, so a run keeps its resources while its namespace exists. The namespace rule deletes run namespaces older than `CLEANER_AGE_MINUTES` (2 hours), so a job that runs longer loses its namespace and then, on the next run, its Pub/Sub and RBAC. Keep E2E job timeouts under that age. The `e2e-<19 digits>` names are Prow build IDs: don't use them for local runs against `hcm-hyperfleet`, or this cleaner deletes their Pub/Sub resources.
+
+**Pub/Sub cluster guard.** Every cluster that runs E2E against `hcm-hyperfleet` sees the same topics, but only this cluster has their run namespaces. Before listing Pub/Sub resources, the cleaner reads the cluster name from the GKE metadata server. On any cluster other than `CLEANER_OWNER_CLUSTER`, it skips Pub/Sub cleanup and the job fails. RBAC cleanup uses the local namespace list and runs independently of this check.
+
+**Permissions.** The cleaner calls Pub/Sub with its Workload Identity token, so the `namespace-cleaner` ServiceAccount needs permission to list and delete topics and subscriptions in `CLEANER_PUBSUB_PROJECT`. Without it, the job log shows `Failed to list Pub/Sub ... (HTTP 403)` and the job fails.
+
+**Failures.** Pub/Sub and RBAC are checked separately. If the cluster check, the token request or a Pub/Sub list fails, the cleaner skips Pub/Sub; if an RBAC list fails, it skips RBAC. If the namespace list fails or is empty, it skips both. A skipped kind logs `[ERROR] ... orphan cleanup skipped`, and the job fails after the namespace rule has run. A failed delete only logs `[WARN]`, the cleaner goes on with the rest, and the job still succeeds, so check `failed=` in the `Orphan cleanup summary` line too:
+
+```bash
+kubectl logs -n hyperfleet-cleaner job/namespace-cleaner-manual | grep -E 'Orphan cleanup|\[(ERROR|WARN)\]'
+```
+
+**Enable, preview, disable.**
+
+1. Preview: run the install command above with `CLEANER_DRY_RUN=true` added, trigger a run, and read its log. Every `[DRY-RUN] Would delete` line for Pub/Sub or RBAC must name an `e2e-<19 digits>` or `rc-e2e-<19 digits>` resource whose namespace is gone. Dry run pauses namespace deletion too, so don't leave it on.
+2. Enable: run the install command above as written.
+3. Disable: `make install-cleaner CLEANER_NAMESPACE=hyperfleet-cleaner`, without the orphan variables.
 
 ---
 
