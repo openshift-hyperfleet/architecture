@@ -46,7 +46,7 @@ The architectural contract is:
 
 > **Warning:** Wristband validation does not re-verify the caller's original credential. Trust depends on gateway configuration and protection of the signing key.
 
-The scheme semantics, [Wristband trust contract](../docs/gateway-authentication-design.md#wristband), TLS hop status, E2E client contract, and open items are in the Gateway Authentication Design.
+The scheme semantics, [Wristband trust contract](../docs/gateway-authentication-design.md#wristband), TLS hop status, and E2E client contract are in the Gateway Authentication Design.
 
 ## Consequences
 

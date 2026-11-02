@@ -24,7 +24,6 @@ Last Updated: 2026-11-02
   - [E2E client contract](#e2e-client-contract)
 - [Design Trade-offs](#design-trade-offs)
 - [Alternatives](#alternatives)
-- [Open Items](#open-items)
 - [References](#references)
 
 ## Problem Statement
@@ -46,7 +45,7 @@ Each deployment selects one mode with `AUTH_MODE`.
 | `EDGE` | Authorino validates every caller and injects tenant and system headers | JWT validation disabled; no caller identity resolution |
 | `EDGE+API` | Authorino validates every caller and issues a Wristband | Validates the Wristband and takes caller identity from `sub` |
 
-> **Warning:** `NONE` is for development only and must not be exposed externally. Current deployment defaults can expose an unauthenticated API; this constraint is not enforced by every deployment path. See [Open Items](#open-items).
+> **Warning:** `NONE` is for development only and must not be exposed externally. Current deployment defaults can expose an unauthenticated API; this constraint is not enforced by every deployment path.
 
 Tenant isolation requires `EDGE` or `EDGE+API`. The API uses gateway-injected headers in `EDGE` and validated Wristband claims in `EDGE+API`. Deployment configuration is maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
 
@@ -111,7 +110,7 @@ Request handling in `EDGE+API`:
 
 In `EDGE+API`, the API validates the Wristband's issuer, audience, and signature, trusting Authorino as its only issuer. It maps configured tenant claims to tenancy key/value pairs and reads `hf_system` for the system-caller bypass. It ignores tenant and system headers and rejects missing required or invalid dimensions, so forged headers cannot change tenant scope or system classification.
 
-Wristband trust depends on protection of the signing key. Any principal that can read the key can mint a Wristband with arbitrary claims. Key rotation and access control are tracked in [Open Items](#open-items).
+Wristband trust depends on protection of the signing key. Any principal that can read the key can mint a Wristband with arbitrary claims.
 
 ### Internal TLS
 
@@ -177,16 +176,6 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 | **Priority-ordered Authorino identity methods** | Two methods can evaluate the same token, so the result depends on evaluation order. On GKE the human OIDC issuer can sign ServiceAccount tokens, so a race can misclassify a machine caller as a human caller. |
 | **mTLS between gateway and API** | Adds client certificate lifecycle management while the NetworkPolicy restricts which pods can connect. Server TLS allows Envoy to authenticate the API server. |
 | **Re-encrypt at the ingress now** | No ingress exists today. Adding one is a separate deployment decision; the gateway contract does not depend on where TLS terminates. |
-
-## Open Items
-
-| Item | Owner | State |
-|------|-------|-------|
-| Rotation of the internal CA, serving certificates, and Wristband signing key | HYPERFLEET-1523 (Envoy certificate rotation spike), HYPERFLEET-1754 (epic) | Backlog |
-| Ingress TLS termination and the external entry point | HYPERFLEET-1681 | Backlog |
-| Gateway network boundary and TLS load balancer operands | HYPERFLEET-1536 | Backlog |
-| Restrict which principals can read the Wristband signing-key Secret | Unassigned | Needs decision |
-| Prevent unauthenticated external exposure across deployment paths | Unassigned | Needs decision |
 
 ## References
 
