@@ -183,6 +183,3 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 - [ADR-0018: E2E JWT/TLS Architecture](../adrs/0018-e2e-jwt-tls-architecture.md)
 - [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md)
 - [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
-- [hyperfleet-infra gateway authentication](https://github.com/openshift-hyperfleet/hyperfleet-infra)
-- [Authorino documentation](https://github.com/Kuadrant/authorino)
-- [Kubernetes TokenReview API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-review-v1/)
