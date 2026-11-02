@@ -1,9 +1,8 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-08
+Last Updated: 2026-11-01
 ---
-
 # SPIKE: OLM Bundle and Catalog Release Process
 
 **Ticket:** [HYPERFLEET-1617](https://issues.redhat.com/browse/HYPERFLEET-1617)
@@ -45,7 +44,7 @@ quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bu
 quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:v1.0.0
 ```
 
-The CSV version inside the bundle image must match the catalog entry name (e.g.,
+The CSV version inside the bundle image must match a catalog entry name (e.g.,
 `hyperfleet-operator.v1.0.0`). Because this version is baked into the image at
 build time, bundles cannot be retagged or promoted — a new version requires a
 new build.
@@ -76,20 +75,56 @@ annotations:
 ```
 
 These do not need to change between RC and official builds. The catalog controls
-which channel each version actually lands in.
+which channel each version actually lands in. The specific channels will be decided here in [Versioning Options](./spike-olm-upgrade-path.md#versioning-options-for-hyperfleet-operator).
 
 ---
 
 ## Catalogs
 
+The old `hyperfleet-operator-catalog` image and its push pipeline
+(`hyperfleet-operator-catalog-push.yaml`) are deprecated. As part of [HYPERFLEET-1770](https://redhat.atlassian.net/browse/HYPERFLEET-1770), we are creating a `hyperfleet-fbc` Application and Component.
+
+Within that Application we are going to create a new RPA and new pipeline.
+
+| Pipeline                           | Triggers on                     | Purpose                                    |
+| ---------------------------------- | ------------------------------- | ------------------------------------------ |
+| `hyperfleet-operator-fbc-tag.yaml` | `catalog-vX.Y.Z[-rcN]` git tags | Release catalog builds from tagged commits |
+
+Production CatalogSources reference `hyperfleet-operator-fbc` (see the
+[upgrade-path spike](spike-olm-upgrade-path.md)).
+
+**Decision:** No on-push catalog pipeline initially. The catalog is built only from git tags.
+Template changes on `main` are validated by a render-only CI check (`opm alpha render-template` in a test job — no image pushed), which catches YAML errors, bad upgrade graphs, and missing bundle references. Merge-time install tests do not use a catalog; they install the merge's bundle image directly with `operator-sdk run bundle`.
+
+**Open question — add an on-push pipeline later?** An on-push fbc build that pushes only to
+`redhat-user-workloads` is safe by construction (build credentials cannot write to
+`redhat-services-prod`, and the fbc ReleasePlan has `auto-release: "false"`). Under the
+pinned-digest design such an image would contain only already-released bundles, so its sole
+value would be testing catalog *behavior* (channel resolution, upgrade graph) against a real
+OLM install without cutting a tag. Revisit if that workflow materializes.
+
 ### Catalog Image Tagging
 
-The catalog image uses a single mutable tag:
-`quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-catalog:latest`.
+The catalog image exists in **two registries**, with different write rules:
 
-Each catalog build is triggered by a unique git tag (`catalog-vX.Y.Z-rcN`,
-`catalog-vX.Y.Z`, etc.) and pushes to `:latest`. Production CatalogSources
-reference this `:latest` tag.
+| Registry                                                                             | Image                                    | Written by                                                                         | Content                             |
+| ------------------------------------------------------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------- |
+| `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` | build output, tagged by revision         | `fbc-tag` pipeline directly (builds always land here first)                        | All tag builds — RCs **and** finals |
+| `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc`  | `:latest` + version tags (e.g. `v1.0.1`) | RPA release pipeline only (`rh-push-to-external-registry`, via Snapshot + Release) | **Final releases only**             |
+
+Key properties:
+
+- **Prod `:latest` is tag-built and final-only.** It has exactly one writer — the
+  RPA release pipeline — and only `catalog-vX.Y.Z` tags (no `-rcN` suffix) create
+  a Release.
+- **RCs never enter the prod registry.** The tag pipeline matches both
+  `catalog-vX.Y.Z-rcN` and `catalog-vX.Y.Z`, but the Release-creation step is
+  conditional: RC tags build to user-workloads and stop there. Prow RC tests
+  point their CatalogSource at the user-workloads image (pinned to the build's
+  digest) — see the [upgrade-path spike](spike-olm-upgrade-path.md).
+- The RC-vs-final distinction comes from the git tag string; the release version
+  label flows into the RPA's `{{ labels.version }}` tag template, so the prod
+  image's version tag matches the git tag.
 
 **Aggregate catalog strategy:** Each release uses
 `catalog/release-template.yaml`, which contains **all** major version channels
@@ -99,37 +134,24 @@ supported major versions. This allows:
 - v1 clusters continue receiving v1 updates after v2 ships
 - Cross-major upgrades via Subscription channel switch
 
-See [Create a catalog tag pipeline](#2-create-a-catalog-tag-pipeline) for the
-pipeline configuration. Validation gates should verify that all previously published
-major versions remain present after each catalog rebuild.
+See [Create a catalog tag pipeline](#2-create-a-catalog-tag-pipeline) for the pipeline configuration. Validation gates should verify that all previously published major versions remain present after each catalog rebuild.
 
 ### Catalog Build Flow
 
+The catalog is a release artifact — built only from git tags, never from main merges:
+
 ```text
-Release (main branch):
-  update catalog/release-template.yaml
-  push catalog-vX.Y.Z git tag → catalog-tag pipeline → catalog image :latest
+RC (validation):
+  push catalog-vX.Y.Z-rcN git tag
+    → fbc-tag pipeline → image in redhat-user-workloads
+    → no Release created; consumed by Prow RC tests only
+
+Final (release):
+  push catalog-vX.Y.Z git tag
+    → fbc-tag pipeline → image in redhat-user-workloads (Snapshot)
+    → Release CR → RPA match → EC policy → rh-push-to-external-registry
+    → copied to redhat-services-prod, tagged v1.0.1 + latest
 ```
-
-### Current Catalog Build
-
-The catalog has one push pipeline (`hyperfleet-operator-catalog-push.yaml`) that
-triggers on main merges when `catalog/` files change. The pipeline's
-`run-opm-command` task renders `catalog/konflux-template.yaml` into an FBC
-catalog, then `catalog.Dockerfile` packages the rendered output into the final
-image.
-
-This does not support release catalogs because:
-
-1. `konflux-template.yaml` hardcodes a single unversioned `stable` channel —
-   release catalogs need versioned channels (`stable-v1`, `candidate-v1`)
-2. There is no tag pipeline to build the catalog from tagged commits
-3. `konflux-template.yaml` is updated by build-nudges on main — release digests
-   should not be automatically updated
-
-These gaps are addressed in the
-[Create a catalog tag pipeline](#2-create-a-catalog-tag-pipeline) and
-[Upgrade Options - RC verification](spike-olm-upgrade-path.md#upgrade-options---rc-verification).
 
 ---
 
@@ -291,51 +313,11 @@ Future work can be scoped to automating this process.
 
 ## 3. Catalog Upgrade Path
 
-**Problem:** The catalog defines the OLM upgrade graph — which bundle versions
-exist, which channels they belong to, and how versions upgrade between them.
-Because bundles are built from individual release branches (`release-1.0`,
-`release-1.1`), the upgrade graph spans multiple branches. No single release
-branch has the complete picture of all versions in the channels. If the catalog
-templates lived on release branches, each branch would only know about its own
-versions. A cluster on `v1.0.1` (from `release-1.0`) wouldn't have an upgrade
-path to `v1.1.0` (from `release-1.1`) unless the `release-1.1` branch carried
-forward all prior entries — and hotfixes on older branches would need to be
-propagated forward to whichever branch is "latest."
-
-**Solution:** Single aggregate catalog on `main`
-
-The catalog templates live on `main` in a single `release-template.yaml` file
-that contains all major versions:
-
-### Proposed catalog directory structure
-
-```text
-catalog/
-├── konflux-template.yaml
-└── release-template.yaml
-```
-
-The `release-template.yaml` is the **single source of truth** for all major
-versions' upgrade graphs. See [OLM Upgrade Path](spike-olm-upgrade-path.md) for
-the proposed structure of `release-template.yaml`.
-
-This approach works because:
-
-- **All major versions in one file** — `release-template.yaml` contains both v1
-  and v2 channels, so the rendered catalog always includes all supported major
-  versions
-- **Complete upgrade graph in one place** — no carrying forward entries between
-  branches, no directory aggregation needed
-- **Catalog builds from a tagged commit** — when you tag `catalog-v1.1.0` on
-  `main`, the pipeline builds from that exact commit. Later merges to `main`
-  don't affect the build
-- **Release branches stay focused** — they own the bundle (component digests in
-  `kustomization.yaml`, CSV). The catalog is a separate concern on `main`
-- **No additional components or branches** — the existing catalog component on
-  `main` can build release catalogs using the single template
-
-The nightly dev catalog (`konflux-template.yaml`) remains unchanged on `main` —
-it continues to use the unversioned `stable` channel with `v0.0.1`.
+The catalog defines the OLM upgrade graph — which bundle versions exist, which
+channels they belong to, and how versions upgrade between them. The upgrade
+graph strategy (single aggregate `release-template.yaml` on `main`, channel
+structure, RC validation flow, and the Prow testing steps) is covered in
+[OLM Upgrade Path](spike-olm-upgrade-path.md).
 
 ---
 
@@ -415,33 +397,13 @@ In both cases, update the `catalog/release-template.yaml` on the `main` branch. 
 ### Step 7: Promote to stable channel
 
 Once everything is validated cleanly, tag the release-X.Y branch with
-`bundle-vX.Y.Z`. This will trigger the official bundle build. Update the channel and add the `olm.bundle` entry in `catalog/release-template.yaml` on the `main` branch. Tag the change and rebuild the catalog image.
+`bundle-vX.Y.Z`. This will trigger the official bundle build. Then update
+`catalog/release-template.yaml` on `main` to add the final release and its
+`olm.bundle` digest, following the channel structure and upgrade graph defined
+in [OLM Upgrade Path](spike-olm-upgrade-path.md).
 
-**Example:**
-
-1. Tag `bundle-v1.0.0` on the operator's `release-1.0` branch, which will
-   trigger the tag pipeline to build the official bundle
-2. Add the bundle to the `stable-v1` channel and its `olm.bundle` digest to
-   `catalog/release-template.yaml` on `main`, tag that change as
-   `catalog-v1.0.0` and build the catalog image
-
-```yaml
-schema: olm.template.basic
-entries:
-  - schema: olm.package
-    name: hyperfleet-operator
-    defaultChannel: stable-v1
-    description: "HyperFleet Operator"
-  - schema: olm.channel
-    name: stable-v1
-    package: hyperfleet-operator
-    entries:
-      - name: hyperfleet-operator.v1.0.0
-        skipRange: "<1.0.0"
-  # Add the olm.bundle entry for the newly built official bundle
-  - schema: olm.bundle
-    image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<v1.0.0-digest>
-```
+Tag the catalog change as `catalog-vX.Y.Z` (no `-rcN` suffix) to build and
+release the official catalog.
 
 ---
 
@@ -520,7 +482,7 @@ The bundle-tag pipeline requires these changes:
 
 #### 2. Create a catalog tag pipeline
 
-Add `hyperfleet-operator-catalog-tag.yaml` to `.tekton/`. This pipeline triggers
+Add `hyperfleet-operator-fbc-tag.yaml` to `.tekton/`. This pipeline triggers
 on a specific `tag` push of `catalog-vX.Y.Z-rcN` (candidate) or `catalog-vX.Y.Z`
 (stable)
 
@@ -558,22 +520,93 @@ The catalog-tag pipeline requires these changes:
 
 ### `konflux-release-data` Repository
 
-#### 1. Create an RPA for the catalog image
+#### Pending: `hyperfleet-fbc` Application and Component (PR open)
 
-Add a ReleasePlanAdmission in `konflux-release-data` for the catalog component
-so that Konflux can release catalog images to the production Quay registry.
-Default tags are currently set as:
+As part of [HYPERFLEET-1770](https://redhat.atlassian.net/browse/HYPERFLEET-1770), add a new Application, Component and ImageRepository to `tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/applications/hyperfleet-fbc/`.
 
-```yaml
-tags:
-  - "{{ labels.version }}"
-  - "{{ labels.version }}-{{ timestamp }}"
-  - "{{ git_sha }}"
-  - latest
-```
+#### 1. Add a ReleasePlan for `hyperfleet-fbc` — with auto-release **disabled**
+
+Add a ReleasePlan in `../tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/release-plan.yaml` , following the
+existing `hyperfleet` and `hyperfleet-charts` plans:
 
 ```yaml
-- name: hyperfleet-operator-catalog
-  repositories:
-    - url: "quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-catalog"
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlan
+metadata:
+  labels:
+    release.appstudio.openshift.io/auto-release: "false"   # critical — see below
+    release.appstudio.openshift.io/standing-attribution: "true"
+    release.appstudio.openshift.io/releasePlanAdmission: hyperfleet-fbc
+  name: hyperfleet-fbc-releaseplan
+  namespace: hyperfleet-tenant
+spec:
+  application: hyperfleet-fbc
+  target: rhtap-releng-tenant
 ```
+
+**Why `auto-release: "false"` matters:** the existing `hyperfleet-releaseplan` has
+`auto-release: "true"`, which makes the release service create a Release for **every**
+Snapshot. We want the catalog's prod registry (`redhat-services-prod`) to be updated — including its`:latest` tag — **only for final production images**, never for RCs or main-merge builds. The fbc ReleasePlan must therefore not auto-release; Releases are created only by the tag pipeline for final tags (`catalog-vX.Y.Z`, no `-rcN`). RC builds then live and die in
+`redhat-user-workloads` and never reach `redhat-services-prod`
+(see [Catalog Image Tagging](#catalog-image-tagging)).
+
+#### 2. Create an RPA for the catalog image
+
+Add a ReleasePlanAdmission under
+`config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/` as a new file named `hyperfleet-fbc.yaml` so that we can release catalog images to the production Quay registry:
+
+```yaml
+---
+apiVersion: appstudio.redhat.com/v1alpha1
+kind: ReleasePlanAdmission
+metadata:
+  labels:
+    pp.engineering.redhat.com/business-unit: other
+    release.appstudio.openshift.io/block-releases: "false"
+  name: hyperfleet-fbc
+  namespace: rhtap-releng-tenant
+spec:
+  applications:
+    - hyperfleet-fbc
+  origin: hyperfleet-tenant
+  policy: fbc-standard          # confirm with releng — see note below
+  data:
+    releaseNotes:
+      product_name: HyperFleet
+      product_version: "1.0"
+    mapping:
+      registrySecret: konflux-release-service-access-management-token
+      defaults:
+        tags:
+          - "{{ labels.version }}"
+          - "{{ labels.version }}-{{ timestamp }}"
+          - "{{ git_sha }}"
+          - latest
+        pushSourceContainer: false
+        public: true
+      components:
+        - name: hyperfleet-operator-fbc
+          repositories:
+            - url: "quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc"
+    slack:
+      slack-notification-secret: hyperfleet-slack-webhook-notification-secret
+      slack-webhook-notification-secret-keyname: webhook-url
+    intention: production
+  pipeline:
+    pipelineRef:
+      resolver: git
+      params:
+        - name: url
+          value: "https://github.com/konflux-ci/release-service-catalog.git"
+        - name: revision
+          value: production
+        - name: pathInRepo
+          value: "pipelines/managed/rh-push-to-external-registry/rh-push-to-external-registry.yaml"
+    serviceAccountName: release-app-interface-prod
+    timeouts:
+      pipeline: "4h0m0s"
+      tasks: "4h0m0s"
+```
+
+**Note:** Confirm this above template would work

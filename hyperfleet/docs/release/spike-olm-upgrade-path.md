@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-16
+Last Updated: 2026-11-01
 ---
 # SPIKE - OLM Upgrade Path
 
@@ -10,8 +10,6 @@ Follow up to **Ticket:**
 
 Defines the upgrade path and testing strategy for hyperfleet-operator during
 the release process. [Spike OLM Releases](spike-olm-releases.md) covers the HyperFleet release flow through bundles and catalogs. This document covers the upgrade path through channels.
-
-**Note:** Catalog builds within the nightly CI will remain as is. Using `catalog/konflux-template.yaml` is sufficient right now.
 
 ---
 
@@ -117,7 +115,7 @@ entries:
 #### Steps for the multi-channel option (after [Setup](#setup))
 
 1. Commit and push the changes to the release-template.yaml on the `main` branch
-2. Tag the commit `catalog-v1.0.1-rc1` and push the tag. This should trigger the catalog pipeline to build the catalog to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:latest`
+2. Tag the commit `catalog-v1.0.1-rc1` and push the tag. This should trigger the catalog pipeline to build the catalog to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:latest`
 3. Look at [testing](#option-1-based-on-the-above-multi-channel-option) to see how to test the upgrade in Prow.
 
 #### Option - Single channel with rc tag
@@ -154,7 +152,7 @@ entries:
 #### Steps for the single-channel option (after [Setup](#setup))
 
 1. Commit and push the changes to the release-template.yaml on the `main` branch.
-2. Tag the commit `catalog-v1.0.1-rc1` and push the tag. This should trigger the catalog pipeline to build and push to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:rc1`
+2. Tag the commit `catalog-v1.0.1-rc1` and push the tag. This should trigger the catalog pipeline to build and push to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:rc1`
 3. Look at [testing](#option-2-based-on-the-above-single-channel-option) to see how to test the upgrade in Prow.
 
 ### Proposed Testing Strategy
@@ -163,6 +161,10 @@ Within Prow set up a cluster, install OLM, and create these specific resources.
 Depending on which option we go with above the only difference will be the CatalogSource and Subscription
 
 #### Option 1 based on the above [Multi channel option](#option---multi-channels-with-consistent-tag)
+
+Applied in [step 2](#follow-up-steps---irrespective-of-release-templateyaml) below, after the namespace and OperatorGroup exist.
+
+Note on naming: `hyperfleet-operator-fbc` is the single catalog image (the old `hyperfleet-operator-catalog` image and its pipeline are dead — being migrated to the new `-fbc` pipelines on `main`); see [Naming: FBC vs. Catalog](spike-olm-releases.md#naming-fbc-vs-catalog) in the releases spike.
 
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
@@ -173,7 +175,7 @@ metadata:
 spec:
   sourceType: grpc
   displayName: HyperFleet Operator Catalog
-  image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:latest
+  image: quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:latest
   publisher: Red Hat
 ---
 apiVersion: operators.coreos.com/v1alpha1
@@ -192,6 +194,8 @@ spec:
 
 #### Option 2 based on the above [Single channel option](#option---single-channel-with-rc-tag)
 
+Applied in [step 2](#follow-up-steps---irrespective-of-release-templateyaml) below, after the namespace and OperatorGroup exist.
+
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
 kind: CatalogSource
@@ -201,7 +205,7 @@ metadata:
 spec:
   sourceType: grpc
   displayName: HyperFleet Operator Catalog
-  image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:rc1
+  image: quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:rc1
   publisher: Red Hat
 ---
 apiVersion: operators.coreos.com/v1alpha1
@@ -220,7 +224,7 @@ spec:
 
 #### Follow up steps - irrespective of release-template.yaml
 
-1. Apply the following resources with `kubectl apply`
+1. Create the `hyperfleet` namespace and OperatorGroup - these must exist before the Subscription is applied
 
    ```yaml
    ---
@@ -237,7 +241,14 @@ spec:
    ---
    ```
 
-2. Approve `hyperfleet-operator.v1.0.0` InstallPlan - this will install the 1.0.0 version
+   ```bash
+   kubectl apply -f namespace-and-operatorgroup.yaml
+   ```
+
+2. Apply the CatalogSource and Subscription manifests with `kubectl apply` (use the YAML from
+   Option 1 or Option 2 above, depending on which release strategy was chosen)
+
+3. Approve `hyperfleet-operator.v1.0.0` InstallPlan - this will install the 1.0.0 version
 
    ```bash
    kubectl get installplans.operators.coreos.com -A
@@ -245,12 +256,12 @@ spec:
    NAMESPACE    NAME            CSV                              APPROVAL   APPROVED
    hyperfleet   install-gbnnh   hyperfleet-operator.v1.0.0       Manual     false
 
-   export install_plan_v1_0_0=$(kubectl get installplans -n hyperfleet -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames | index("hyperfleet-operator.v1.0.0")) | .metadata.name') 
+   export install_plan_v1_0_0=$(kubectl get installplans -n hyperfleet -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames | index("hyperfleet-operator.v1.0.0")) | .metadata.name')
 
    kubectl patch installplan $install_plan_v1_0_0 -n hyperfleet --type merge -p '{"spec":{"approved":true}}'
    ```
 
-3. Test upgrade by approving the `hyperfleet-operator.v1.0.1-rc1` InstallPlan
+4. Test upgrade by approving the `hyperfleet-operator.v1.0.1-rc1` InstallPlan
 
    ```bash
    kubectl get installplans.operators.coreos.com -A
@@ -259,12 +270,12 @@ spec:
    hyperfleet   install-gbnnh   hyperfleet-operator.v1.0.0       Manual     true
    hyperfleet   install-tqxds   hyperfleet-operator.v1.0.1-rc1   Manual     false
 
-   export install_plan_v1_0_1_rc1=$(kubectl get installplans -n hyperfleet -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames | index("hyperfleet-operator.v1.0.1-rc1")) | .metadata.name') 
+   export install_plan_v1_0_1_rc1=$(kubectl get installplans -n hyperfleet -o json | jq -r '.items[] | select(.spec.clusterServiceVersionNames | index("hyperfleet-operator.v1.0.1-rc1")) | .metadata.name')
 
    kubectl patch installplan $install_plan_v1_0_1_rc1 -n hyperfleet --type merge -p '{"spec":{"approved":true}}'
    ```
 
-4. Continue with E2E RC testing on version v1.0.1-rc1
+5. Continue with E2E RC testing on version v1.0.1-rc1
 
 ## Required Changes
 
