@@ -3,6 +3,7 @@ Status: Active
 Owner: HyperFleet Architecture Team
 Last Updated: 2026-11-01
 ---
+
 # SPIKE: OLM Bundle and Catalog Release Process
 
 **Ticket:** [HYPERFLEET-1617](https://issues.redhat.com/browse/HYPERFLEET-1617)
@@ -64,27 +65,22 @@ tooling (`operator-sdk bundle validate`, `opm render`) but OLM does not read
 them to decide channel membership.
 
 Set them for documentation and validation purposes using values that work for
-both RC and official builds:
+both RC and official builds. The catalog controls which channel each version actually lands in. The specific channels will be decided here in [Versioning Options](./spike-olm-upgrade-path.md#versioning-options-for-hyperfleet-operator).
 
 These will be set in the `bundle.Dockerfile` based on the `BUILD_ARGS`.
 
 ```yaml
 annotations:
-  operators.operatorframework.io.bundle.channels.v1: candidate-vX,stable-vX
+  operators.operatorframework.io.bundle.channels.v1: stable-vX
   operators.operatorframework.io.bundle.channel.default.v1: stable-vX
 ```
-
-These do not need to change between RC and official builds. The catalog controls
-which channel each version actually lands in. The specific channels will be decided here in [Versioning Options](./spike-olm-upgrade-path.md#versioning-options-for-hyperfleet-operator).
 
 ---
 
 ## Catalogs
 
 The old `hyperfleet-operator-catalog` image and its push pipeline
-(`hyperfleet-operator-catalog-push.yaml`) are deprecated. As part of [HYPERFLEET-1770](https://redhat.atlassian.net/browse/HYPERFLEET-1770), we are creating a `hyperfleet-fbc` Application and Component.
-
-Within that Application we are going to create a new RPA and new pipeline.
+(`hyperfleet-operator-catalog-push.yaml`) are deprecated. As part of [HYPERFLEET-1770](https://redhat.atlassian.net/browse/HYPERFLEET-1770), we are creating a `hyperfleet-fbc` Application and Component for the operator File-Based-Catalog (FBC).
 
 | Pipeline                           | Triggers on                     | Purpose                                    |
 | ---------------------------------- | ------------------------------- | ------------------------------------------ |
@@ -96,21 +92,21 @@ Production CatalogSources reference `hyperfleet-operator-fbc` (see the
 **Decision:** No on-push catalog pipeline initially. The catalog is built only from git tags.
 Template changes on `main` are validated by a render-only CI check (`opm alpha render-template` in a test job — no image pushed), which catches YAML errors, bad upgrade graphs, and missing bundle references. Merge-time install tests do not use a catalog; they install the merge's bundle image directly with `operator-sdk run bundle`.
 
-**Open question — add an on-push pipeline later?** An on-push fbc build that pushes only to
+**Open question — add an on-push pipeline?** An on-push fbc build that pushes only to
 `redhat-user-workloads` is safe by construction (build credentials cannot write to
 `redhat-services-prod`, and the fbc ReleasePlan has `auto-release: "false"`). Under the
 pinned-digest design such an image would contain only already-released bundles, so its sole
-value would be testing catalog *behavior* (channel resolution, upgrade graph) against a real
+value would be testing catalog _behavior_ (channel resolution, upgrade graph) against a real
 OLM install without cutting a tag. Revisit if that workflow materializes.
 
 ### Catalog Image Tagging
 
 The catalog image exists in **two registries**, with different write rules:
 
-| Registry                                                                             | Image                                    | Written by                                                                         | Content                             |
-| ------------------------------------------------------------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------- |
-| `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` | build output, tagged by revision         | `fbc-tag` pipeline directly (builds always land here first)                        | All tag builds — RCs **and** finals |
-| `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc`  | `:latest` + version tags (e.g. `v1.0.1`) | RPA release pipeline only (`rh-push-to-external-registry`, via Snapshot + Release) | **Final releases only**             |
+| Registry                                                                             | Image                                        | Written by                                                                         | Content                             |
+| ------------------------------------------------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------- | ----------------------------------- |
+| `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` | version tags (e.g. `:v1.0.1`, `:v1.0.1-rc1`) | `fbc-tag` pipeline directly (builds always land here first)                        | All tag builds — RCs **and** finals |
+| `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc`  | `:latest` + version tags (e.g. `v1.0.1`)     | RPA release pipeline only (`rh-push-to-external-registry`, via Snapshot + Release) | **Final releases only**             |
 
 Key properties:
 
@@ -120,11 +116,8 @@ Key properties:
 - **RCs never enter the prod registry.** The tag pipeline matches both
   `catalog-vX.Y.Z-rcN` and `catalog-vX.Y.Z`, but the Release-creation step is
   conditional: RC tags build to user-workloads and stop there. Prow RC tests
-  point their CatalogSource at the user-workloads image (pinned to the build's
-  digest) — see the [upgrade-path spike](spike-olm-upgrade-path.md).
-- The RC-vs-final distinction comes from the git tag string; the release version
-  label flows into the RPA's `{{ labels.version }}` tag template, so the prod
-  image's version tag matches the git tag.
+  point their CatalogSource at the user-workloads image (tagged with the RC
+  version, e.g. `:v1.0.1-rc1`) — see the [upgrade-path spike](spike-olm-upgrade-path.md).
 
 **Aggregate catalog strategy:** Each release uses
 `catalog/release-template.yaml`, which contains **all** major version channels
@@ -144,7 +137,7 @@ The catalog is a release artifact — built only from git tags, never from main 
 RC (validation):
   push catalog-vX.Y.Z-rcN git tag
     → fbc-tag pipeline → image in redhat-user-workloads
-    → no Release created; consumed by Prow RC tests only
+    → no Release created; consumed by Prow tests only
 
 Final (release):
   push catalog-vX.Y.Z git tag
@@ -232,7 +225,7 @@ environments.
 accurately update them in the `config/manifests/prod/kustomization.yaml`.
 Currently there is a build nudge workflow where new API/Operator images trigger
 update to `config/manifests/prod/kustomization.yaml` which builds the operator
-bundle image. Once that's updated, builds the catalog bundle image. Current
+bundle image. Once that's updated, builds the bundle image. Current
 blocker is all components reference the `main` branch. No automatic nudge to
 release branches.
 
@@ -364,13 +357,13 @@ spec:
 
 On the `main` branch, add the RC bundle to the `catalog/release-template.yaml`. Push this change to main and tag the commit `catalog-vX.Y.Z-rcN`, which will trigger the catalog pipeline.
 
-**Note:** Information regarding how to update the release-template.yaml can be found in [Upgrade Options - RC verification](spike-olm-upgrade-path.md#upgrade-options---rc-verification).
+**Note:** Information regarding how to update the release-template.yaml can be found in [RC verification](./spike-olm-upgrade-path.md#rc-verification)
 
 ### Step 5: Validate in Preprod
 
 Cut `release-X.Y` branch in `hyperfleet-e2e` repo.
 
-This step is a prerequisite for the release gate. See [Proposed Testing Strategy](spike-olm-upgrade-path.md#proposed-testing-strategy) for proposed installation/testing flow. RC E2E tests should validate operator install of all components, end-to-end functionality and seamlessly upgrade to the newest RC.
+This step is a prerequisite for the release gate. See [Steps for upgrade testing](spike-olm-upgrade-path.md#steps-for-upgrade-testing) for the proposed installation/testing flow. RC E2E tests should validate operator install of all components, end-to-end functionality and seamlessly upgrade to the newest RC.
 
 ### Step 6: Handle failures (if any)
 
@@ -398,12 +391,12 @@ In both cases, update the `catalog/release-template.yaml` on the `main` branch. 
 
 Once everything is validated cleanly, tag the release-X.Y branch with
 `bundle-vX.Y.Z`. This will trigger the official bundle build. Then update
-`catalog/release-template.yaml` on `main` to add the final release and its
+`catalog/release-template.yaml` on `main` to remove the rc and add the final release and its
 `olm.bundle` digest, following the channel structure and upgrade graph defined
-in [OLM Upgrade Path](spike-olm-upgrade-path.md).
+in [OLM Upgrade Path](spike-olm-upgrade-path.md#final-release-templateyaml).
 
 Tag the catalog change as `catalog-vX.Y.Z` (no `-rcN` suffix) to build and
-release the official catalog.
+release the official catalog. This will push the catalog image to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` to complete the catalog release and push image to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` , trigger it manually from the Konflux UI.
 
 ---
 
@@ -443,7 +436,7 @@ The bundle-tag pipeline requires these changes:
        - KUSTOMIZE_VARIANT=config/manifests/prod
        - BUNDLE_VERSION=$(tasks.parse-version.results.VERSION)
        - APP_VERSION=$(tasks.parse-version.results.VERSION)
-       - CHANNELS=candidate-$(tasks.parse-version.results.MAJOR),stable-$(tasks.parse-version.results.MAJOR)
+       - CHANNELS=stable-$(tasks.parse-version.results.MAJOR)
        - DEFAULT_CHANNEL=stable-$(tasks.parse-version.results.MAJOR)
        - VALIDATE_RELATED_IMAGES=true
    ```
@@ -537,7 +530,7 @@ apiVersion: appstudio.redhat.com/v1alpha1
 kind: ReleasePlan
 metadata:
   labels:
-    release.appstudio.openshift.io/auto-release: "false"   # critical — see below
+    release.appstudio.openshift.io/auto-release: "false" # critical — see below
     release.appstudio.openshift.io/standing-attribution: "true"
     release.appstudio.openshift.io/releasePlanAdmission: hyperfleet-fbc
   name: hyperfleet-fbc-releaseplan
@@ -549,13 +542,13 @@ spec:
 
 **Why `auto-release: "false"` matters:** the existing `hyperfleet-releaseplan` has
 `auto-release: "true"`, which makes the release service create a Release for **every**
-Snapshot. We want the catalog's prod registry (`redhat-services-prod`) to be updated — including its`:latest` tag — **only for final production images**, never for RCs or main-merge builds. The fbc ReleasePlan must therefore not auto-release; Releases are created only by the tag pipeline for final tags (`catalog-vX.Y.Z`, no `-rcN`). RC builds then live and die in
+Snapshot. We want the catalog's prod registry (`redhat-services-prod`) to be updated — including its `:latest` tag — **only for final production images**, never for RCs or main-merge builds. The fbc ReleasePlan must therefore not auto-release; Releases are created only by the tag pipeline for final tags (`catalog-vX.Y.Z`, no `-rcN`). RC builds then live and die in
 `redhat-user-workloads` and never reach `redhat-services-prod`
 (see [Catalog Image Tagging](#catalog-image-tagging)).
 
 #### 2. Create an RPA for the catalog image
 
-[HYPERFLEET-1773](https://redhat.atlassian.net/browse/HYPERFLEET-1773 )
+[HYPERFLEET-1773](https://redhat.atlassian.net/browse/HYPERFLEET-1773)
 
 Add a ReleasePlanAdmission under
 `config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/` as a new file named `hyperfleet-fbc.yaml` so that we can release catalog images to the production Quay registry:
@@ -574,7 +567,7 @@ spec:
   applications:
     - hyperfleet-fbc
   origin: hyperfleet-tenant
-  policy: fbc-standard          # confirm with releng — see note below
+  policy: fbc-standard # confirm with releng — see note below
   data:
     releaseNotes:
       product_name: HyperFleet
