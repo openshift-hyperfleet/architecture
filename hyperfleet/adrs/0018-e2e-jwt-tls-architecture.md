@@ -1,168 +1,69 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-08-17
+Last Updated: 2026-11-02
 ---
 
 # 0018 — E2E JWT/TLS Architecture
 
 ## Context
 
-The E2E test framework ([hyperfleet-e2e](https://gitlab.cee.redhat.com/service/hyperfleet/hyperfleet-e2e)) currently runs without JWT/TLS (development mode), creating a gap between test and production environments. Before implementing security in E2E tests, critical architectural questions were answered to ensure the correct approach and avoid wasted effort.
+The E2E suite ([hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e)) runs outside the cluster against a deployed HyperFleet. This record captures how the suite tests authentication. TLS is outside the suite's scope.
 
 **Key Decision Point from Office Hours (2026-07-01)**: The team agreed to define a **cloud-agnostic contract** for TLS and JWT handling to avoid relying on specific cloud provider behaviors (GCP, AWS, Azure, OCI).
 
-Production architecture will use infrastructure-level TLS termination:
-
-```mermaid
-graph TD
-    A[Client HTTPS] --> B[Ingress / Cloud Load Balancer]
-    B -->|TLS termination| E[Envoy]
-    E -->|ext_authz| F[Authorino]
-    F -->|TokenReview / OIDC| G[Kubernetes API]
-    F -->|inject identity headers| E
-    E -->|HTTP + injected headers| C[hyperfleet-api Pod]
-    C -->|JWT validation defense-in-depth| D[Database]
-
-    style B fill:#f9f,stroke:#333,stroke-width:2px
-    style E fill:#ffd,stroke:#333,stroke-width:2px
-    style F fill:#ffd,stroke:#333,stroke-width:2px
-    style C fill:#bbf,stroke:#333,stroke-width:2px
-```
-
-This means:
-
-- Infrastructure layer (Ingress / Cloud Load Balancer) handles TLS termination
-- Application pods receive HTTP traffic (not HTTPS)
-- The Envoy + Authorino gateway validates JWT tokens for authentication (see [ADR-0020](0020-envoy-authorino-api-gateway.md))
+The gateway contract is defined in [ADR-0020](0020-envoy-authorino-api-gateway.md). This record covers how the E2E suite exercises it.
 
 ## Decision
 
-**E2E tests will use Kubernetes service account tokens for authentication:**
+1. **Exercise the gateway path.** The E2E suite sends API requests through Envoy and uses the authentication scheme selected by the deployment mode.
+2. **Use Kubernetes service account tokens.** In authenticated modes, the external runner obtains a token through the Kubernetes TokenRequest API.
+3. **Separate authentication and TLS coverage.** The suite tests client authentication through the gateway and API. The `hyperfleet-infra` suite tests gateway mechanics. TLS termination and certificate handling are outside the E2E suite's scope.
 
-1. **No application-level TLS testing** — Infrastructure handles TLS termination; E2E tests connect via HTTP to the Envoy gateway (matching production pod behavior)
-2. **Use Kubernetes Service Account Tokens for JWT authentication** — Ginkgo tests run **outside the cluster** (developer laptops / CI runners) and use `kubectl create token` to generate service account tokens with `audience: hyperfleet-api`
-3. **Test the gateway + API authentication contract** — E2E tests route through the Envoy gateway, Authorino validates the token and injects identity headers, API trusts those headers. TLS/certificate handling is out of scope.
-
-### Implementation Details
-
-**Test Execution Model:**
-
-Ginkgo E2E tests run **outside the Kubernetes cluster** (developer laptops / CI runners). Only infrastructure components (API, Sentinel, Adapters) run as pods inside the test namespace.
-
-**Token Generation:**
-
-```bash
-# Generate service account token from outside the cluster
-export HYPERFLEET_API_TOKEN=$(kubectl create token hyperfleet-e2e-sa \
-  --namespace e2e-${RUN_ID} \
-  --audience hyperfleet-api \
-  --duration 1h)
-
-# Run Ginkgo tests with token
-ginkgo run ./test/e2e
-```
-
-**Note:** Infrastructure pods (Sentinel/Adapters) use projected service account token volumes as documented in their component designs. E2E tests use `kubectl create token` because they run externally.
-
-**API Configuration** — Primary token validation is performed by Authorino at the gateway. The API retains in-app JWT validation as defense-in-depth:
-
-```yaml
-config:
-  server:
-    jwt:
-      enabled: true
-      issuer_url: "https://kubernetes.default.svc.cluster.local"
-      audience: "hyperfleet-api"
-      identity_claim: "sub"  # Service account subject (system:serviceaccount:namespace:name)
-```
-
-**Test Flow:**
-
-```mermaid
-sequenceDiagram
-    participant E2E as E2E Test Runner<br/>(external)
-    participant K8s as Kubernetes API
-    participant Envoy as Envoy<br/>(gateway)
-    participant Authorino as Authorino<br/>(ext_authz)
-    participant OIDC as OIDC Issuer
-    participant API as hyperfleet-api<br/>(inside cluster)
-
-    E2E->>K8s: kubectl create token hyperfleet-e2e-sa<br/>--namespace e2e-${RUN_ID} --audience hyperfleet-api --duration 1h
-    K8s->>E2E: Returns service account JWT token
-    E2E->>E2E: export HYPERFLEET_API_TOKEN=<token>
-    E2E->>K8s: kubectl port-forward -n e2e-${RUN_ID}<br/>svc/envoy 8000:8000
-    E2E->>Envoy: HTTP GET /clusters<br/>Authorization: Bearer <token>
-    Envoy->>Authorino: ext_authz: validate token
-    alt SA token (E2E / internal callers)
-        Authorino->>K8s: TokenReview (audience: hyperfleet-api)
-        K8s->>Authorino: Token valid, subject: system:serviceaccount:e2e-xxx:hyperfleet-e2e-sa
-    else OIDC token (external callers)
-        Authorino->>OIDC: Validate JWT against JWKS endpoint
-        OIDC->>Authorino: Token valid
-    end
-    Authorino->>Envoy: Inject x-hyperfleet-identity, x-hyperfleet-system headers
-    Envoy->>API: Forward request with injected headers
-    API->>E2E: Return clusters (audit fields populated)
-    E2E->>E2E: Ginkgo assertions verify response
-```
-
-**E2E Client Changes** (in [hyperfleet-e2e](https://gitlab.cee.redhat.com/service/hyperfleet/hyperfleet-e2e) repository):
-
-Read token from `HYPERFLEET_API_TOKEN` environment variable and inject in `Authorization: Bearer` header for all requests.
-
-**Test Coverage:**
-
-- ✅ Gateway authentication (Envoy strips client-supplied headers, Authorino validates token via TokenReview and injects identity headers)
-- ✅ API receives HTTP traffic with gateway-injected identity headers
-- ✅ JWT signature validation via Authorino TokenReview
-- ✅ Caller identity injected by Authorino as gateway headers, API trusts those headers as authoritative
-- ✅ Audit fields populated correctly (`created_by`, `updated_by`, `deleted_by`) using gateway-injected identity - see [v1.0.0 Upgrade Guide §1.4](../docs/release/v0.2.0-to-v1.0.0-upgrade-guide.md#14-jwt-identity-claim-for-audit-fields) for JWT identity claim mapping
-- ✅ 401/403 responses for invalid/missing tokens returned by the gateway before reaching the API
-- ✅ Token expiration configuration (tokens generated with 1h duration via `kubectl create token --duration 1h`)
-- ❌ TLS termination (infrastructure responsibility, out of scope)
-- ❌ Certificate validation (infrastructure responsibility, out of scope)
-- ❌ External user OIDC authentication (E2E tests validate internal service-to-service auth only)
+The Gateway Authentication Design describes the [E2E client contract](../docs/gateway-authentication-design.md#e2e-client-contract) and the [current and planned TLS paths](../docs/gateway-authentication-design.md#internal-tls).
 
 ## Consequences
 
 **Gains:**
 
-- ✅ **Kubernetes-native** — Uses built-in TokenRequest API via `kubectl create token`
-- ✅ **Real JWT validation** — Tests validate actual Kubernetes-signed tokens, not mocks
-- ✅ **Ephemeral tokens** — Generated on-demand with 1h expiration, not stored in cluster
-- ✅ **Minimal infrastructure** — No pods for token extraction, no mock OIDC server, Envoy and Authorino are required as the auth gateway
-- ✅ **Cloud-agnostic** — Works in any Kubernetes 1.24+ cluster (GKE, EKS, AKS, kind)
-- ✅ **Fast** — Token generation in ~100ms vs ~5-10s for Job-based approaches
+- ✅ **Kubernetes-native** — Uses the built-in TokenRequest API; no external identity provider for machine tokens.
+- ✅ **Tests the deployed path** — API requests cross the gateway.
+- ✅ **Mode-aware** — The same suite runs against all four authentication modes.
+- ✅ **Ephemeral tokens** — Generated at suite start and never stored in the cluster.
+- ✅ **Cloud-agnostic** — Uses the Kubernetes TokenRequest API instead of a provider-specific token issuer. The runner requires cluster access and permission to request tokens.
+- ✅ **No extra infrastructure** — No token-extraction pods and no mock issuer for machine tokens.
 
 **Trade-offs:**
 
-- ⚠️ **Service-to-service auth only** — Tests validate service account authentication, not external user OIDC flows
-- ⚠️ **Service account identity format** — Audit fields show `system:serviceaccount:namespace:sa-name` instead of user emails
-- ⚠️ **No TLS testing** — Infrastructure-level TLS termination is out of scope for E2E tests
-- ⚠️ **Requires kubectl 1.24+** — Kind and modern CI/CD environments already meet this requirement
+- ⚠️ **Mode coupling** — The runner's authentication mode must match the deployment.
+- ⚠️ **Service account identity format** — In `API` and `EDGE+API`, audit fields contain a service account subject rather than a user email.
+- ⚠️ **No TLS coverage** — Certificate handling and TLS termination are outside the suite's scope.
+- ⚠️ **Split coverage** — Gateway mechanics are asserted in `hyperfleet-infra`, so a change can pass one suite and fail the other.
 
 ## Alternatives Considered
 
 | Alternative | Why Rejected |
 |-------------|--------------|
-| **Job-based token extraction** | ❌ Requires deploying Job pod, waiting ~5-10s, writing to annotation. `kubectl create token` achieves same result in ~100ms with zero resources. |
-| **Mock OIDC server** | ❌ Unnecessary infrastructure. Kubernetes provides native JWT authentication via service account tokens. |
-| **GCP Identity Tokens** | ❌ Violates cloud-agnostic principle. Cannot run locally or in AWS/Azure CI/CD. |
-| **Application-level TLS** | ❌ Production uses infrastructure-level TLS termination. Would test non-production behavior. |
-| **Skip JWT testing** | ❌ Leaves gap in authentication contract testing. Audit fields wouldn't be validated. |
-| **External OIDC (Keycloak, Dex)** | ❌ Adds operational complexity. Service account tokens are simpler and Kubernetes-native. |
+| **Job-based token extraction** | Requires deploying a Job pod, waiting for it to complete, and reading the result from an annotation. Direct TokenRequest returns the token with no extra resources. |
+| **`kubectl create token`** | Requires a local `kubectl` with cluster access and shells out from the test binary. The TokenRequest API gives the same token through the Kubernetes client already used by the suite. |
+| **Mock OIDC server for machine tokens** | Unnecessary infrastructure. Kubernetes issues and signs service account tokens natively. |
+| **GCP Identity Tokens** | Violates the cloud-agnostic principle. Cannot run locally or in AWS/Azure CI/CD. |
+| **Application-level TLS** | Envoy receives HTTP today; the planned ingress TLS termination sits outside the gateway. Would test behavior that is not deployed. |
+| **Skip JWT testing** | Leaves the authentication contract untested and audit fields unverified. |
+| **External OIDC (Keycloak, Dex)** | Adds operational complexity for machine callers. Service account tokens are Kubernetes-native and sufficient. |
 
 ---
 
 ## References
 
-- **JIRA Tickets**:
-  - [HYPERFLEET-1235](https://redhat.atlassian.net/browse/HYPERFLEET-1235) — Investigation and ADR creation
-  - [HYPERFLEET-1342](https://redhat.atlassian.net/browse/HYPERFLEET-1342) — Implementation of `kubectl create token` approach
-  - [HYPERFLEET-1146](https://redhat.atlassian.net/browse/HYPERFLEET-1146) — Original E2E security gap identification
-- **External Resources**:
-  - [kubectl create token documentation](https://kubernetes.io/docs/reference/generated/kubectl/kubectl-commands#-em-token-em-) — Official kubectl command reference
-  - [Kubernetes TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/) — JWT generation and validation mechanism
-  - [Kubernetes Service Account Token Projection](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection) — How infrastructure pods (Sentinel/Adapters) mount tokens
-  - [RFC 7519 - JWT](https://datatracker.ietf.org/doc/html/rfc7519) — JWT specification
+- **Design:** [Gateway Authentication Design](../docs/gateway-authentication-design.md)
+- **Related:** [ADR-0020: Envoy and Authorino as the API Authentication Gateway](0020-envoy-authorino-api-gateway.md)
+- **Jira:**
+  - [HYPERFLEET-1235](https://redhat.atlassian.net/browse/HYPERFLEET-1235) — investigation and original ADR
+  - [HYPERFLEET-1342](https://redhat.atlassian.net/browse/HYPERFLEET-1342) — original `kubectl create token` approach, superseded by the TokenRequest API
+  - [HYPERFLEET-1484](https://redhat.atlassian.net/browse/HYPERFLEET-1484) — default to `EDGE+API` and run E2E through the gateway
+  - [HYPERFLEET-1636](https://redhat.atlassian.net/browse/HYPERFLEET-1636) — this revision
+- **External resources:**
+  - [Kubernetes TokenRequest API](https://kubernetes.io/docs/reference/kubernetes-api/authentication-resources/token-request-v1/)
+  - [Kubernetes Service Account Token Projection](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection)
+  - [RFC 7519 - JWT](https://datatracker.ietf.org/doc/html/rfc7519)

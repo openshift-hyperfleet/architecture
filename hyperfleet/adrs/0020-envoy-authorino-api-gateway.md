@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-08-11
+Last Updated: 2026-11-02
 ---
 
 # 0020 - Envoy and Authorino as the API Authentication Gateway
@@ -18,32 +18,50 @@ Three structural problems drove the change:
 
 A [proof-of-concept](https://github.com/ciaranRoche/hyperfleet-infra/tree/poc/multitenancy-v2) validated the approach. The architecture team reviewed the results and made the decision.
 
+Deployments later gained a selectable authentication mode and a gateway-issued Wristband. This revision records that contract and replaces the earlier rule that the API trusts gateway-injected headers for caller identity.
+
 ## Decision
 
-HyperFleet adopts **Envoy** as the API ingress proxy and **Authorino** as its external authorization service. All API traffic, external and internal, passes through this gateway. No other route to the API is permitted.
+HyperFleet adopts **Envoy** as the API ingress proxy and **Authorino** as its external authorization service. All API traffic, external and internal, passes through Envoy. No other route to the API is permitted.
 
-The gateway enforces the following contract:
+Each deployment selects where authentication runs:
 
-- **Early header stripping.** Envoy removes client-supplied identity and tenant headers before the authorization filter runs, so forged headers cannot reach Authorino or the API regardless of what the client sends.
-- **Authorino authenticates every caller via AuthConfig CRs.** External callers are validated against an OIDC issuer. Internal callers (Sentinel, Adapters) are validated via Kubernetes TokenReview against a subject allowlist; an in-cluster service account with the correct audience but an unlisted subject is denied at the gateway. Identity providers, claim mappings, and per-deployment tenant models are declared in AuthConfig custom resources (not application code) so switching a tenant model is a configuration change with no rebuild required.
-- **Trusted header injection.** After successful authorization, Authorino injects identity and tenant headers derived from validated claims. The API treats these as authoritative.
-- **API trusts only injected headers.** The API trusts the gateway-injected headers for identity. In-app JWT validation is retained as defense-in-depth.
-- **Network boundary is a security requirement.** A NetworkPolicy restricts API pod ingress to the Envoy pod only. The gateway is not an optional optimization; bypassing it must be structurally impossible, not merely discouraged.
+| Mode | Gateway (Envoy + Authorino) | API |
+|------|-----------------------------|-----|
+| `NONE` | No authentication | No authentication |
+| `API` | Routes only; Authorino absent | Validates the caller's token |
+| `EDGE` | Authenticates every caller | No token validation |
+| `EDGE+API` | Authenticates every caller, then issues a Wristband | Validates the Wristband |
+
+A **Wristband** is a short-lived token issued by Authorino. In `EDGE+API`, Envoy replaces the client credential with the Wristband. The API trusts Authorino as the issuer and takes caller identity from the Wristband subject, not the original credential or an identity header.
+
+The architectural contract is:
+
+- **Explicit scheme selection in `EDGE` and `EDGE+API`.** `Authorization: ServiceAccount <token>` selects Kubernetes TokenReview for internal callers. `Authorization: Bearer <token>` selects OIDC for human callers. Missing or unknown schemes are denied. Priority-ordered method selection is not permitted: a token can satisfy more than one method, which makes the result order-dependent.
+- **Trusted boundary.** Envoy must strip all identity and tenant headers trusted by the API before authorization. The API network boundary permits requests only from Envoy.
+- **Machine authorization.** In edge modes, a service account must pass TokenReview and match the machine allow-list.
+- **Tenant context.** In `EDGE`, tenant enforcement and the system-caller bypass use Authorino-injected headers. In `EDGE+API`, tenant enforcement uses validated Wristband claims and ignores those headers.
+- **Internal TLS.** Internal gateway hops use server TLS, not mTLS.
+- **Unauthenticated mode.** Supported deployment paths must default to an authenticated mode. `NONE` is development-only and must not be exposed externally.
+
+> **Warning:** Wristband validation does not re-verify the caller's original credential. Trust depends on gateway configuration and protection of the signing key.
+
+The scheme semantics, [Wristband trust contract](../docs/gateway-authentication-design.md#wristband), TLS hop status, E2E client contract, and open items are in the Gateway Authentication Design.
 
 ## Consequences
 
 **Gains:**
 
-- One audit point for all API traffic, internal and external, without per-component authentication logic.
-- Adding an identity provider or switching a tenant model is an AuthConfig change (no code change, no rebuild, no redeployment of any HyperFleet component).
-- Forged identity headers are stripped before any application logic runs.
-- The network boundary is enforceable and testable.
+- Envoy provides one entry point for internal and external API traffic.
+- Identity providers and tenant models can be configured without rebuilding the API.
+- In `EDGE+API`, the API obtains caller identity from a signed token rather than an unsigned header.
 
 **Trade-offs:**
 
-- The gateway is on the availability path of every API call, including internal Sentinel and Adapter traffic. A highly available deployment with health checks is required from day one. A gateway outage is a full API outage.
-- Header stripping must happen at an early filter stage, before the authorization filter runs. Using a later removal mechanism would delete the headers Authorino injects. This ordering constraint is non-obvious and must be guarded by a test.
-- All internal services must route API traffic through Envoy. Pointing directly at the API service bypasses authentication and is rejected. Helm charts for Sentinel and Adapters must expose and correctly default the API base URL.
+- Envoy handles every API request; an Envoy outage makes the API unavailable. In edge modes, requests also depend on Authorino.
+- `EDGE+API` adds Wristband signing and validation to every request; the API fetches verification keys from Authorino.
+- `EDGE` does not resolve caller identity, so audit fields attribute every write to one synthetic identity. `EDGE` is acceptable only where per-caller attribution is not required.
+- Wristband trust depends on Secret access control. Any principal that can read the signing key can mint a Wristband with arbitrary claims.
 
 ## Alternatives Considered
 
@@ -53,11 +71,13 @@ The gateway enforces the following contract:
 | **Per-service sidecar (service mesh)** | Does not provide a single ingress point for external callers. Sidecars can be layered on later without changing the trust model established here. |
 | **OPA (Open Policy Agent)** | Policy engine, not an authentication service. Does not validate OIDC JWTs or perform TokenReview; a separate validation layer would be required alongside it. Authorino covers both in one CR-driven model. |
 | **No shared boundary** | Per-component credential validation; no canonical audit point; identity config embedded in application deployments. Incompatible with the multi-tenant model where header provenance must be guaranteed. |
+| **Priority-ordered Authorino identity methods** | Two methods can evaluate the same token, so the winner depends on evaluation order. On GKE the human OIDC issuer can also sign ServiceAccount tokens, which can misclassify a machine caller as a human caller. |
 
 ---
 
 ## References
 
+- **Design:** [Gateway Authentication Design](../docs/gateway-authentication-design.md)
 - **POC:** [`poc/multitenancy-v2` branch of `hyperfleet-infra`](https://github.com/ciaranRoche/hyperfleet-infra/tree/poc/multitenancy-v2)
 - **Epic:** [Envoy and Authorino Gateway Deployment](https://redhat.atlassian.net/browse/HYPERFLEET-1476)
 - **Sibling epic:** [Multi-Tenant Identity and Authorization](https://redhat.atlassian.net/browse/HYPERFLEET-1164)
