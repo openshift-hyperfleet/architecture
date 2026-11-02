@@ -61,7 +61,7 @@ The `Authorization` scheme selects one Authorino authentication method. Methods 
 
 In `EDGE` and `EDGE+API`, the gateway rejects missing or unknown schemes and machine callers outside the allow-list. In `API` mode, the API validates the client token directly.
 
-Explicit scheme selection replaced priority-ordered Authorino identity methods. With priorities, more than one method could evaluate the same token, and the winner depended on evaluation order. On GKE, the human OIDC issuer can also sign ServiceAccount tokens, so a race could classify a machine caller as a human caller. The scheme makes the caller's intent explicit and removes the ordering dependency.
+Explicit scheme selection replaced priority-ordered Authorino identity methods. Depending on issuer configuration, a ServiceAccount token can satisfy both the TokenReview and OIDC methods. The evaluation order can then classify a machine caller as a human caller. The scheme makes the caller's intent explicit and removes the ordering dependency.
 
 ### Request path
 
@@ -171,7 +171,7 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 
 | Alternative | Why Rejected |
 |-------------|--------------|
-| **Priority-ordered Authorino identity methods** | Two methods can evaluate the same token, so the result depends on evaluation order. On GKE the human OIDC issuer can sign ServiceAccount tokens, so a race can misclassify a machine caller as a human caller. |
+| **Priority-ordered Authorino identity methods** | A token can satisfy multiple methods, so evaluation order can misclassify a machine caller as a human caller. |
 | **mTLS between gateway and API** | Adds client certificate lifecycle management while the NetworkPolicy restricts which pods can connect. Server TLS allows Envoy to authenticate the API server. |
 | **Re-encrypt at the ingress now** | No ingress exists today. Adding one is a separate deployment decision; the gateway contract does not depend on where TLS terminates. |
 
