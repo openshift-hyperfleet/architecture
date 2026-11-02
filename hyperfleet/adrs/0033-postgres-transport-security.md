@@ -1,7 +1,7 @@
 ---
-Status: Proposed
+Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-29
+Last Updated: 2026-11-02
 ---
 
 # 0033 — PostgreSQL Transport Security: Server Identity Verification for Direct Connections
@@ -32,8 +32,9 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 
 **CA distribution:**
 
-- The instance owner supplies the CA bundle alongside the connection details, and every PostgreSQL client — component runtime, migration executor, or proxy — mounts it as configuration.
+- The instance owner supplies the CA bundle as a key in the per-database connection Secret, alongside the connection details. Every PostgreSQL client — component runtime, migration executor, or proxy — mounts it from that Secret.
   - The instance owner is the platform admin or partner in [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md)'s model, or HyperFleet itself on the Oracle path ([ADR-0023](0023-oci-managed-postgresql.md)).
+  - Where a deployment outside local development runs the embedded PostgreSQL, the platform's certificate issuer (cert-manager) issues its server certificate, and that issuer's CA is the trust bundle (issuance tracked in [HYPERFLEET-1886](https://redhat.atlassian.net/browse/HYPERFLEET-1886)).
 - Only CA certificates the deployment trusts are distributed to clients in the trust bundle. Public and private CA certificates are both allowed.
 - CA private keys remain with the certificate issuer and are never placed in client Secrets, images, or pods.
 
@@ -50,19 +51,24 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 
 A deployment may connect to a proxy or connection pooler (e.g., PgBouncer) without verifying it, instead of connecting directly, but only when all of the following hold:
 
-- The unverified hop uses same-pod loopback or a Unix socket; it must not cross a node, namespace, or Service network.
-- The proxy-to-PostgreSQL connection uses `sslmode=verify-full`, or the equivalent certificate-chain and hostname verification in the proxy, with an explicit trusted CA bundle. Encryption-only or CA-only validation is insufficient.
-- The deployment documents the boundary: where TLS terminates, what is verified, and what confines the unverified hop.
+- **Confinement:** the unverified hop uses same-pod loopback or a Unix socket; it must not cross a node, namespace, or Service network.
+- **Outward verification:** the proxy-to-PostgreSQL connection verifies the server fully:
+  - `sslmode=verify-full`, or the equivalent certificate-chain and hostname verification in the proxy — encryption-only or CA-only validation is insufficient.
+  - An explicit trusted CA bundle.
+- **Documentation:** the deployment documents the boundary — where TLS terminates, what is verified, and what confines the unverified hop.
 
-For example, a proxy listening on the pod's loopback interface: the application connects to it over plaintext, the unverified hop never leaves the pod, and the proxy holds the verified connection to the database.
+For example, a proxy listening on the pod's loopback interface: the application connects over plaintext, the unverified hop never leaves the pod, and the proxy holds the verified connection to the database.
 
 **Scope and enforcement:**
 
-- The floor applies to the reference deployment and to partner-provided instances alike: the partner supplies the CA with the connection contract ([ADR-0019](0019-package-hyperfleet-as-operator.md)), and an instance that cannot meet the floor goes through the partner-contract path ([HYPERFLEET-1710](https://redhat.atlassian.net/browse/HYPERFLEET-1710)) rather than a silent downgrade.
-- Each component must validate its effective connection settings before opening a direct database connection and refuse to start unless the connection uses `verify-full` with a trusted CA bundle. An absent, unsupported, or weaker `sslmode` is a startup error.
-- Shipped chart defaults move to the floor, so a missing CA bundle fails the connection at startup — fail closed.
-- Ephemeral local development (kind's embedded PostgreSQL, testcontainers) may opt down to `sslmode=disable` explicitly in dev-only values, gated so production deployments cannot enable it; every other exception is the documented proxy path above.
-- Chart and coverage changes are implementation work outside this record.
+- **Coverage:** the floor applies to the reference deployment and to partner-provided instances alike:
+  - The partner supplies the CA with the connection contract ([ADR-0019](0019-package-hyperfleet-as-operator.md)).
+  - An instance that cannot meet the floor goes through the partner-contract path ([HYPERFLEET-1710](https://redhat.atlassian.net/browse/HYPERFLEET-1710)) rather than a silent downgrade.
+- **Startup validation:** each component must validate its effective connection settings before opening a direct database connection and refuse to start unless the connection uses `verify-full` with a trusted CA bundle:
+  - An absent, unsupported, or weaker `sslmode` is a startup error.
+  - Only the proxy exception and the dev opt-down may start without `verify-full`.
+- **Fail closed:** shipped chart defaults move to the floor, so a direct connection without a CA bundle fails at startup.
+- **Dev opt-down:** ephemeral local development (kind's embedded PostgreSQL, testcontainers) may opt down to `sslmode=disable` explicitly in dev-only values. Production deployments cannot enable it.
 
 ## Consequences
 
