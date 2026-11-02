@@ -8,9 +8,9 @@ Last Updated: 2026-11-02
 
 **Jira**: [HYPERFLEET-1636](https://redhat.atlassian.net/browse/HYPERFLEET-1636)
 
-**Implements**: [ADR-0020: Envoy and Authorino as the API Authentication Gateway](../adrs/0020-envoy-authorino-api-gateway.md)
+**Implements**: [ADR-0033: Gateway Authentication Modes and Wristband Trust](../adrs/0033-gateway-authentication-modes.md)
 
-**Related**: [ADR-0018: E2E JWT/TLS Architecture](../adrs/0018-e2e-jwt-tls-architecture.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
+**Related**: [ADR-0034: Mode-Aware E2E Authentication](../adrs/0034-e2e-mode-aware-authentication.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ Last Updated: 2026-11-02
 
 ## Problem Statement
 
-[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy and Authorino as the API authentication gateway. In `EDGE+API`, the gateway exchanges the client credential for an Authorino Wristband.
+[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy and Authorino as the API authentication gateway. [ADR-0033](../adrs/0033-gateway-authentication-modes.md) defines the authentication modes and the Wristband trust contract.
 
 This document describes the authentication flow, trust boundaries, deployment risks, and E2E client contract. Implementation details are maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
 
@@ -47,7 +47,7 @@ Each deployment selects one mode with `AUTH_MODE`.
 
 > **Warning:** `NONE` is for development only and must not be exposed externally. Current deployment defaults can expose an unauthenticated API; this constraint is not enforced by every deployment path.
 
-Tenant isolation requires `EDGE` or `EDGE+API`. The API uses gateway-injected headers in `EDGE` and validated Wristband claims in `EDGE+API`. Deployment configuration is maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
+Tenant isolation requires `EDGE` or `EDGE+API` and enabled API tenant enforcement. The API uses gateway-injected headers in `EDGE` and validated Wristband claims in `EDGE+API`. Deployment configuration is maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
 
 ### Scheme selection
 
@@ -108,7 +108,7 @@ Request handling in `EDGE+API`:
 - **`sub`** is the caller identity the API uses. For a ServiceAccount caller it is the service account username; for a human caller it is the validated identity from the OIDC token.
 - **`hf_system`** is a constant set by the gateway per authentication method, not a value taken from the caller's claims. The `ServiceAccount` scheme sets `true`; the `Bearer` scheme sets `false`.
 
-In `EDGE+API`, the API validates the Wristband's issuer, audience, and signature, trusting Authorino as its only issuer. It maps configured tenant claims to tenancy key/value pairs and reads `hf_system` for the system-caller bypass. It ignores tenant and system headers and rejects missing required or invalid dimensions, so forged headers cannot change tenant scope or system classification.
+In `EDGE+API`, the API validates the Wristband's issuer, audience, signature, and required expiration, trusting Authorino as its only issuer. It maps configured tenant claims to tenancy key/value pairs and reads `hf_system` for the system-caller bypass. It ignores tenant and system headers and rejects missing required or invalid dimensions, so forged headers cannot change tenant scope or system classification.
 
 Wristband trust depends on protection of the signing key. Any principal that can read the key can mint a Wristband with arbitrary claims.
 
@@ -179,5 +179,7 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 
 - [ADR-0020: Envoy and Authorino as the API Authentication Gateway](../adrs/0020-envoy-authorino-api-gateway.md)
 - [ADR-0018: E2E JWT/TLS Architecture](../adrs/0018-e2e-jwt-tls-architecture.md)
+- [ADR-0033: Gateway Authentication Modes and Wristband Trust](../adrs/0033-gateway-authentication-modes.md)
+- [ADR-0034: Mode-Aware E2E Authentication](../adrs/0034-e2e-mode-aware-authentication.md)
 - [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md)
 - [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)

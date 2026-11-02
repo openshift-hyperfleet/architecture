@@ -93,9 +93,9 @@ What did we decide? State it plainly.
 | [0015](0015-eventual-consistency-for-read-path.md) | Eventual Consistency for the API Read Path | Active | 2026-05-08 |
 | [0016](0016-helm-oci-distribution.md) | Helm OCI Distribution via Konflux | Active | 2026-05-11 |
 | [0017](0017-adapter-error-taxonomy.md) | Selective Message Acknowledgment in Adapters | Active | 2026-05-25 |
-| [0018](0018-e2e-jwt-tls-architecture.md) | E2E JWT/TLS Architecture | Active | 2026-11-02 |
+| [0018](0018-e2e-jwt-tls-architecture.md) | E2E JWT/TLS Architecture | Active | 2026-08-17 |
 | [0019](0019-package-hyperfleet-as-operator.md) | Package HyperFleet as a Kubernetes Operator | Proposed | 2026-08-11 |
-| [0020](0020-envoy-authorino-api-gateway.md) | Envoy and Authorino as the API Authentication Gateway | Active | 2026-11-02 |
+| [0020](0020-envoy-authorino-api-gateway.md) | Envoy and Authorino as the API Authentication Gateway | Active | 2026-08-11 |
 | [0021](0021-oci-external-platform.md) | External Platform for the Guest in OCI Hosted Clusters | Active | 2026-09-01 |
 | [0022](0022-api-mediated-desire-store-access.md) | API-Mediated Desire Store Access | Active | 2026-09-10 |
 | [0023](0023-oci-managed-postgresql.md) | OCI Database with PostgreSQL as the Managed Instance for the Oracle Deployment Path | Active | 2026-09-09 |
@@ -109,3 +109,5 @@ What did we decide? State it plainly.
 | [0031](0031-broker-postgres-event-log.md) | Event Log with Per-Subscription Cursors as the Broker's PostgreSQL Backend | Active | 2026-10-29 |
 | [0032](0032-broker-transport-shared-postgres.md) | The Shared PostgreSQL Instance as the Broker's Transport | Active | 2026-10-29 |
 | [0033](0033-postgres-transport-security.md) | PostgreSQL Transport Security: Server Identity Verification for Direct Connections | Active | 2026-11-03 |
+| [0034](0034-gateway-authentication-modes.md) | Gateway Authentication Modes and Wristband Trust | Active | 2026-11-02 |
+| [0035](0035-e2e-mode-aware-authentication.md) | Mode-Aware E2E Authentication | Active | 2026-11-02 |
