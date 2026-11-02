@@ -526,6 +526,8 @@ As part of [HYPERFLEET-1770](https://redhat.atlassian.net/browse/HYPERFLEET-1770
 
 #### 1. Add a ReleasePlan for `hyperfleet-fbc` — with auto-release **disabled**
 
+[HYPERFLEET-1773](https://redhat.atlassian.net/browse/HYPERFLEET-1773)
+
 Add a ReleasePlan in `../tenants-config/cluster/kflux-prd-rh02/tenants/hyperfleet-tenant/release-plan.yaml` , following the
 existing `hyperfleet` and `hyperfleet-charts` plans:
 
@@ -552,6 +554,8 @@ Snapshot. We want the catalog's prod registry (`redhat-services-prod`) to be upd
 (see [Catalog Image Tagging](#catalog-image-tagging)).
 
 #### 2. Create an RPA for the catalog image
+
+[HYPERFLEET-1773](https://redhat.atlassian.net/browse/HYPERFLEET-1773 )
 
 Add a ReleasePlanAdmission under
 `config/kflux-prd-rh02.0fk9.p1/service/ReleasePlanAdmission/hyperfleet/` as a new file named `hyperfleet-fbc.yaml` so that we can release catalog images to the production Quay registry:
