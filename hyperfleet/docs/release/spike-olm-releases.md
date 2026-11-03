@@ -490,7 +490,7 @@ Once RC verification has been completed and we decide to promote version `v1.0.1
        image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<v1.0.1-digest>
    ```
 
-1. Tag the commit `catalog-v1.0.1` and push the tag. This should trigger the catalog pipeline, which builds the image in `redhat-user-workloads`; the final ReleasePlan auto-releases it, copying it to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1` (plus `:latest`), matching the flow described in Step 7.
+1. Tag the commit `catalog-v1.0.1` and push the tag. This should trigger the catalog pipeline, which builds the image in `redhat-user-workloads`; the final ReleasePlan auto-releases it, copying it to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1` (plus `:latest`).
 
 ---
 
