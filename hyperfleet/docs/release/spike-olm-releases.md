@@ -206,7 +206,7 @@ RC (staging):
 
 Final (release):
   push catalog-vX.Y.Z git tag
-    → fbc-tag pipeline → image in redhat-user-workloads -> Release triggered manually from the Konflux UI -> copied redhat-services-prod, tagged vX.Y.Z + latest
+    → fbc-tag pipeline → image in redhat-user-workloads -> release plan auto releases -> copied redhat-services-prod, tagged vX.Y.Z + latest
 ```
 
 #### Release template
@@ -240,7 +240,7 @@ Currently `konflux-template.yaml` is used, but we want to replace it with
 - The RC entry is only ever added to `release-template.yaml` for RC testing, built into a test-only catalog image (e.g. tagged `:v1.0.1-rc1`), and consumed only by test/Prow `CatalogSources`.
 - Before the official catalog is built, the RC entry is removed from `release-template.yaml` and the final release's `replaces` is repointed straight at the prior official release (e.g. `v1.0.1 replaces v1.0.0`, removing the RC entry entirely).
 - The official catalog image is then built from that RC-free template, so the official image only ever contains the validated bundles.
-- Tradeoff: this relies on a manual release step — pruning the RC and repointing `replaces` before the official catalog build and manually releasing the catalog image — rather than allowing auto-releases.
+- Tradeoff: this relies on a manual template-editing step — pruning the RC and repointing `replaces` before the official catalog build. The catalog release itself is automated: pushing the `catalog-vX.Y.Z` tag triggers the final ReleasePlan, which auto-releases the image with the version tag and `latest`. The RC ReleasePlan only matches `-rcN` tags and its ReleasePlanAdmission does not apply the `latest` tag, so `latest` can only ever move on a final release.
 
 ##### Alternative Considered
 
@@ -344,7 +344,7 @@ Once everything is validated cleanly, tag the release-X.Y branch with
 in [Final release-template.yaml](#final-release-templateyaml).
 
 Tag the catalog change as `catalog-vX.Y.Z` (no `-rcN` suffix) to build and
-release the official catalog. This will push the catalog image to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` to complete the catalog release and push image to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` , trigger it manually from the Konflux UI.
+release the official catalog. This will push the catalog image to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` and the final ReleasePlan will auto-release it, copying the image to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` with the version tag and `latest`.
 
 ---
 
@@ -490,7 +490,7 @@ Once RC verification has been completed and we decide to promote version `v1.0.1
        image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<v1.0.1-digest>
    ```
 
-1. Tag the commit `catalog-v1.0.1` and push the tag. This should trigger the catalog pipeline, which builds the image in `redhat-user-workloads` and — once the Release is triggered manually from the Konflux UI — copies it to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1` (plus `:latest`), matching the flow described in Step 7.
+1. Tag the commit `catalog-v1.0.1` and push the tag. This should trigger the catalog pipeline, which builds the image in `redhat-user-workloads`; the final ReleasePlan auto-releases it, copying it to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1` (plus `:latest`), matching the flow described in Step 7.
 
 ---
 
@@ -644,8 +644,9 @@ metadata:
   namespace: hyperfleet-tenant
   name: hyperfleet-fbc-releaseplan
   annotations:
-    # Final catalog releases are triggered manually from the Konflux UI — see Step 7
-    release.appstudio.openshift.io/auto-release: "false"
+    release.appstudio.openshift.io/auto-release: |
+      "build.appstudio.redhat.com/target_branch" in snapshot.metadata.annotations &&
+      snapshot.metadata.annotations["build.appstudio.redhat.com/target_branch"].matches("^refs/tags/catalog-v[0-9]+\\.[0-9]+\\.[0-9]+$")
   labels:
     release.appstudio.openshift.io/releasePlanAdmission: hyperfleet-fbc
     release.appstudio.openshift.io/standing-attribution: "true"
