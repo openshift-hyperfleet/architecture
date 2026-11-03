@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-02
+Last Updated: 2026-11-03
 ---
 
 # Gateway Authentication Design
@@ -30,7 +30,7 @@ Last Updated: 2026-11-02
 
 [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy and Authorino as the API authentication gateway. [ADR-0033](../adrs/0033-gateway-authentication-modes.md) defines the authentication modes and the Wristband trust contract.
 
-This document describes the authentication flow, trust boundaries, deployment risks, and E2E client contract. Implementation details are maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
+This document describes the authentication flow, trust boundaries, deployment risks, and E2E client contract for the general API gateway. The Desire Store gateway ([ADR-0029](../adrs/0029-desire-store-authorization.md)) is a separate deployment with its own trust contract. Implementation details are maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
 
 ## How
 
@@ -38,14 +38,16 @@ This document describes the authentication flow, trust boundaries, deployment ri
 
 Each deployment selects one mode with `AUTH_MODE`.
 
-| Mode | Gateway (Envoy + Authorino) | API |
-|------|-----------------------------|-----|
-| `NONE` | Routes without authentication | No authentication |
-| `API` | Routes without authentication | Validates the caller's `Bearer` token |
-| `EDGE` | Authorino validates every caller and injects tenant and system headers | JWT validation disabled; no caller identity resolution |
-| `EDGE+API` | Authorino validates every caller and issues a Wristband | Validates the Wristband and takes caller identity from `sub` |
+| Mode | Gateway (Envoy + Authorino) | API | When to use |
+|------|-----------------------------|-----|-------------|
+| `NONE` | Routes without authentication | No authentication | Development only |
+| `API` | Routes without authentication | Validates the caller's `Bearer` token | Development, or environments that do not run Authorino |
+| `EDGE` | Authorino validates every caller and injects tenant and system headers | JWT validation disabled; no caller identity resolution | Environments with a trusted network boundary where API-side validation is not required |
+| `EDGE+API` | Authorino validates every caller and issues a Wristband | Validates the Wristband and takes caller identity from `sub` | Production default; API-side validation also rejects requests that bypass the gateway |
 
 > **Warning:** `NONE` is for development only and must not be exposed externally. Current deployment defaults can expose an unauthenticated API; this constraint is not enforced by every deployment path.
+
+`EDGE+API` is the production default: authentication at the edge plus API-side Wristband validation, which rejects requests that bypass the gateway. The requirement is not specific to the operator: the `make`-driven path in `hyperfleet-infra` already defaults to `EDGE+API`, Helmfile alone still defaults to `NONE`, and the operator deploys the gateway in `EDGE+API` only — `HyperFleetConfig` carries no authentication-mode field ([HYPERFLEET-1534](https://redhat.atlassian.net/browse/HYPERFLEET-1534)).
 
 Tenant isolation requires `EDGE` or `EDGE+API` and enabled API tenant enforcement. The API uses gateway-injected headers in `EDGE` and validated Wristband claims in `EDGE+API`. Deployment configuration is maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
 

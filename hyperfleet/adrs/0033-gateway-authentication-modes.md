@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-02
+Last Updated: 2026-11-03
 ---
 
 # 0033 — Gateway Authentication Modes and Wristband Trust
@@ -14,18 +14,18 @@ Last Updated: 2026-11-02
 
 All API traffic passes through Envoy. Each deployment selects an authentication mode:
 
-| Mode | Gateway | API |
-|------|---------|-----|
-| `NONE` | Routes without authentication | No authentication |
-| `API` | Routes without authentication | Validates the caller's token |
-| `EDGE` | Authorino authenticates callers | No token validation |
-| `EDGE+API` | Authorino authenticates callers and issues a Wristband | Validates the Wristband |
+| Mode | Gateway | API | When to use |
+|------|---------|-----|-------------|
+| `NONE` | Routes without authentication | No authentication | Development only |
+| `API` | Routes without authentication | Validates the caller's token | Development, or environments that do not run Authorino |
+| `EDGE` | Authorino authenticates callers | No token validation | Environments with a trusted network boundary where API-side validation is not required |
+| `EDGE+API` | Authorino authenticates callers and issues a Wristband | Validates the Wristband | Production default; API-side validation also rejects requests that bypass the gateway |
 
 In `EDGE` and `EDGE+API`, the authorization scheme selects the authentication method. Service account callers must pass Kubernetes TokenReview and the machine allow-list. Envoy must strip every identity and tenant header trusted by the API before authorization.
 
 In `EDGE`, tenant enforcement and the system-caller bypass use gateway-injected headers. In `EDGE+API`, the API validates the Wristband and uses its subject for caller identity and its claims for tenant enforcement, rather than trusting those headers. Wristband validation does not re-verify the original client credential.
 
-Internal gateway hops use server TLS, not mTLS. Supported deployment paths must default to an authenticated mode. `NONE` is development-only and must not be exposed externally.
+Internal gateway hops use server TLS, not mTLS. `EDGE+API` is the production default; supported deployment paths must default to it, never `NONE`. `NONE` is development-only and must not be exposed externally.
 
 ### Relationship to ADR-0020
 
