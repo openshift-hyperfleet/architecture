@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-02
+Last Updated: 2026-11-03
 ---
 
 # 0033 — PostgreSQL Transport Security: Server Identity Verification for Direct Connections
@@ -32,7 +32,7 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 
 **CA distribution:**
 
-- The instance owner supplies the CA bundle as a key in the per-database connection Secret, alongside the connection details. Every PostgreSQL client — component runtime, migration executor, or proxy — mounts it from that Secret.
+- The instance owner supplies the CA bundle as the `ca.crt` key in the per-database connection Secret, alongside the connection details. Every PostgreSQL client — component runtime, migration executor, or proxy — mounts it from that Secret.
   - The instance owner is the platform admin or partner in [ADR-0026](0026-co-located-service-databases-shared-postgres-isolation.md)'s model, or HyperFleet itself on the Oracle path ([ADR-0023](0023-oci-managed-postgresql.md)).
   - Where a deployment outside local development runs the embedded PostgreSQL, the platform's certificate issuer (cert-manager) issues its server certificate, and that issuer's CA is the trust bundle (issuance tracked in [HYPERFLEET-1886](https://redhat.atlassian.net/browse/HYPERFLEET-1886)).
 - Only CA certificates the deployment trusts are distributed to clients in the trust bundle. Public and private CA certificates are both allowed.
@@ -40,6 +40,10 @@ A client that connects to a proxy or pooler with full verification — `sslmode=
 
 **CA rotation:**
 
+- Rotation is the instance owner's action, run on its own schedule:
+  - **Notification:** the updated `ca.crt` in the connection Secret is how clients learn a change is coming; there is no separate announcement channel.
+  - **Ordering:** the steps below add the new CA before the server certificate switches, so every client already trusts the new certificate when it appears — no advance notice is needed.
+  - **Failure mode:** a certificate switched before the bundle is updated fails closed; connections reject it rather than continue unverified.
 - The bundle may hold more than one CA, so rotation needs no coordination window:
   - Add the new CA to every client trust bundle.
   - Restart each client or reload its trust configuration.

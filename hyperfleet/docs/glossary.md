@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-29
+Last Updated: 2026-11-03
 ---
 
 # HyperFleet Glossary
@@ -34,6 +34,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **CloudEvent** | A message conforming to the [CloudEvents 1.0 specification](https://cloudevents.io/), used as the event format for all messages published by Sentinel and consumed by Adapters. HyperFleet CloudEvents use the type `com.redhat.hyperfleet.cluster.reconcile.v1` and carry a minimal payload (anemic event pattern). | Broker, Sentinel, Adapter Framework |
 | **Cluster** | The primary resource managed by HyperFleet. A cluster represents a HyperShift-managed OpenShift cluster. Clusters have a spec (desired state) and a status (current state aggregated from adapter reports). Referred to as `/clusters` in the API. | API, Sentinel, Adapter Framework |
 | **Condition** | A structured status field following the Kubernetes conditions pattern. Each adapter reports three standard conditions per resource: `Available`, `Applied`, and `Health`. Conditions include a `type`, `status` (True/False/Unknown), `reason`, and `message`. In GET responses, the API adds `last_transition_time` (API-managed). See: [Status Guide](status-guide.md) | Adapter Framework, Sentinel, API |
+| **Connection Class** | A group of PostgreSQL connections, one per client role, that shares a single minimum transport-security mode. See: [ADR-0033](../adrs/0033-postgres-transport-security.md) | All |
 | **Cross-Cutting Component** | A ticket component identifying the kind of artifact the work produces regardless of which system it touches (Architecture, CICD, Claude Plugins, Documentation, E2E Tests, OCI). Combined with a domain component when the ticket's primary output is that artifact rather than working code. See: [Ticket Hygiene → Valid Components](../standards/ticket-hygiene.md#valid-components) | All |
 | **CSI (Container Storage Interface)** | The standard interface between Kubernetes and storage drivers that provision persistent volumes. On the OpenShift External Platform the cluster-storage-operator installs no CSI driver, so a partner or HyperFleet-owned OCI CSI driver plus a default `StorageClass` must be supplied for PVCs to bind. See: [ADR-0021](../adrs/0021-oci-external-platform.md) | Operator |
 | **Dead Letter Queue (DLQ)** | A message broker queue that receives messages that could not be processed after the maximum number of retries. HyperFleet uses DLQs (where supported by the broker) to surface persistently failing events for manual inspection and alerting. | Broker |
@@ -62,6 +63,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **HyperShift** | The Red Hat project for running hosted OpenShift control planes on Kubernetes. HyperFleet manages the provisioning and lifecycle of HyperShift-based clusters. | Adapter Framework, API |
 | **Identity-to-Partition Binding** | A Hub-owned record mapping one remote Applier identity to one management-cluster partition. | API, Applier |
 | **Idempotent** | A property of Adapter operations: processing the same event multiple times produces the same result as processing it once. Required because the Message Broker provides at-least-once delivery (events may be delivered more than once). All HyperFleet Adapters must be idempotent. | Adapter Framework, Broker |
+| **Instance Owner** | The party responsible for the PostgreSQL instance on a deployment path; it supplies the connection details and the CA bundle. See: [ADR-0033](../adrs/0033-postgres-transport-security.md) | All |
 | **kubeContent** | The desire content field that carries the rendered Kubernetes manifest the Applier applies to the target cluster, one of the desire's content fields (`owner`, `kubeContent`, `status`, `resource_id`). See: [Desire Identity Spike](spike-desire-identity-ownership.md), [SPIKE: Evaluate Desire Store Transport Overhead](spike-desire-store-transport.md) | Adapter Framework, Applier |
 | **Landing Zone Adapter** | An adapter that performs preparatory provisioning work before other adapters run — creating namespaces, secrets, and ConfigMaps that subsequent adapters depend on. | Adapter Framework |
 | **LastKnownReconciled (Condition)** | A resource-level condition introduced in v1.0.0 that replaces the former `Available` aggregated condition. Represents the last-known reconciled state of the resource, computed from required adapter statuses. Unlike `Reconciled`, this condition preserves the last successful reconciliation state even when adapters are processing a new generation. | API |
@@ -98,6 +100,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Terminal Error** | An error that will not resolve on retry and requires human investigation (e.g., HTTP 400, 403, malformed event payload, invalid manifest template). When the adapter classifies an error as terminal, it ACKs the message (preventing redelivery), reports error status to the API, and logs at `error` level. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Transient Error** | An error expected to resolve without human intervention (e.g., HTTP 429, 5xx, network timeout, API server overload). When the adapter classifies an error as transient, it returns an error to the broker library, which NACKs the message and triggers redelivery with backoff. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Topic** | A named channel in the Message Broker to which Sentinel publishes events. HyperFleet uses topic naming convention: `hyperfleet.<resourceType>.changed.<version>` (e.g., `hyperfleet.clusters.changed.v1`). | Broker, Sentinel |
+| **Trust Bundle** | The set of CA certificates a deployment trusts for PostgreSQL server identity verification, distributed to every PostgreSQL client with its connection details. See: [ADR-0033](../adrs/0033-postgres-transport-security.md) | All |
 | **Watermill** | The Go pub/sub library ([ThreeDotsLabs/watermill](https://github.com/ThreeDotsLabs/watermill)) used as the transport abstraction inside `hyperfleet-broker`. Watermill handles broker-specific protocol details; the HyperFleet broker library adds CloudEvents conversion, metrics, and health checks on top. | Broker |
 | **Wristband** | An internal signed token used to carry trusted authorization context between HyperFleet services. | API, Adapter Framework, Applier |
 
