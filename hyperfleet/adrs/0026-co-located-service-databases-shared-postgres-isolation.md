@@ -56,3 +56,4 @@ See [Co-Located Service Databases on the Shared Postgres Instance — Design](..
 - [ADR-0023: OCI Database with PostgreSQL as the Managed Instance for the Oracle Deployment Path](0023-oci-managed-postgresql.md) — instance provisioning, HA, admin role boundary
 - [ADR-0019: Package HyperFleet as a Kubernetes Operator](0019-package-hyperfleet-as-operator.md) — partner-provided PostgreSQL contract
 - [ADR-0022: API-Mediated Desire Store Access](0022-api-mediated-desire-store-access.md) — Applier access model (API-mediated, not direct DB)
+- [ADR-0033: PostgreSQL Transport Security](0033-postgres-transport-security.md) — server identity verification for the connections this layout's roles open
