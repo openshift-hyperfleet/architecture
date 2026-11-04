@@ -30,15 +30,15 @@ Kubernetes.
 Each release bundle build is triggered by a git tag on the operator's release branch
 (`bundle-vX.Y.Z-rcN` for release candidates, `bundle-vX.Y.Z` for official
 releases). The pipeline builds the bundle image and sets the CSV version to the
-tag value with the `bundle-v` prefix stripped (e.g., `bundle-v1.0.0-rc1` →
+tag value with the `bundle-v` prefix stripped (e.g., `bundle-v1.0.0-rc1` ->
 `1.0.0-rc1`).
 
 Bundle images are immutable — each version produces a distinct image:
 
 ```text
-quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:v1.0.0-rc1
-quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:v1.0.0-rc2
-quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:v1.0.0
+quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc1
+quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc2
+quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0
 ```
 
 The CSV version inside the bundle image must match a catalog entry name (e.g.,
@@ -50,7 +50,7 @@ new build.
 
 ```text
 Release (release branch):
-  push bundle-vX.Y.Z[-rcN] git tag → bundle-tag pipeline → bundle image quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:vX.Y.Z[-rcN]
+  push bundle-vX.Y.Z[-rcN] git tag -> bundle-tag pipeline -> copy over image to quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:X.Y.Z[-rcN]
 ```
 
 ### Bundle Annotations
@@ -81,19 +81,18 @@ how the bundle artifact moves through the pipeline.
 
 **Workflow:** Example for release `v1.0.0` (branch: `release-1.0`)
 
-1. Developer tags commit as `bundle-v1.0.0-rc1`
-2. Build operator bundle `v1.0.0-rc1` referencing the component image digests.
-3. Add `hyperfleet-operator.v1.0.0-rc1` to the catalog template and build the catalog.
-   References: [Catalogs](#catalogs---fbc) and [Channels](#channels)
-4. If broken: apply fix, build `v1.0.0-rc2`, and iterate.
-5. Once the last RC validates cleanly: tag and build the `v1.0.0` official
-   release bundle, and add it to the catalog template.
+1. On the release branch, developer tags commit as `bundle-v1.0.0-rc1`, which triggers on-tag bundle pipeline.
+   Pushes the rc image as `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc1`
+2. On the main branch, update catalog/release-template based on [Catalogs](#catalogs---fbc) and [Channels](#channels)
+3. Validate catalog.
+4. If failures: apply fix to the release branch, tag new commit as `bundle-v1.0.0-rc1`, which triggers on-tag bundle pipeline.
+   Pushes the rc image as `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc2`
+5. On the main branch, update again and reiterate step 2 & 3.
+6. Once the last RC validates cleanly: on the release branch, tag commit as `bundle-v1.0.0` which triggers on-tag pipeline and pushes image to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0`. Update `release-template.yaml` and remove RC entries and add `hyperfleet-operator.v1.0.0` entry and tag new commit as specified in [Catalogs](#catalogs---fbc) and [Channels](#channels).
 
 **Pros:**
 
 - **Clean version history:** No gaps or phantom patch versions in the registry.
-- **Consistent process:** Aligns directly with the existing component release
-  model.
 - **Safe iteration:** Bundle issues (RBAC, CRD schemas, install modes) are
   caught and resolved before the official release version is published.
 - **Minimal risk:** The rebuild delta between RC and official release is near
@@ -166,7 +165,7 @@ Future work can be scoped to automating this process.
 
 - Scan-based, not event-driven — delay between image build and PR creation (minutes to hours depending on scan interval)
 - Introduces unpredictable wait times in the middle of a release flow
-- Does not chain — each step (operator → bundle → catalog) waits for the next scan cycle
+- Does not chain — each step (operator -> bundle -> catalog) waits for the next scan cycle
 - Release flow becomes dependent on renovate
 
 ---
@@ -186,27 +185,27 @@ The old `hyperfleet-operator-catalog` image and its push pipeline
 | ---------------------------------- | ------------------------------- | ------------------------------------------ |
 | `hyperfleet-operator-fbc-tag.yaml` | `catalog-vX.Y.Z[-rcN]` git tags | Release catalog builds from tagged commits |
 
-Catalogs will be built and published to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` on every tag build. The tag determines the version.
-The tagging syntax will be `catalog-vX.Y.Z[-rcN]`
+Catalogs will be built and published to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` on every tag build. The tag determines the version. The tagging syntax will be git tag: `catalog-vX.Y.Z[-rcN]` --> image tag: `X.Y.Z[-rcN]`
 
 | Git tag              | Image                                                                                          |
 | -------------------- | ---------------------------------------------------------------------------------------------- |
-| `catalog-v1.0.0-rc1` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.0-rc1` |
-| `catalog-v1.0.0`     | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.0`     |
+| `catalog-v1.0.0-rc1` | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:1.0.0-rc1` |
+| `catalog-v1.0.0`     | `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:1.0.0`     |
 
-One caveat is the latest tag, which will only get updated when final releases are built (e.g., `catalog-v1.0.0`). Once RC E2E tests have passed and everything verified we will tag and push the tag.
-This is to ensure that the latest tag never points to a non-verified/RC image.
+One caveat is the latest tag, which will only get updated when final releases are built (e.g., `catalog-v1.0.0`). This is a discrepancy from the component and bundle images, that update the `latest` tag on every update in `redhat-services-prod`.
+
+Only once we tag the `catalog-vX.Y.Z` and trigger the final build after RC verification, the `latest` tag updates. This is to ensure that the latest tag never points to a non-verified/RC catalog image.
 
 ### RC and Final release Flow
 
 ```text
 RC (staging):
   push catalog-vX.Y.Z-rcN git tag
-    → fbc-tag pipeline → image in redhat-user-workloads -> release plan auto releases -> copied redhat-services-prod, tagged vX.Y.Z-rcN
+    -> fbc-tag pipeline -> image in redhat-user-workloads -> release plan auto releases -> copied to redhat-services-prod, tagged X.Y.Z-rcN
 
 Final (release):
   push catalog-vX.Y.Z git tag
-    → fbc-tag pipeline → image in redhat-user-workloads -> release plan auto releases -> copied redhat-services-prod, tagged vX.Y.Z + latest
+    -> fbc-tag pipeline -> image in redhat-user-workloads -> release plan auto releases -> copied to redhat-services-prod, tagged X.Y.Z-rcN + latest
 ```
 
 #### Release template
@@ -235,29 +234,53 @@ Currently `konflux-template.yaml` is used, but we want to replace it with
 
 **Single channel with RC tag:** One `stable-vX` channel per major version.
 
-- The test catalog contains both RCs and finals in one linear graph: `v1.0.0` → `v1.0.1-rc1` → `v1.0.1`
-- The official catalog receives only finals: `v1.0.0` → `v1.0.1`.
-- The RC entry is only ever added to `release-template.yaml` for RC testing, built into a test-only catalog image (e.g. tagged `:v1.0.1-rc1`), and consumed only by test/Prow `CatalogSources`.
-- Before the official catalog is built, the RC entry is removed from `release-template.yaml` and the final release's `replaces` is repointed straight at the prior official release (e.g. `v1.0.1 replaces v1.0.0`, removing the RC entry entirely).
+- The test catalog contains both RCs and finals in one linear graph: `hyperfleet-operator.v1.0.0-rc1` replaces `hyperfleet-operator.v1.0.0`
+- The official catalog receives only finals: `hyperfleet-operator.v1.0.01` replaces `hyperfleet-operator.v1.0.0`. With no mention of RC entry.
+- The RC entry is only ever added to `release-template.yaml` for RC testing, built into a test-only catalog image (e.g. tagged `:1.0.1-rc1`), and consumed only by test/Prow `CatalogSources`.
+- Before the official catalog is built, the RC entry is removed from `release-template.yaml` and the final release's `replaces` is repointed straight at the prior official release (e.g. `hyperfleet-operator.v1.0.1 replaces hyperfleet-operator.v1.0.0`, removing the RC entry entirely).
 - The official catalog image is then built from that RC-free template, so the official image only ever contains the validated bundles.
-- Tradeoff: this relies on a manual template-editing step — pruning the RC and repointing `replaces` before the official catalog build. The catalog release itself is automated: pushing the `catalog-vX.Y.Z` tag triggers the final ReleasePlan, which auto-releases the image with the version tag and `latest`. The RC ReleasePlan only matches `-rcN` tags and its ReleasePlanAdmission does not apply the `latest` tag, so `latest` can only ever move on a final release.
+- Tradeoff: this relies on a manual template-editing step — pruning the RC and repointing `replaces` before the official release.
 
 ##### Alternative Considered
 
 **Multi-channel (candidate and stable):** Define both `candidate-vX` and `stable-vX` per major version.
 
-- `candidate-v1` — receives every bundle: `v1.0.0`, `v1.0.1-rc1`, `v1.0.1-rc2`, `v1.0.1`, etc.
-- `stable-v1` — receives only finals: `v1.0.0`, `v1.0.1`, `v1.0.2`, etc.
+- `candidate-v1` — receives every bundle (RCs and finals, linear upgrade chain):
+
+```yaml
+- schema: olm.channel
+    name: candidate-v1
+    package: hyperfleet-operator
+    entries:
+      - name: hyperfleet-operator.v1.0.0
+      - name: hyperfleet-operator.v1.0.1-rc1
+        replaces: hyperfleet-operator.v1.0.0
+      - name: hyperfleet-operator.v1.0.1
+        replaces: hyperfleet-operator.v1.0.1-rc1
+      - name: hyperfleet-operator.v1.0.2-rc1
+        replaces: hyperfleet-operator.v1.0.1
+
+- schema: olm.channel
+    name: stable-v1
+    package: hyperfleet-operator
+    entries:
+      - name: hyperfleet-operator.v1.0.0
+      - name: hyperfleet-operator.v1.0.1
+        replaces: hyperfleet-operator.v1.0.0
+      - name: hyperfleet-operator.v1.0.2
+        replaces: hyperfleet-operator.v1.0.1
+```
+
 - RC testers subscribe to `candidate-v1` to exercise the upgrade before it's promoted. Once validated, the final release is added to `stable-v1`.
 
 **Pros:**
 
-- No Manual override for RC and final images
+- `stable-v1` never contains RC entries, so no template-pruning step is needed at official release time (the manual step the single-channel approach accepts).
 
 **Cons:**
 
-- Have to define all production images in candidate channel to verify upgrade path
-- Too much overhead to maintain channels, for little benefit
+- A channel exists to serve subscribers, and none persist: RC tests are one-off installations whose clusters are destroyed afterward. The candidate channel would have no long-term consumers and would not be consumer-facing, so it adds overhead for little benefit.
+- Requires mirroring every production entry into `candidate-vX` indefinitely. The two channels drift by design (candidate carries RCs, stable does not), doubling catalog maintenance and creating a second upgrade graph that must be validated.
 
 ---
 
@@ -287,7 +310,8 @@ should build.
 
 **Example:** tag `bundle-v1.0.0-rc1` on the operator's `release-1.0` branch. The
 bundle tag pipeline triggers and builds the bundle image. The version in the CSV
-is set to `1.0.0-rc1` (tag with `bundle-v` prefix stripped).
+is set to `1.0.0-rc1` (tag with `bundle-v` prefix stripped). The bundle image published will be
+`quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc1`
 
 ```yaml
 apiVersion: operators.coreos.com/v1alpha1
@@ -322,29 +346,29 @@ Sentinel):
    build traceable to the bundle RC it feeds
 3. Update the new digest on the operator's `release-X.Y` branch (e.g.,
    `release-1.0`)
-4. Tag `bundle-vX.Y.Z-rc2` → pipeline builds new bundle (e.g.,
-   `bundle-v1.0.0-rc2` → CSV `name: hyperfleet-operator.v1.0.0-rc2`,
-   `version: 1.0.0-rc2`)
+4. Tag `bundle-vX.Y.Z-rc2` -> pipeline builds new bundle (e.g.,
+   `bundle-v1.0.0-rc2` -> CSV `name: hyperfleet-operator.v1.0.0-rc2`,
+   `version: 1.0.0-rc2` -> `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc2`)
 
 **If the issue is in the bundle itself** (RBAC, CRDs, CSV metadata):
 
 1. Make the required change on main and cherry-pick change to `release-X.Y`
-2. Tag `bundle-vX.Y.Z-rc2` → pipeline builds new bundle (e.g.,
-   `bundle-v1.0.0-rc2` → CSV `name: hyperfleet-operator.v1.0.0-rc2`,
-   `version: 1.0.0-rc2`)
+2. Tag `bundle-vX.Y.Z-rc2` -> pipeline builds new bundle (e.g.,
+   `bundle-v1.0.0-rc2` -> CSV `name: hyperfleet-operator.v1.0.0-rc2`,
+   `version: 1.0.0-rc2` -> `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc2`)
 
 In both cases, update the `catalog/release-template.yaml` on the `main` branch. Tag the change and rebuild the catalog image and revalidate.
 
 ### Step 7: Promote to stable channel
 
-Once everything is validated cleanly, tag the release-X.Y branch with
-`bundle-vX.Y.Z`. This will trigger the official bundle build. Then update
+Once everything is validated cleanly, tag the `release-X.Y` branch with
+`bundle-vX.Y.Z`. This will trigger the official bundle build -> `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:X.Y.Z`. Then update
 `catalog/release-template.yaml` on `main` to remove the rc and add the final release and its
 `olm.bundle` digest, following the channel structure and upgrade graph defined
 in [Final release-template.yaml](#final-release-templateyaml).
 
 Tag the catalog change as `catalog-vX.Y.Z` (no `-rcN` suffix) to build and
-release the official catalog. This will push the catalog image to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` and the final ReleasePlan will auto-release it, copying the image to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` with the version tag and `latest`.
+release the official catalog. This will push the catalog image to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` tagged as `:X.Y.Z` and `latest`.
 
 ---
 
@@ -357,8 +381,8 @@ Step by step guide for installing and upgrading the hyperfleet operator from `v1
 1. Cut all release branches (`hyperfleet-api`, `hyperfleet-sentinel`,
    `hyperfleet-operator`, `hyperfleet-adapter`)
 2. Update rc images in `config/manifests/prod/kustomization.yaml`.
-3. Tag the release branch as `bundle-v1.0.1-rc1` and build the bundle: `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:v1.0.1-rc1`
-4. Once we build the `hyperfleet-operator.v1.0.1-rc1` bundle we are able to add an entry to the `release-template.yaml`. Look below for next steps.
+3. Tag the release branch as `bundle-v1.0.1-rc1` and build the bundle image: `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.1-rc1`
+4. Add the `hyperfleet-operator.v1.0.1-rc1` entry to the `release-template.yaml`. Look below for next steps.
 
 ### RC verification
 
@@ -390,7 +414,7 @@ entries:
 #### Steps for upgrade testing
 
 1. Commit and push the changes to the release-template.yaml on the `main` branch.
-2. Tag the commit `catalog-v1.0.1-rc1` and push the tag. This should trigger the catalog pipeline to build and push to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1-rc1`
+2. Tag the commit `catalog-v1.0.1-rc1` and push the tag. This should trigger the catalog pipeline to build and push to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:1.0.1-rc1` but won't update the `latest` tag
 3. Verification & Testing
    1. Within Prow, set up a cluster and install OLM
    2. Apply the following resources:
@@ -416,7 +440,7 @@ entries:
       spec:
         sourceType: grpc
         displayName: HyperFleet Operator Catalog
-        image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1-rc1
+        image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:1.0.1-rc1
         publisher: Red Hat
       ---
       apiVersion: operators.coreos.com/v1alpha1
@@ -490,7 +514,7 @@ Once RC verification has been completed and we decide to promote version `v1.0.1
        image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<v1.0.1-digest>
    ```
 
-1. Tag the commit `catalog-v1.0.1` and push the tag. This should trigger the catalog pipeline, which builds the image in `redhat-user-workloads`; the final ReleasePlan auto-releases it, copying it to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:v1.0.1` (plus `:latest`).
+1. Tag the commit `catalog-v1.0.1` and push the tag. This should trigger the catalog pipeline, which builds the image in `redhat-user-workloads`; the final ReleasePlan auto-releases it, copying it to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc:1.0.1` (plus `:latest`).
 
 ---
 
@@ -508,31 +532,33 @@ The bundle-tag pipeline requires these changes:
 1. Annotations
 
    ```yaml
-   apiVersion: tekton.dev/v1
-   kind: PipelineRun
-   metadata:
-     annotations:
-       build.appstudio.openshift.io/repo: https://github.com/openshift-hyperfleet/hyperfleet-operator?rev={{revision}}
-       build.appstudio.redhat.com/commit_sha: "{{revision}}"
-       build.appstudio.redhat.com/target_branch: "{{target_branch}}"
-       # Trigger on bundle release tags (e.g., bundle-v1.0.0-rc1, bundle-v1.0.0)
-       pipelinesascode.tekton.dev/on-cel-expression: |
-         event == "push"
-         && target_branch.matches("^refs/tags/bundle-v[0-9]+\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?$")
+      apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        annotations:
+          build.appstudio.openshift.io/repo: https://github.com/openshift-hyperfleet/hyperfleet-operator?rev={{revision}}
+          build.appstudio.redhat.com/commit_sha: '{{revision}}'
+          build.appstudio.redhat.com/target_branch: '{{target_branch}}'
+          pipelinesascode.tekton.dev/cancel-in-progress: "false"
+          pipelinesascode.tekton.dev/max-keep-runs: "3"
+          # Trigger on bundle release tags (e.g., bundle-v1.0.0-rc1, bundle-v1.0.0)
+          pipelinesascode.tekton.dev/on-cel-expression: |
+            event == "push"
+            && target_branch.matches("^refs/tags/bundle-v[0-9]+\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?$")
    ```
 
 2. Set `BUILD_ARGS`
 
    ```yaml
-   - name: BUILD_ARGS
-     value:
-       - $(params.build-args[*])
-       - KUSTOMIZE_VARIANT=config/manifests/prod
-       - BUNDLE_VERSION=$(tasks.parse-version.results.VERSION)
-       - APP_VERSION=$(tasks.parse-version.results.VERSION)
-       - CHANNELS=stable-$(tasks.parse-version.results.MAJOR)
-       - DEFAULT_CHANNEL=stable-$(tasks.parse-version.results.MAJOR)
-       - VALIDATE_RELATED_IMAGES=true
+    - name: BUILD_ARGS
+      value:
+      - $(params.build-args[*])
+      - APP_VERSION=$(tasks.parse-tag.results.VERSION)
+      - KUSTOMIZE_VARIANT=config/manifests/prod
+      - BUNDLE_VERSION=$(tasks.parse-tag.results.VERSION)
+      - CHANNELS=stable-$(tasks.parse-tag.results.MAJOR_VERSION)
+      - DEFAULT_CHANNEL=stable-$(tasks.parse-tag.results.MAJOR_VERSION)
+      - VALIDATE_RELATED_IMAGES=true
    ```
 
 3. `parse-version` task to extract values from git-tag
@@ -546,25 +572,31 @@ The bundle-tag pipeline requires these changes:
    ...
    pipelineSpec:
      tasks:
-       - name: parse-version
-         params:
-           - name: GIT_TAG
-             value: $(params.git-tag)
-         taskSpec:
-           results:
-             - name: VERSION
-               description: Version extracted from git tag ref, dropped the v
-             - name: MAJOR
-               description: Major extracted from git tag persist the v
-           steps:
-             - name: parse
-               image: registry.access.redhat.com/ubi9-minimal:latest
-               script: |
-                 #!/usr/bin/env bash
-                 VERSION="${GIT_TAG#bundle-v}"
-                 MAJOR="v${VERSION%%.*}"
-                 printf '%s' "$VERSION" > "$(results.VERSION.path)"
-                 printf '%s' "$MAJOR" > "$(results.MAJOR.path)"
+      - name: parse-tag
+        params:
+        - name: TAG_REF
+          value: $(params.target-branch)
+        taskSpec:
+          params:
+          - name: TAG_REF
+            type: string
+          results:
+          - name: VERSION
+            description: Semantic version extracted from git tag ref
+          - name: MAJOR_VERSION
+            description: Semantic version extracted from git tag ref
+          steps:
+          - name: extract
+            image: registry.access.redhat.com/ubi9-minimal:latest
+            script: |
+              #!/usr/bin/env bash
+              VERSION="${TAG_REF#refs/tags/bundle-v}"
+              MAJOR_VERSION="v${VERSION%%.*}"
+              printf '%s' "$VERSION" > "$(results.VERSION.path)"
+              printf '%s' "$MAJOR_VERSION" > "$(results.MAJOR_VERSION.path)"
+            env:
+            - name: TAG_REF
+              value: $(params.TAG_REF)
    ```
 
 #### 2. Create a catalog tag pipeline - [HYPERFLEET-1884](https://redhat.atlassian.net/browse/HYPERFLEET-1884)
