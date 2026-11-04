@@ -4,7 +4,7 @@ Owner: HyperFleet Architecture Team
 Last Updated: 2026-11-03
 ---
 
-# 0033 — Gateway Authentication Modes and Wristband Trust
+# 0034 — Gateway Authentication Modes and Wristband Trust
 
 ## Context
 

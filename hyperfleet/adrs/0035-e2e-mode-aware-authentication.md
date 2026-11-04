@@ -4,7 +4,7 @@ Owner: HyperFleet Platform Team
 Last Updated: 2026-11-02
 ---
 
-# 0034 — Mode-Aware E2E Authentication
+# 0035 — Mode-Aware E2E Authentication
 
 ## Context
 
@@ -38,6 +38,6 @@ See the [E2E client contract](../docs/gateway-authentication-design.md#e2e-clien
 ## References
 
 - [ADR-0018: E2E JWT/TLS Architecture](0018-e2e-jwt-tls-architecture.md)
-- [ADR-0033: Gateway Authentication Modes and Wristband Trust](0033-gateway-authentication-modes.md)
+- [ADR-0034: Gateway Authentication Modes and Wristband Trust](0034-gateway-authentication-modes.md)
 - [Gateway Authentication Design](../docs/gateway-authentication-design.md)
 - [HYPERFLEET-1636](https://redhat.atlassian.net/browse/HYPERFLEET-1636)

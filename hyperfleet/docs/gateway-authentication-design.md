@@ -8,9 +8,9 @@ Last Updated: 2026-11-03
 
 **Jira**: [HYPERFLEET-1636](https://redhat.atlassian.net/browse/HYPERFLEET-1636)
 
-**Implements**: [ADR-0033: Gateway Authentication Modes and Wristband Trust](../adrs/0033-gateway-authentication-modes.md)
+**Implements**: [ADR-0034: Gateway Authentication Modes and Wristband Trust](../adrs/0034-gateway-authentication-modes.md)
 
-**Related**: [ADR-0034: Mode-Aware E2E Authentication](../adrs/0034-e2e-mode-aware-authentication.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
+**Related**: [ADR-0035: Mode-Aware E2E Authentication](../adrs/0035-e2e-mode-aware-authentication.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ Last Updated: 2026-11-03
 
 ## Problem Statement
 
-[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy and Authorino as the API authentication gateway. [ADR-0033](../adrs/0033-gateway-authentication-modes.md) defines the authentication modes and the Wristband trust contract.
+[ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy and Authorino as the API authentication gateway. [ADR-0034](../adrs/0034-gateway-authentication-modes.md) defines the authentication modes and the Wristband trust contract.
 
 This document describes the authentication flow, trust boundaries, deployment risks, and E2E client contract for the general API gateway. The Desire Store gateway ([ADR-0029](../adrs/0029-desire-store-authorization.md)) is a separate deployment with its own trust contract. Implementation details are maintained in [hyperfleet-infra](https://github.com/openshift-hyperfleet/hyperfleet-infra).
 
@@ -181,7 +181,7 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 
 - [ADR-0020: Envoy and Authorino as the API Authentication Gateway](../adrs/0020-envoy-authorino-api-gateway.md)
 - [ADR-0018: E2E JWT/TLS Architecture](../adrs/0018-e2e-jwt-tls-architecture.md)
-- [ADR-0033: Gateway Authentication Modes and Wristband Trust](../adrs/0033-gateway-authentication-modes.md)
-- [ADR-0034: Mode-Aware E2E Authentication](../adrs/0034-e2e-mode-aware-authentication.md)
+- [ADR-0034: Gateway Authentication Modes and Wristband Trust](../adrs/0034-gateway-authentication-modes.md)
+- [ADR-0035: Mode-Aware E2E Authentication](../adrs/0035-e2e-mode-aware-authentication.md)
 - [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md)
 - [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
