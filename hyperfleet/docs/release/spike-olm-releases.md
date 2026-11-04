@@ -85,8 +85,7 @@ how the bundle artifact moves through the pipeline.
    Pushes the rc image as `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc1`
 2. On the main branch, update catalog/release-template based on [Catalogs](#catalogs---fbc) and [Channels](#channels)
 3. Validate catalog.
-4. If failures: apply fix to the release branch, tag new commit as `bundle-v1.0.0-rc1`, which triggers on-tag bundle pipeline.
-   Pushes the rc image as `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc2`
+4. If failures: apply fix to the release branch, tag new commit as `bundle-v1.0.0-rc2`, which triggers on-tag bundle pipeline, second rc image will be `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0-rc2`
 5. On the main branch, update again and reiterate step 2 & 3.
 6. Once the last RC validates cleanly: on the release branch, tag commit as `bundle-v1.0.0` which triggers on-tag pipeline and pushes image to `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle:1.0.0`. Update `release-template.yaml` and remove RC entries and add `hyperfleet-operator.v1.0.0` entry and tag new commit as specified in [Catalogs](#catalogs---fbc) and [Channels](#channels).
 
@@ -205,7 +204,7 @@ RC (staging):
 
 Final (release):
   push catalog-vX.Y.Z git tag
-    -> fbc-tag pipeline -> image in redhat-user-workloads -> release plan auto releases -> copied to redhat-services-prod, tagged X.Y.Z-rcN + latest
+    -> fbc-tag pipeline -> image in redhat-user-workloads -> release plan auto releases -> copied to redhat-services-prod, tagged X.Y.Z + latest
 ```
 
 #### Release template
@@ -235,7 +234,7 @@ Currently `konflux-template.yaml` is used, but we want to replace it with
 **Single channel with RC tag:** One `stable-vX` channel per major version.
 
 - The test catalog contains both RCs and finals in one linear graph: `hyperfleet-operator.v1.0.0-rc1` replaces `hyperfleet-operator.v1.0.0`
-- The official catalog receives only finals: `hyperfleet-operator.v1.0.01` replaces `hyperfleet-operator.v1.0.0`. With no mention of RC entry.
+- The official catalog receives only finals: `hyperfleet-operator.v1.0.1` replaces `hyperfleet-operator.v1.0.0`. With no mention of RC entry.
 - The RC entry is only ever added to `release-template.yaml` for RC testing, built into a test-only catalog image (e.g. tagged `:1.0.1-rc1`), and consumed only by test/Prow `CatalogSources`.
 - Before the official catalog is built, the RC entry is removed from `release-template.yaml` and the final release's `replaces` is repointed straight at the prior official release (e.g. `hyperfleet-operator.v1.0.1 replaces hyperfleet-operator.v1.0.0`, removing the RC entry entirely).
 - The official catalog image is then built from that RC-free template, so the official image only ever contains the validated bundles.
@@ -368,7 +367,7 @@ Once everything is validated cleanly, tag the `release-X.Y` branch with
 in [Final release-template.yaml](#final-release-templateyaml).
 
 Tag the catalog change as `catalog-vX.Y.Z` (no `-rcN` suffix) to build and
-release the official catalog. This will push the catalog image to `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` tagged as `:X.Y.Z` and `latest`.
+release the official catalog. The final catalog image will be `quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-fbc` with tags `:X.Y.Z` and `:latest`.
 
 ---
 
