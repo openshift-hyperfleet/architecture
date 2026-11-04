@@ -46,7 +46,7 @@ HyperFleet currently has no tenant isolation. All authenticated API consumers se
 
 - [HYPERFLEET-1134](https://issues.redhat.com/browse/HYPERFLEET-1134) explored OPA/Rego integration
 
-**Gateway decisions:** [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy as the API entry point and defines the network boundary. [ADR-0033](../adrs/0033-gateway-authentication-modes.md) updates the authentication modes and gateway-to-API trust. In `EDGE` and `EDGE+API`, Authorino authenticates every caller and supplies tenant headers. In `EDGE+API`, the API receives only an Authorino-issued Wristband and takes caller identity from its `sub` claim.
+**Gateway decisions:** [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md) establishes Envoy as the API entry point and defines the network boundary. [ADR-0033](../adrs/0033-gateway-authentication-modes.md) updates the authentication modes and gateway-to-API trust. In `EDGE`, Authorino authenticates every caller and supplies tenant headers. In `EDGE+API`, Authorino authenticates every caller and Envoy forwards an Authorino-issued Wristband carrying caller and tenant context; the API takes caller identity from its `sub` claim and does not trust tenant headers.
 
 This supersedes this document's original app-middleware and service-mesh phasing. Gateway deployment, AuthConfig CRs, machine-identity plumbing, and NetworkPolicy are covered by the sibling [Envoy and Authorino Gateway Deployment](https://redhat.atlassian.net/browse/HYPERFLEET-1476) epic and are out of scope here.
 
