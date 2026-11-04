@@ -233,8 +233,10 @@ Currently `konflux-template.yaml` is used, but we want to replace it with
 
 **Single channel with RC tag:** One `stable-vX` channel per major version.
 
-- The test catalog contains both RCs and finals in one linear graph: `hyperfleet-operator.v1.0.0-rc1` replaces `hyperfleet-operator.v1.0.0`
-- The official catalog receives only finals: `hyperfleet-operator.v1.0.1` replaces `hyperfleet-operator.v1.0.0`. With no mention of RC entry.
+- The test catalog contains both RCs and finals in one linear graph:
+  `hyperfleet-operator.v1.0.1-rc1` replaces `hyperfleet-operator.v1.0.0`
+- The official catalog receives only finals:
+  `hyperfleet-operator.v1.0.1` replaces `hyperfleet-operator.v1.0.0`. With no mention of RC entry.
 - The RC entry is only ever added to `release-template.yaml` for RC testing, built into a test-only catalog image (e.g. tagged `:1.0.1-rc1`), and consumed only by test/Prow `CatalogSources`.
 - Before the official catalog is built, the RC entry is removed from `release-template.yaml` and the final release's `replaces` is repointed straight at the prior official release (e.g. `hyperfleet-operator.v1.0.1 replaces hyperfleet-operator.v1.0.0`, removing the RC entry entirely).
 - The official catalog image is then built from that RC-free template, so the official image only ever contains the validated bundles.
@@ -560,15 +562,9 @@ The bundle-tag pipeline requires these changes:
       - VALIDATE_RELATED_IMAGES=true
    ```
 
-3. `parse-version` task to extract values from git-tag
+3. `parse-tag` task to extract values from git-tag
 
    ```yaml
-   # parse-version task and add the git-tag param
-   spec:
-     params:
-       - name: git-tag
-         value: "{{git_tag}}"
-   ...
    pipelineSpec:
      tasks:
       - name: parse-tag
