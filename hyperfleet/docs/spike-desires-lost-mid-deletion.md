@@ -25,7 +25,7 @@ The Desire Store is a rebuildable delivery channel. Desires that disappear while
 
 The applier, or the sweeper, deletes a management-cluster object that no longer has desires.
 
-**Why Rejected.** The applier deletes an object only when a `DeleteDesire` names it. An object with no desire is also an object this delivery path never owned. The desire was that ownership record.
+**Why Rejected.** The applier deletes an object only when a `DeleteDesire` names it. An object with no desire can be a previously owned object whose desires were lost, or an object this delivery path never owned. Without an independent ownership record, the applier cannot distinguish these cases. The desire was the ownership record.
 
 ## Decision
 
