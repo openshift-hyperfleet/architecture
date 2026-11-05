@@ -8,8 +8,6 @@ Last Updated: 2026-11-05
 
 **Jira**: [HYPERFLEET-1636](https://redhat.atlassian.net/browse/HYPERFLEET-1636)
 
-> [ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md) decides the ingress-to-Envoy hop: no fronting ingress — clients connect to the Envoy Gateway directly, and TLS terminates at its 443 listener.
-
 **Implements**: [ADR-0034: Gateway Authentication Modes and Wristband Trust](../adrs/0034-gateway-authentication-modes.md)
 
 **Related**: [ADR-0035: Mode-Aware E2E Authentication](../adrs/0035-e2e-mode-aware-authentication.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
@@ -118,30 +116,27 @@ Wristband trust depends on protection of the signing key. Any principal that can
 
 ### Internal TLS
 
-The solid path shows current traffic. The dashed path shows the planned TLS-terminating ingress or load balancer.
+The solid path shows current traffic. The dashed path shows the decided entry point ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)).
 
 ```mermaid
 flowchart LR
     C["Client"]
-    I["Ingress / load balancer<br/>planned: TLS termination"]
     E["Envoy"]
     F["Authorino"]
     A["hyperfleet-api"]
 
     C -->|"HTTP today"| E
-    C -.->|"HTTPS"| I
-    I -.->|"HTTP or TLS: undecided"| E
+    C -.->|"HTTPS"| E
     E -->|"TLS"| F
     E -->|"TLS"| A
 
 ```
 
-Authorino is present only in `EDGE` and `EDGE+API`. The ingress-to-Envoy hop may remain HTTP or use TLS re-encryption; that choice is undecided. [HYPERFLEET-1681](https://redhat.atlassian.net/browse/HYPERFLEET-1681) tracks the entry design, and [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536) tracks implementation.
+Authorino is present only in `EDGE` and `EDGE+API`. There is no fronting ingress: clients connect to the Envoy Gateway directly, and TLS terminates at its 443 listener ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)). [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536) tracks implementation.
 
 | Hop | Today | Notes |
 |-----|-------|-------|
-| Client to Envoy | HTTP | No ingress or load balancer terminates TLS yet |
-| Ingress to Envoy | TLS-terminating ingress not deployed | Re-encryption is undecided |
+| Client to Envoy | HTTP (HTTPS decided) | [ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md) |
 | Envoy to Authorino | TLS | Envoy validates Authorino's server certificate |
 | Envoy to API | TLS | Envoy validates the API's server certificate |
 | API to Authorino JWKS | TLS | The API validates Authorino's server certificate |
@@ -169,7 +164,7 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 - **Wristband depends on Authorino availability.** Every `EDGE+API` request needs Authorino to issue a Wristband and the API to have Authorino's verification keys available.
 - **Tenant context trust.** `EDGE` relies on the gateway and network boundary to protect unsigned tenant headers. `EDGE+API` uses signed claims, but still trusts Authorino and the Wristband signing key.
 - **No mTLS.** Server TLS authenticates the server to the client. Any pod that can reach a Service port can still open a connection; the NetworkPolicy, not the certificate, enforces which pods may connect.
-- **Plaintext client hop.** Until an ingress terminates TLS, credentials cross the client-to-Envoy hop in plain HTTP outside the cluster. This is a deployment gap, not a decision.
+- **Plaintext client hop.** Until the Envoy Gateway's 443 listener ships ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)), credentials cross the client-to-Envoy hop in plain HTTP outside the cluster.
 
 ## Alternatives
 
@@ -177,7 +172,7 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 |-------------|--------------|
 | **Priority-ordered Authorino identity methods** | A token can satisfy multiple methods, so evaluation order can misclassify a machine caller as a human caller. |
 | **mTLS between gateway and API** | Adds client certificate lifecycle management while the NetworkPolicy restricts which pods can connect. Server TLS allows Envoy to authenticate the API server. |
-| **Re-encrypt at the ingress now** | No ingress exists today. Adding one is a separate deployment decision; the gateway contract does not depend on where TLS terminates. |
+| **Re-encrypt at the ingress now** | Decided by [ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md): no fronting ingress. |
 
 ## References
 

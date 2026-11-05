@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-03
+Last Updated: 2026-11-05
 ---
 
 # 0018 — E2E JWT/TLS Architecture
