@@ -56,7 +56,9 @@ This inconsistency creates unnecessary friction and slows down development.
 
 ### Required Targets
 
-Service repositories **MUST** implement these targets. Other repository types **MUST** use the applicable minimum target set in [Repository Type Variations](#repository-type-variations):
+Other repository types **MUST** use the applicable minimum target set in [Repository Type Variations](#repository-type-variations).
+
+Service repositories **MUST** implement the following targets:
 
 | Target | Description | Expected Behavior | Example Output |
 |--------|-------------|-------------------|----------------|
@@ -201,17 +203,6 @@ The root Makefile **MUST** provide `help`, `test`, and `lint`; it does not need 
 
 The `test` target **MUST** discover suite runners by a documented path convention, log each runner, propagate failures, and fail when no suites are discovered. Framework and interpreter selection **SHOULD** remain inside each runner so adding a suite does not require a language-specific Makefile target. Discovered paths **MUST** be passed as data, not interpolated into shell source.
 
-#### Example: Plugin Marketplace Metadata
-
-```yaml
-# .hyperfleet.yaml
-version: v1
-repository:
-  types: [plugin-marketplace]
-  name: hyperfleet-claude-plugins
-  description: Developer-assistant plugin marketplace for HyperFleet
-```
-
 For example, a repository can document `<plugin>/tests/run-tests.sh` and `<plugin>/skills/<skill>/scripts/tests/run-tests.sh` as its runner paths. Its root `make test` discovers those runners without maintaining a suite list. New tests in an existing suite reuse that suite's runner.
 
 Declaring `plugin-marketplace` without `help`, `test`, or `lint`, or providing a `test` target that succeeds without discovering any runners, is noncompliant. A `lint` target that performs no validation or returns success when a configured linter reports a validation failure is also noncompliant.
@@ -227,6 +218,17 @@ repository:
   types: [helm-chart]  # List of repository types (see Repository Types table above)
   name: adapter-landing-zone
   description: Helm charts for adapter deployment landing zone
+```
+
+#### Example: Plugin Marketplace Metadata
+
+```yaml
+# .hyperfleet.yaml
+version: v1
+repository:
+  types: [plugin-marketplace]
+  name: hyperfleet-claude-plugins
+  description: Developer-assistant plugin marketplace for HyperFleet
 ```
 
 ### Supported repository types
