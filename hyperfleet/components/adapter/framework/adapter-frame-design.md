@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Adapter Team
-Last Updated: 2026-10-16
+Last Updated: 2026-11-05
 ---
 
 # HyperFleet Adapter Framework - Design Document
@@ -699,7 +699,7 @@ The transport client is the unified apply interface used by the executor to appl
 
 Delete safety on a remote transport also relies on the Applier ordering invariants from [ADR 0028 — Serialize Apply Then Delete](../../../adrs/0028-apply-delete-ordering.md): each pass lists the store fresh before it starts, completes every apply before running deletes, and runs only one pass per management-cluster partition. Without these invariants a stale apply can recreate an object after its delete was confirmed — a case the store's rejection of applies during a pending delete does not cover.
 
-Remote discovery reads the mirrored object, but confirmation of a requested delete is separate: `ProbeDeletion` reads the `DeleteDesire` status, not the read mirror. A confirmed delete allows cleanup of the read and delete desires even while the read mirror still shows the object. For namespaced resources, both `discovery.namespace` and `discovery.by_name` must match the manifest's identity, because remote deletion addresses the discovery target.
+Remote discovery reads the mirrored object, but confirmation of a requested delete is separate: `ProbeDeletion` reads the `DeleteDesire` status, not the read mirror. A confirmed delete allows removing the read desire even while the read mirror still shows the object. The confirmed delete desire stays until the sweeper removes it, and only that status confirms a remote delete. For namespaced resources, both `discovery.namespace` and `discovery.by_name` must match the manifest's identity, because remote deletion addresses the discovery target.
 
 Transports are declared as named entries in the deployment config under `transports`, backed by named `stores` (Redis or in-memory). Each resource in the task config selects a transport by name (`transport: remote-primary`); an omitted `transport` uses local Kubernetes. The name `kubernetes` is reserved for the local transport.
 

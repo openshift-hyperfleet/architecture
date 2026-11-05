@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-10-16
+Last Updated: 2026-11-05
 ---
 
 # SPIKE: DSL v2 Resource Ordering Model
@@ -40,7 +40,7 @@ DSL v2 replaces ManifestWork bundling with per-resource delivery. That surfaces 
 | Ordering primitive | None (`order`, `depends_on` do not exist) | None |
 
 - Pre-discovery populates all resources into context before any `when` expression runs
-- Local post-delete rediscovery updates context after delete (cascade same reconciliation, or wait for next). Remote deletion instead confirms from `DeleteDesire` status via `ProbeDeletion`, then cleans up desires and updates context; read-mirror disappearance is not its confirmation signal
+- Local post-delete rediscovery updates context after delete (cascade same reconciliation, or wait for next). Remote deletion instead confirms from `DeleteDesire` status via `ProbeDeletion`, then removes the read desire and updates context; read-mirror disappearance is not its confirmation signal
 - Each event triggers one full pass from the top; no checkpoint or resume
 
 ```yaml

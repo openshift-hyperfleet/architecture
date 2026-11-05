@@ -19,7 +19,7 @@ The Desire Store is a rebuildable delivery channel. Desires that disappear while
 
 `CleanupAfterDeletion` must observe confirmed DeleteDesire and a ReadDesire at the beginning. If either or both are not found (`ErrNotFound`), it should recreate them and return `ErrDeletionPending`.
 
-**Why Rejected.** After a normal delete the store is empty, which is also what a lost delete looks like, so every event with `when` true and no desires re-requests the delete. The API keeps each adapter's latest report per generation and hard-deletes only when the incoming report carries `Finalized=True` while every other adapter's stored report does too. An adapter that re-requests the delete after finalizing reports `Finalized=False` until the applier confirms again, so adapters can fail to line up.
+**Why Rejected.** After a normal delete the store is empty, which is also what a lost delete looks like, so every event with `when` true and no desires re-requests the delete.
 
 ### Applier cleans up leftover objects
 
@@ -49,5 +49,5 @@ The adapter keeps the confirmed `DeleteDesire` after a delete and removes only t
 
 ## Follow-ups
 
-- **Adapter change** - HYPERFLEET-XXX
+- **Adapter change** - HYPERFLEET-1905
 - [HYPERFLEET-1771](https://redhat.atlassian.net/browse/HYPERFLEET-1771) asserts store loss during a delete once the adapter change lands.

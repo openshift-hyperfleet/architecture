@@ -1,7 +1,7 @@
 ---
 Status: Draft
 Owner: HyperFleet Team
-Last Updated: 2026-10-16
+Last Updated: 2026-11-05
 ---
 
 # Adapter Deletion Flow Design
@@ -634,7 +634,7 @@ Detailed metric naming, labels, alert thresholds, and SLO/SLI definitions will b
 
 | # | Edge Case | Decision | Impact |
 |---|-----------|----------|--------|
-| 1 | Resource already gone | Treat "not found" as success | Low |
+| 1 | Resource already gone | Treat "not found" as success on the local transport. On a remote transport only a confirmed delete desire counts | Low |
 | 2 | **Stale Applied=False before `deleted_time`** | **API gates on aggregate `Reconciled` (computed from adapter `Finalized`), never on individual adapter `Applied`** | **Critical** |
 | 3 | Creation in-flight when deletion starts | Discovery handles naturally on next event | Low |
 | 4 | Which adapters must confirm? | Only adapters with existing status entries | Medium |
@@ -699,7 +699,7 @@ The API **must reject** all mutations (PUT, PATCH) to resources/subresources mar
 
 #### Resource Already Gone (#1)
 
-Treat "not found" as successfully deleted. The executor should handle `NotFound` from discovery as a no-op and proceed to the next resource.
+Treat "not found" as successfully deleted on the local transport. The executor should handle `NotFound` from discovery as a no-op and proceed to the next resource. On a remote transport only a confirmed delete desire counts, and the executor keeps requesting the delete until then.
 
 #### Creation In-Flight When Deletion Starts (#3)
 
@@ -757,7 +757,7 @@ Not cancellable in 1.0.0. Consistent with Kubernetes behavior (namespace deletio
 The `lifecycle.delete.propagationPolicy` only applies to the local Kubernetes transport, where the adapter controls the delete call. A remote transport does not call the target cluster's API: the adapter writes a `DeleteDesire` to the transport's desire store, and the HyperFleet Applier deletes the object on the target cluster and updates the `DeleteDesire` status. The adapter's `ProbeDeletion` reads only that delete status to confirm completion; it deliberately does not consult the read mirror, which can lag a confirmed delete. The adapter's `propagationPolicy` is not used.
 
 - **Kubernetes transport**: calls `DeleteResource()` with the specified `propagationPolicy`
-- **Remote transport**: writes a `DeleteDesire` to the desire store; the Applier performs the delete and `ProbeDeletion` confirms it from the `DeleteDesire` status. After confirmation, `CleanupAfterDeletion` removes the read and delete desires, even if the read mirror still shows the object. When no delete desire exists, discovery and cleanup checks handle the already-absent case rather than treating a missing delete desire alone as proof of deletion. Selector-based discovery is unsupported for remote deletes — `discovery.by_name` is required when `lifecycle.delete` is configured on a remote resource
+- **Remote transport**: writes a `DeleteDesire` to the desire store; the Applier performs the delete and `ProbeDeletion` confirms it from the `DeleteDesire` status. After confirmation, `CleanupAfterDeletion` removes the read desire, even if the read mirror still shows the object, and keeps the confirmed delete desire until the sweeper removes it. A remote delete is confirmed only from the delete desire status: when none exists, the adapter requests the delete instead of treating NotFound as proof of deletion. Selector-based discovery is unsupported for remote deletes — `discovery.by_name` is required when `lifecycle.delete` is configured on a remote resource
 
 #### Multi-Generation Resources (#10)
 
