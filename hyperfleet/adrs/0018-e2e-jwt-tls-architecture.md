@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-08-17
+Last Updated: 2026-11-03
 ---
 
 # 0018 — E2E JWT/TLS Architecture
@@ -35,6 +35,8 @@ This means:
 - Infrastructure layer (Ingress / Cloud Load Balancer) handles TLS termination
 - Application pods receive HTTP traffic (not HTTPS)
 - The Envoy + Authorino gateway validates JWT tokens for authentication (see [ADR-0020](0020-envoy-authorino-api-gateway.md))
+
+> The ingress/LB termination point above was an assumption, not a decision. [ADR-0036](0036-management-cluster-ingress-tls-termination.md) decides it: TLS terminates at the Envoy Gateway-managed Gateway's 443 listener, with the certificate issued by cert-manager HTTP-01. The E2E access path below moves with it — the port-8000 Envoy Service is replaced by the generated Service's listeners.
 
 ## Decision
 

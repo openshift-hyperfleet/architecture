@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-20
+Last Updated: 2026-11-05
 ---
 
 # Desire Store Detailed Design
@@ -190,7 +190,7 @@ Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR 
 - **Per-binding CRs on a shared host:** Authorino rejects a hostname already taken by another `AuthConfig`.
 - **Envoy context-extension routing:** keeps one hostname by supplying the Authorino lookup key from Envoy route configuration, but moves the 10,000-entry partition mapping into non-CRD Envoy config.
 
-**Trade-off:** per-partition hostnames require wildcard DNS and a wildcard TLS certificate, and the operator manages one CR per partition.
+**Trade-off:** per-partition hostnames require wildcard DNS and per-partition TLS certificates, and the operator manages one CR per partition.
 
 **Acceptable because:**
 
@@ -283,7 +283,7 @@ The Adapter and sweeper have different permissions, enforced from `hf_identity` 
 - **Operator, keys:** own the shared Wristband signing-key `Secret`s; rotate by putting the new key first in `signingKeyRefs` and retaining the previous key for the retention window ([Signing-Key Rotation and Failure Handling](#signing-key-rotation-and-failure-handling)).
 - **Gateway:** a private Envoy listener for the Desire Store:
   - Serves the base host and the `{partition}.desire-store` wildcard hostnames.
-  - Uses a wildcard DNS record and a wildcard TLS certificate; issuance follows the platform ingress/TLS architecture ([HYPERFLEET-1681](https://redhat.atlassian.net/browse/HYPERFLEET-1681)), and because HTTP-01 cannot issue wildcards, it needs the DNS-01 path or equivalent. A publicly trusted certificate needs no trust distribution: management clusters verify it with their standard CA bundles.
+  - Uses a wildcard DNS record with per-partition TLS certificates minted from the internal CA ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)); trust distribution to the management clusters is [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866)'s design.
   - Strips the client-supplied headers defined in the [Gateway Trust Contract](#gateway-trust-contract) before authorization ([ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)).
 
 **Verify at implementation:**

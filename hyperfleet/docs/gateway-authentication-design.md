@@ -1,12 +1,14 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-03
+Last Updated: 2026-11-05
 ---
 
 # Gateway Authentication Design
 
 **Jira**: [HYPERFLEET-1636](https://redhat.atlassian.net/browse/HYPERFLEET-1636)
+
+> [ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md) decides the ingress-to-Envoy hop: no fronting ingress — clients connect to the Envoy Gateway directly, and TLS terminates at its 443 listener.
 
 **Implements**: [ADR-0034: Gateway Authentication Modes and Wristband Trust](../adrs/0034-gateway-authentication-modes.md)
 

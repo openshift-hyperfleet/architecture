@@ -1,10 +1,12 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-08-11
+Last Updated: 2026-11-03
 ---
 
 # 0020 - Envoy and Authorino as the API Authentication Gateway
+
+> Amended by [ADR-0036](0036-management-cluster-ingress-tls-termination.md) — deployment form only: the hand-managed Envoy deployment is now an Envoy Gateway-managed Envoy. The trust contract this record decides is unchanged.
 
 ## Context
 
