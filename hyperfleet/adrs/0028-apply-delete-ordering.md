@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-10-05
+Last Updated: 2026-11-05
 ---
 
 # 0028 — Serialize Apply Then Delete
@@ -10,7 +10,7 @@ Last Updated: 2026-10-05
 
 Apply and delete desires for the same object are different records processed by two different reconcilers. `Identity.Type` is part of the key (`pkg/desire/types.go`), so an ApplyDesire and a DeleteDesire for the same ConfigMap are not the same desire. There is no single identity to order on. Independent passes can let a stale apply recreate an object after its delete was confirmed.
 
-That recreation is not a transient. Once the delete is confirmed, the DeleteDesire and the ReadDesire for the object are cleaned up, so no desire observes the recreated object and no later pass reapplies or deletes it. The object stays on the management cluster until someone removes it by hand, and nothing in HyperFleet reports that it exists.
+That recreation is not a transient. Once the delete is confirmed, nothing executes the `DeleteDesire` again and no `ApplyDesire` exists, so no pass reapplies or deletes the recreated object. The object stays on the management cluster until someone removes it by hand, and nothing in HyperFleet reports that it exists.
 
 Pass timings for parallel and serial loops are in [Spike: Apply and Delete Ordering](../docs/apply-delete-ordering-spike.md).
 
