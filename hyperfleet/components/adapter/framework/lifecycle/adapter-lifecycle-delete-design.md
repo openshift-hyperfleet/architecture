@@ -759,6 +759,33 @@ The `lifecycle.delete.propagationPolicy` only applies to the local Kubernetes tr
 - **Kubernetes transport**: calls `DeleteResource()` with the specified `propagationPolicy`
 - **Remote transport**: writes a `DeleteDesire` to the desire store; the Applier performs the delete and `ProbeDeletion` confirms it from the `DeleteDesire` status. After confirmation, `CleanupAfterDeletion` removes the read desire, even if the read mirror still shows the object, and keeps the confirmed delete desire until the sweeper removes it. A remote delete is confirmed only from the delete desire status: when none exists, the adapter requests the delete instead of treating NotFound as proof of deletion. Selector-based discovery is unsupported for remote deletes — `discovery.by_name` is required when `lifecycle.delete` is configured on a remote resource
 
+The remote delete flow, from the user's request to the sweeper([HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840)):
+
+```mermaid
+flowchart TD
+    REQ["User: delete request"] --> API["API sets deleted_time<br/>(durable, transactional Postgres)"]
+    API --> EVT["Sentinel publishes an event and the broker delivers it<br/>(repeats while Reconciled is False)"]
+
+    subgraph ADAPTER["Adapter, on every event"]
+        PROBE{"ProbeDeletion:<br/>DeleteDesire status"}
+        WRITE["DeleteResource writes<br/>ReadDesire, then DeleteDesire"]
+        WAIT["Report Finalized = False<br/>and wait for the next event"]
+        CLEAN["CleanupAfterDeletion removes the ReadDesire only,<br/>the confirmed DeleteDesire stays"]
+        FINAL["Report Finalized = True"]
+        PROBE -->|"none: first event,<br/>or the DeleteDesire was lost"| WRITE
+        PROBE -->|"pending: issued, object still exists,<br/>for example behind a finalizer"| WAIT
+        PROBE -->|"confirmed: Successful = True"| CLEAN
+        WRITE --> WAIT
+        CLEAN --> FINAL
+    end
+
+    EVT --> PROBE
+    FINAL --> HARD["Once every adapter has reported Finalized = True<br/>and no child resources remain,<br/>the API hard-deletes the record"]
+    HARD --> SWEEP["Sweeper removes the DeleteDesire"]
+
+    style SWEEP stroke:#888,color:#888,stroke-dasharray: 5 5
+```
+
 #### Multi-Generation Resources (#10)
 
 During deletion, use **label selectors** rather than exact name matching to discover all resources across generations. This guidance applies to the **local Kubernetes transport only**: a remote resource with `lifecycle.delete` must use `discovery.by_name`, and selector-based lifecycle deletion is rejected at load time. On a remote transport, give the resource a stable name across generations (the generation is carried by the `hyperfleet.io/generation` annotation, not the name) so `discovery.by_name` always resolves to the current object:

@@ -43,7 +43,7 @@ The adapter stops removing the confirmed `DeleteDesire` after a delete and delet
 
 ## Decision
 
-The adapter keeps the confirmed `DeleteDesire` after a delete and removes only the `ReadDesire`, as described in the last option. The sweeper removes the `DeleteDesire` once the API resource is gone. A delete counts as confirmed only when the `DeleteDesire` status says `Successful=True`.
+The adapter keeps the confirmed `DeleteDesire` after a delete and removes only the `ReadDesire`, as described in the last option. The sweeper removes the `DeleteDesire` once the API resource is gone. A delete counts as confirmed only when the `DeleteDesire` status says `Successful=True`. The resulting remote delete flow is in the [Adapter Deletion Flow Design](../components/adapter/framework/lifecycle/adapter-lifecycle-delete-design.md#remote-transport-resources-9).
 
 [HYPERFLEET-1771](https://redhat.atlassian.net/browse/HYPERFLEET-1771) can assert store loss during a delete against this behavior once the adapter change lands.
 
