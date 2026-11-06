@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-03
+Last Updated: 2026-11-05
 ---
 
 # HyperFleet Glossary
@@ -81,6 +81,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **Orphaned E2E Resource** | A resource an interrupted E2E run leaves behind outside its E2E Run Namespace, such as a Pub/Sub topic, subscription or ClusterRole, after that namespace is gone. The namespace cleaner on the Prow cluster deletes them. See: [Prow CI/CD Cluster](prow-cicd-cluster.md#orphaned-e2e-resource-cleanup) | E2E, Infrastructure |
 | **Per-Subscription Cursor** | The acknowledged and reserved positions a (topic, subscription) pair tracks in `broker_cursors` over the event log's per-topic sequence. See: [ADR-0031](../adrs/0031-broker-postgres-event-log.md) | Broker |
 | **Per-Topic Sequence** | A monotonically increasing number allocated from `broker_topic_seq` for each event published to a topic. Consumers order delivery by it. See: [ADR-0031](../adrs/0031-broker-postgres-event-log.md) | Broker |
+| **Plugin Marketplace** | A repository distributing developer-assistant plugins (skills, commands, hooks, and supporting scripts and tests). The `plugin-marketplace` repository type has its own required Makefile targets. See: [Makefile Conventions](../standards/makefile-conventions.md#targets-for-plugin-marketplace-repositories) | Developer tooling |
 | **Precondition** | A condition an Adapter checks before deciding to act on a reconciliation event. Preconditions verify that dependencies are met (e.g., Validation adapter has completed before DNS adapter runs) and that the current resource state requires the adapter's action. | Adapter Framework |
 | **Pulse** | A proposed extension to the HyperFleet status model that introduces periodic heartbeat status updates from adapters. Pulses disambiguate between "new generation not yet reconciled" and "system error" in the `status.phase` field. See: [Sentinel Pulses](sentinel-pulses.md) | Sentinel, Adapter Framework |
 | **RabbitMQ** | An AMQP-based self-hosted message broker used in on-premise HyperFleet deployments. Configured with `broker.type: rabbitmq` in `broker.yaml`. | Broker |

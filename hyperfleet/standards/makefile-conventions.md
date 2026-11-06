@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-04-24
+Last Updated: 2026-11-05
 ---
 
 # HyperFleet Makefile Conventions
@@ -56,7 +56,9 @@ This inconsistency creates unnecessary friction and slows down development.
 
 ### Required Targets
 
-All HyperFleet repositories **MUST** implement these targets:
+Other repository types **MUST** use the applicable minimum target set in [Repository Type Variations](#repository-type-variations).
+
+Service repositories **MUST** implement the following targets:
 
 | Target | Description | Expected Behavior | Example Output |
 |--------|-------------|-------------------|----------------|
@@ -170,6 +172,7 @@ Not all HyperFleet repositories build binaries. Helm-chart and deployment reposi
 | **Service** | Repositories that compile Go binaries | adapter-pullsecret, sentinel |
 | **Helm-chart** | Repositories containing only Helm charts for deployment | adapter-landing-zone |
 | **Infrastructure** | Repositories with infrastructure-as-code (Terraform, scripts) | hyperfleet-infrastructure |
+| **Plugin marketplace** | Repositories distributing developer-assistant plugins, including skills, commands, hooks, and executable helpers | hyperfleet-claude-plugins |
 | **Documentation** | Repositories containing only documentation (Makefile not required) | hyperfleet-architecture |
 
 ### Target Equivalents for Helm-chart Repositories
@@ -184,6 +187,26 @@ Helm-chart repositories do not build binaries, so the standard required targets 
 | `clean` | `helm-uninstall` or N/A | Removes installed releases; may be omitted if not applicable |
 | `help` | `help` | Still required; lists available targets |
 
+### Targets for Plugin Marketplace Repositories
+
+The `plugin-marketplace` type covers repositories distributing developer-assistant plugins and their supporting scripts and tests. These repositories are not documentation-only, but do not necessarily compile a service binary or produce build artifacts.
+
+| Target | Requirement | Expected Behavior |
+|--------|-------------|-------------------|
+| `test` | **MUST** | Run all repository test suites through their runners and return nonzero on failure |
+| `help` | **MUST** | List existing targets with descriptions without executing them |
+| `build` | **MAY**, when applicable | Build plugin artifacts if the repository has a build step |
+| `lint` | **MUST** | Validate Markdown and other applicable repository formats using configured linters and return nonzero when any configured linter reports a validation failure |
+| `clean` | **MAY**, when applicable | Remove generated artifacts if the repository creates them |
+
+The root Makefile **MUST** provide `help`, `test`, and `lint`; it does not need per-suite targets. Repositories **MUST** document the test and lint commands, runner convention, and dependencies in their contributor documentation. They **MUST NOT** add no-op targets solely to satisfy a service-oriented target check. Optional build and cleanup targets do not waive applicable testing or container-image requirements elsewhere in the standards.
+
+The `test` target **MUST** discover suite runners by a documented path convention, log each runner, propagate failures, and fail when no suites are discovered. Framework and interpreter selection **SHOULD** remain inside each runner so adding a suite does not require a language-specific Makefile target. Discovered paths **MUST** be passed as data, not interpolated into shell source.
+
+For example, a repository can document `<plugin>/tests/run-tests.sh` and `<plugin>/skills/<skill>/scripts/tests/run-tests.sh` as its runner paths. Its root `make test` discovers those runners without maintaining a suite list. New tests in an existing suite reuse that suite's runner.
+
+Declaring `plugin-marketplace` without `help`, `test`, or `lint`, or providing a `test` target that succeeds without discovering any runners, is noncompliant. A `lint` target that performs no validation or returns success when a configured linter reports a validation failure is also noncompliant.
+
 ### Repository Type Indicator
 
 To help tooling identify repository types, repositories **SHOULD** include a `.hyperfleet.yaml` file in the root directory. This file is preferred over GitHub Topics because it works offline, is version-controlled, and supports structured metadata:
@@ -197,6 +220,17 @@ repository:
   description: Helm charts for adapter deployment landing zone
 ```
 
+#### Example: Plugin Marketplace Metadata
+
+```yaml
+# .hyperfleet.yaml
+version: v1
+repository:
+  types: [plugin-marketplace]
+  name: hyperfleet-claude-plugins
+  description: Developer-assistant plugin marketplace for HyperFleet
+```
+
 ### Supported repository types
 
 | Type | Value | Required Targets |
@@ -204,6 +238,7 @@ repository:
 | Service | `service` | `help`, `build`, `test`, `lint`, `clean` |
 | Helm-chart | `helm-chart` | `help`, `helm-lint`, `helm-template`, `test-helm` |
 | Infrastructure | `infrastructure` | `help`, `lint`, `clean` |
+| Plugin marketplace | `plugin-marketplace` | `help`, `test`, `lint` |
 | Documentation | `documentation` | Makefile not required |
 
 ### Audit Tool Behavior
@@ -217,6 +252,8 @@ The standards-audit tool recognizes repository type variations:
    - Presence of `go.mod` → `service`
    - Presence of `terraform/` directory → `infrastructure`
    - Only `.md` files → `documentation`
+
+For repositories explicitly declaring `plugin-marketplace`, standards audits **MUST** require `help`, `test`, and `lint` and **MUST NOT** report absent `build` or `clean` targets as violations of this Makefile standard unless another declared type requires them. Review **MUST** verify that `help` lists targets without executing them, `test` follows the documented runner discovery and failure behavior, and `lint` validates Markdown and other applicable formats and returns nonzero when any configured linter reports a validation failure; target presence alone does not establish compliance. Audit tooling must be updated to recognize this type; this document does not imply that existing tool versions already support it.
 
 > **Note:** Targets are additive. The repository types define the **minimum required targets**. A repository with multiple types must include the required targets for each type.
 
