@@ -17,9 +17,9 @@ The Desire Store is a rebuildable delivery channel. Desires that disappear while
 
 ### Desire cleanup uses backward recovery
 
-`CleanupAfterDeletion` must observe confirmed DeleteDesire and a ReadDesire at the beginning. If either or both are not found (`ErrNotFound`), it should recreate them and return `ErrDeletionPending`.
+`CleanupAfterDeletion` must observe confirmed `DeleteDesire` and a `ReadDesire` at the beginning. If either or both are not found (`ErrNotFound`), it should recreate them and return `ErrDeletionPending`.
 
-**Why Rejected.** After a normal delete the store is empty, which is also what a lost delete looks like, so every event with `when` true and no desires re-requests the delete.
+**Why Rejected.** After a normal delete the store is empty, which is also what a lost delete looks like, so every event with `when` true and no desires re-requests the delete, and `Finalized` flaps on every trigger.
 
 ### Applier cleans up leftover objects
 
@@ -35,7 +35,7 @@ The documentation states that desires lost mid-deletion are possible, and an ope
 
 ### Adapter keeps the confirmed desires and the sweeper removes them
 
-The adapter stops removing the confirmed `DeleteDesire` after a delete and deletes only the `ReadDesire` to stop the applier side informers from running. The sweeper ([HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840)) removes the `DeleteDesire` once the API resource is gone.
+The adapter stops removing the confirmed `DeleteDesire` after a delete and deletes only the `ReadDesire` to stop the applier side informers from running. The sweeper ([HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840)) removes the `DeleteDesire` once the API resource is gone. The store conformance case `ConfirmedDeleteThenApplyRecreates` must pass, because a retained confirmed `DeleteDesire` has to be retired by the next `ApplyDesire`. The case where the `DeleteDesire` is lost after `Finalized=True` but before the API hard-deletes the record must be tested.
 
 **Why Selected.** A finished delete and a lost delete no longer leave the same store contents during the API resource's lifespan. Re-triggers after finalization see a confirmed `DeleteDesire`, report `Finalized=True` again, preserving idempotency.
 
@@ -49,5 +49,5 @@ The adapter keeps the confirmed `DeleteDesire` after a delete and removes only t
 
 ## Follow-ups
 
-- **Adapter change** - HYPERFLEET-1905
+- **Adapter change** - [HYPERFLEET-1905](https://redhat.atlassian.net/browse/HYPERFLEET-1905)
 - [HYPERFLEET-1771](https://redhat.atlassian.net/browse/HYPERFLEET-1771) asserts store loss during a delete once the adapter change lands.

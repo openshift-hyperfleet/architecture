@@ -773,7 +773,7 @@ flowchart TD
         CLEAN["CleanupAfterDeletion removes the ReadDesire only,<br/>the confirmed DeleteDesire stays"]
         FINAL["Report Finalized = True"]
         PROBE -->|"none: first event,<br/>or the DeleteDesire was lost"| WRITE
-        PROBE -->|"pending: issued, object still exists,<br/>for example behind a finalizer"| WAIT
+        PROBE -->|"pending: issued, object still exists,<br/>for example behind a finalizer, or transient failure"| WAIT
         PROBE -->|"confirmed: Successful = True"| CLEAN
         WRITE --> WAIT
         CLEAN --> FINAL
