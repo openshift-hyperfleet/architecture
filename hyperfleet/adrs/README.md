@@ -111,4 +111,4 @@ What did we decide? State it plainly.
 | [0033](0033-postgres-transport-security.md) | PostgreSQL Transport Security: Server Identity Verification for Direct Connections | Active | 2026-11-03 |
 | [0034](0034-gateway-authentication-modes.md) | Gateway Authentication Modes and Wristband Trust | Active | 2026-11-02 |
 | [0035](0035-e2e-mode-aware-authentication.md) | Mode-Aware E2E Authentication | Active | 2026-11-02 |
-| [0036](0036-management-cluster-ingress-tls-termination.md) | Management-Cluster Ingress and TLS Termination | Active | 2026-11-05 |
+| [0036](0036-management-cluster-ingress-tls-termination.md) | Management-Cluster Ingress and TLS Termination | Active | 2026-11-06 |

@@ -132,7 +132,7 @@ flowchart LR
 
 ```
 
-Authorino is present only in `EDGE` and `EDGE+API`. There is no fronting ingress: clients connect to the Envoy Gateway directly, and TLS terminates at its 443 listener ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)). [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536) tracks implementation.
+Authorino is present only in `EDGE` and `EDGE+API`. There is no fronting ingress: clients connect to the Envoy Gateway-managed Envoy directly, and TLS terminates at its 443 listener ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)). [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536) tracks implementation.
 
 | Hop | Today | Notes |
 |-----|-------|-------|

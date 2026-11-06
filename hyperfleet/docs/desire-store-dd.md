@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-06
 ---
 
 # Desire Store Detailed Design
@@ -190,7 +190,7 @@ Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR 
 - **Per-binding CRs on a shared host:** Authorino rejects a hostname already taken by another `AuthConfig`.
 - **Envoy context-extension routing:** keeps one hostname by supplying the Authorino lookup key from Envoy route configuration, but moves the 10,000-entry partition mapping into non-CRD Envoy config.
 
-**Trade-off:** per-partition hostnames require wildcard DNS and per-partition TLS certificates, and the operator manages one CR per partition.
+**Trade-off:** per-partition hostnames require wildcard DNS, and the operator manages one CR per partition.
 
 **Acceptable because:**
 
@@ -283,7 +283,7 @@ The Adapter and sweeper have different permissions, enforced from `hf_identity` 
 - **Operator, keys:** own the shared Wristband signing-key `Secret`s; rotate by putting the new key first in `signingKeyRefs` and retaining the previous key for the retention window ([Signing-Key Rotation and Failure Handling](#signing-key-rotation-and-failure-handling)).
 - **Gateway:** a private Envoy listener for the Desire Store:
   - Serves the base host and the `{partition}.desire-store` wildcard hostnames.
-  - Uses a wildcard DNS record with per-partition TLS certificates minted from the internal CA ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)); trust distribution to the management clusters is [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866)'s design.
+  - Uses a wildcard DNS record; TLS certificates are minted from the internal CA ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)), and trust distribution to the management clusters is [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866)'s design.
   - Strips the client-supplied headers defined in the [Gateway Trust Contract](#gateway-trust-contract) before authorization ([ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)).
 
 **Verify at implementation:**

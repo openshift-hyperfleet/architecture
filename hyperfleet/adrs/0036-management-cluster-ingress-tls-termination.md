@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-06
 ---
 
 # 0036 — Management-Cluster Ingress and TLS Termination
@@ -29,8 +29,8 @@ Constraints:
 The management cluster adopts **Gateway API with Envoy Gateway** as its ingress layer. The hand-managed Envoy deployment is replaced by an Envoy Gateway-managed Envoy: the same data plane, configured through Gateway API resources instead of a hand-written bootstrap.
 
 - **Single entry point.** One Gateway owns the public listeners — 443 for TLS, 80 for the ACME (Automated Certificate Management Environment) HTTP-01 solver — replacing port 8000 as the public surface.
-- **Envoy terminates TLS.** cert-manager issues the public hostname's certificate over HTTP-01 (Let's Encrypt) on port 80, and Envoy serves it on 443. The issued certificate is what [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536)'s TLS termination and network-boundary work consumes.
-- **The private gateway uses the internal CA.** Per-partition certificates are minted by the internal CA — the cert-manager pattern the chart already runs — with [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866) owning trust distribution to the management clusters. A private CA issues per-partition names directly, so the HTTP-01 wildcard limitation does not apply; the public-CA path is rejected because no maintained OCI DNS-01 solver exists.
+- **Envoy terminates TLS.** cert-manager issues the public hostname's certificate over HTTP-01 (Let's Encrypt) on port 80, and Envoy serves it on 443 — the path for connected installs where HyperFleet owns the zone. A partner-owned domain supplies its certificate as the same TLS Secret the listener reads. The issued certificate is what [HYPERFLEET-1536](https://redhat.atlassian.net/browse/HYPERFLEET-1536)'s TLS termination and network-boundary work consumes.
+- **The private gateway uses the internal CA.** Certificates are minted by the internal CA — the cert-manager pattern the chart already runs — with [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866) owning trust distribution to the management clusters. A private CA is not bound by ACME's challenge-type limitations, so the certificate shape (per-partition or wildcard) is the implementation's choice; the public-CA path is rejected because no maintained OCI DNS-01 solver exists.
 - **Trust contract unchanged.** Early header stripping, Authorino enforcement, the trusted-credential hand-off, and the NetworkPolicy confinement — per [ADR-0020](0020-envoy-authorino-api-gateway.md) as amended by [ADR-0034](0034-gateway-authentication-modes.md)'s authentication modes — are unchanged by this record; Authorino keeps its existing Envoy integration.
 - **New gateways are configuration, not deployments.** Any future gateway runs under the one Envoy Gateway controller with no per-gateway proxy configuration.
 - **DNS keeps the Service path.** ExternalDNS continues to manage the public hostname's record from the Gateway's Service; the existing integration is unchanged.
@@ -55,8 +55,10 @@ The management cluster adopts **Gateway API with Envoy Gateway** as its ingress 
 
 - The `helm/hyperfleet-gateway` chart is reworked: the hand-written Envoy bootstrap (external-authorization wiring, wristband header plumbing, routing) becomes Gateway API resources.
 - The E2E framework's documented access path — port-forward to the Envoy Service on port 8000 ([ADR-0018](0018-e2e-jwt-tls-architecture.md)) — moves to the generated Service's listeners.
+- Sentinel and the Adapters call the API through the gateway's in-cluster Service on port 8000. The rework replaces that Service, and the chart rework keeps their calls on the gateway — through a stable in-cluster Service or the generated Service.
 - Envoy Gateway and its CRDs join the operator bundle — a controller and API surface to mirror and track for disconnected installs.
 - Automated issuance applies to connected deployments — HTTP-01 needs an ACME CA reachable at runtime. Disconnected installs need a different certificate path, tracked in [HYPERFLEET-1891](https://redhat.atlassian.net/browse/HYPERFLEET-1891).
+- Route-level authorization leaves a new HTTPRoute unauthenticated until its `SecurityPolicy` is attached. The chart and its validation must treat authentication as the default by coupling each API route with its policy and rejecting routes without one; the cert-manager solver route remains the deliberate unauthenticated exception.
 - The private gateway's trust is ours to run: [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866) designs CA distribution and rotation to the management clusters, and the same internal CA can serve the disconnected path ([HYPERFLEET-1891](https://redhat.atlassian.net/browse/HYPERFLEET-1891)).
 - HYPERFLEET-1534's operand list changes from the raw Envoy deployment to Envoy Gateway resources.
 - Envoy Gateway's release cadence and Gateway API maturity become upgrade inputs, pinned and upgrade-tested.
@@ -69,7 +71,7 @@ The management cluster adopts **Gateway API with Envoy Gateway** as its ingress 
 
 **Why Rejected:**
 
-- Adds a second L7 proxy in the path (controller → Envoy → API) and splits entry ownership across two components, while ADR-0020 requires a single entry point
+- Adds a second L7 proxy in the path (controller → Envoy → API) and splits entry ownership across two components, without changing ADR-0020's trust contract
 - An NGINX controller adds a second proxy technology to a stack standardized on Envoy; an Envoy-based controller adds a second Envoy fleet
 - Costs the same bundle weight as Envoy Gateway without the multi-gateway path
 
@@ -99,7 +101,7 @@ The management cluster adopts **Gateway API with Envoy Gateway** as its ingress 
 
 **Why Rejected:**
 
-- No maintained OCI DNS-01 webhook exists: the most-adopted repository has six stars and last moved seven months before this record, and Oracle's own attempt has zero adoption
+- No maintained OCI DNS-01 webhook exists: the most-adopted [community implementation](https://github.com/clicktruck/cert-manager-webhook-oci) has six stars and last moved seven months before this record, while [Oracle's implementation](https://github.com/oracle-cne/cert-manager-webhook-oci) has zero adoption
 - Adds DNS zone write access from the management cluster to the solver's IAM surface
 
 ## References
