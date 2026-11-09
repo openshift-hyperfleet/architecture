@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-06
+Last Updated: 2026-11-09
 ---
 
 # 0036 — Management-Cluster Ingress and TLS Termination
@@ -41,7 +41,7 @@ The management cluster adopts **Gateway API with Envoy Gateway** as its ingress 
   - **On the generated Service:** ADR-0024's security-rule-management mode (without it the load balancer falls back to the shared security list and reintroduces the Terraform drift ADR-0024 prevents) and the ExternalDNS hostname.
   - **On the subnet security lists:** the load balancer → worker path, which the NSG does not cover — ADR-0024 leaves it to the subnets, and the node-port range (TCP 30000-32767) must be allowed between the load balancer and worker subnets.
 - **Certificate hand-off.** cert-manager manages certificate issuance and renewal, storing the certificate in a Kubernetes TLS Secret referenced by the Gateway's HTTPS listener.
-- **Trust contract.** HTTPRoutes define request routing, while SecurityPolicy configures external authorization through Authorino — attached to the API's routes, not the whole Gateway, so the ACME solver route cert-manager creates on the HTTP listener stays reachable without authentication. Existing AuthConfig resources, header-handling behavior, and NetworkPolicy protections must be preserved.
+- **Trust contract.** HTTPRoutes define request routing, while SecurityPolicy configures external authorization through Authorino — scoped to the Gateway's HTTPS listener, so every route on 443 is authenticated by default and the ACME solver route cert-manager creates on the HTTP listener stays reachable without authentication. The HTTP listener serves only that solver route. Existing AuthConfig resources, header-handling behavior, and NetworkPolicy protections must be preserved.
 
 ## Consequences
 
@@ -58,7 +58,7 @@ The management cluster adopts **Gateway API with Envoy Gateway** as its ingress 
 - Sentinel and the Adapters call the API through the gateway's in-cluster Service on port 8000. The rework replaces that Service, and the chart rework keeps their calls on the gateway — through a stable in-cluster Service or the generated Service.
 - Envoy Gateway and its CRDs join the operator bundle — a controller and API surface to mirror and track for disconnected installs; [HYPERFLEET-1534](https://redhat.atlassian.net/browse/HYPERFLEET-1534)'s operand list changes from the raw Envoy deployment to Envoy Gateway resources
 - Automated issuance applies to connected deployments — HTTP-01 needs an ACME CA reachable at runtime. Disconnected installs need a different certificate path, tracked in [HYPERFLEET-1891](https://redhat.atlassian.net/browse/HYPERFLEET-1891).
-- Route-level authorization leaves a new HTTPRoute unauthenticated until its `SecurityPolicy` is attached. The chart and its validation must treat authentication as the default by coupling each API route with its policy and rejecting routes without one; the cert-manager solver route remains the deliberate unauthenticated exception.
+- Authorization scoped to the HTTPS listener authenticates every route on 443 by default. The HTTP listener is the deliberate unauthenticated surface, serving only the ACME solver route; the chart rework confines it and a test case verifies nothing else answers on port 80.
 - The private gateway's trust is ours to run: [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866) designs CA distribution and rotation to the management clusters, and the same internal CA can serve the disconnected path ([HYPERFLEET-1891](https://redhat.atlassian.net/browse/HYPERFLEET-1891)).
 - Envoy Gateway's release cadence and Gateway API maturity become upgrade inputs, pinned and upgrade-tested.
 
