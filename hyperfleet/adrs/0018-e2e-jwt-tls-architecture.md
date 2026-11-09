@@ -1,18 +1,20 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-09
 ---
 
 # 0018 — E2E JWT/TLS Architecture
 
+> **Superseded in part:** Since [HYPERFLEET-1843](https://redhat.atlassian.net/browse/HYPERFLEET-1843), the E2E suite uses two identity classes. Normal API operations run as a human with a `Bearer` token minted from the mock OIDC issuer in the run namespace. Kubernetes ServiceAccount tokens serve only the test adapters and the machine-auth specs. Decision items 2 and 3, Token Generation, the API Configuration example, Test Flow, Test Coverage, the service account trade-offs, and the "Mock OIDC server" alternative below describe the original flow. The Context diagram and its "Application pods receive HTTP traffic" bullet show the original HTTP-only path from Envoy to the API; the [Internal TLS](../docs/gateway-authentication-design.md#internal-tls) design replaces it. [ADR-0035](0035-e2e-mode-aware-authentication.md) records the current decision, and the [E2E client contract](../docs/gateway-authentication-design.md#e2e-client-contract) gives the scheme each identity class sends per `AUTH_MODE`. The cloud-agnostic approach, external runner, and exclusion of TLS testing remain in force.
+
 ## Context
 
-The E2E test framework ([hyperfleet-e2e](https://gitlab.cee.redhat.com/service/hyperfleet/hyperfleet-e2e)) currently runs without JWT/TLS (development mode), creating a gap between test and production environments. Before implementing security in E2E tests, critical architectural questions were answered to ensure the correct approach and avoid wasted effort.
+The E2E test framework ([hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e)) currently runs without JWT/TLS (development mode), creating a gap between test and production environments. Before implementing security in E2E tests, critical architectural questions were answered to ensure the correct approach and avoid wasted effort.
 
 **Key Decision Point from Office Hours (2026-07-01)**: The team agreed to define a **cloud-agnostic contract** for TLS and JWT handling to avoid relying on specific cloud provider behaviors (GCP, AWS, Azure, OCI).
 
-Production architecture will use infrastructure-level TLS termination:
+Production architecture will use infrastructure-level TLS termination (historical diagram: the Envoy-to-API hop is no longer HTTP-only; see [Internal TLS](../docs/gateway-authentication-design.md#internal-tls)):
 
 ```mermaid
 graph TD
@@ -67,7 +69,7 @@ ginkgo run ./test/e2e
 
 **Note:** Infrastructure pods (Sentinel/Adapters) use projected service account token volumes as documented in their component designs. E2E tests use `kubectl create token` because they run externally.
 
-**API Configuration** — Primary token validation is performed by Authorino at the gateway. The API retains in-app JWT validation as defense-in-depth:
+**API Configuration (historical — do not copy)** — In `EDGE+API`, the API validates an Authorino-issued Wristband, not the Kubernetes issuer shown here; see [Wristband](../docs/gateway-authentication-design.md#wristband) and [Authentication modes](../docs/gateway-authentication-design.md#authentication-modes) for the current configuration. Original text: primary token validation is performed by Authorino at the gateway. The API retains in-app JWT validation as defense-in-depth:
 
 ```yaml
 config:
@@ -109,7 +111,7 @@ sequenceDiagram
     E2E->>E2E: Ginkgo assertions verify response
 ```
 
-**E2E Client Changes** (in [hyperfleet-e2e](https://gitlab.cee.redhat.com/service/hyperfleet/hyperfleet-e2e) repository):
+**E2E Client Changes** (in [hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e) repository):
 
 Read token from `HYPERFLEET_API_TOKEN` environment variable and inject in `Authorization: Bearer` header for all requests.
 

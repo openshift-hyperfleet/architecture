@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-09
 ---
 
 # Gateway Authentication Design
@@ -145,16 +145,43 @@ TLS-protected hops use server TLS only. There is no mTLS: no component presents 
 
 ### E2E client contract
 
-The E2E runner runs outside the cluster and uses a dedicated ServiceAccount. In authenticated modes, it obtains a token through the Kubernetes TokenRequest API. Its configured authentication mode must match the deployment.
+The E2E runner runs outside the cluster. Its configured `AUTH_MODE` and tenant model must match the deployment. It uses two identity classes:
 
-The runner and the test adapters send the scheme the deployed mode requires:
+- **Human:** normal API operations. Each test process mints a token for one default human from `hyperfleet-mock-oidc`, the mock OIDC issuer in the run namespace, through the Kubernetes API server service proxy. It caches the token and mints a new one before the old one expires.
+- **Machine:** Kubernetes ServiceAccount tokens. The test adapters send their projected tokens; the machine-auth specs obtain tokens through the TokenRequest API.
 
-| `AUTH_MODE` | Authorization |
-|-------------|---------------|
-| `NONE` | No token |
-| `API` | `Bearer <token>` |
-| `EDGE` | `ServiceAccount <token>` |
-| `EDGE+API` | `ServiceAccount <token>` |
+Each identity class sends the scheme the deployed mode requires:
+
+| `AUTH_MODE` | Human (normal API calls) | Machine (test adapters, machine-auth specs) |
+|-------------|--------------------------|---------------------------------------------|
+| `NONE` | No token | No token |
+| `API` | `Bearer <mock OIDC token>` | `Bearer <ServiceAccount token>` |
+| `EDGE` | `Bearer <mock OIDC token>` | `ServiceAccount <token>` |
+| `EDGE+API` | `Bearer <mock OIDC token>` | `ServiceAccount <token>` |
+
+Human token flow in `EDGE+API`:
+
+```mermaid
+sequenceDiagram
+    participant R as E2E runner
+    participant K as Kubernetes API server<br/>service proxy
+    participant M as hyperfleet-mock-oidc
+    participant E as Envoy
+    participant F as Authorino
+    participant A as hyperfleet-api
+
+    R->>K: POST token request<br/>Host: in-cluster issuer host
+    K->>M: forward to /default/token
+    M-->>K: human token, iss = in-cluster issuer
+    K-->>R: human token
+    R->>E: Authorization: Bearer mock OIDC token
+    E->>F: authorization check
+    F->>F: OIDC validation: signature, issuer, audience, expiry
+    F-->>E: allow: Wristband
+    E->>A: Authorization: Bearer Wristband
+```
+
+The runner sets the `Host` header of the token request to the issuer's in-cluster host, because the issuer builds the token's `iss` claim from it. In `API` mode, the API validates the human token directly instead of Envoy and Authorino.
 
 The `hyperfleet-e2e` suite exercises client authentication through the deployed gateway and API. The `hyperfleet-infra` gateway suite tests gateway authentication and authorization behavior. The repositories maintain the detailed test coverage.
 
