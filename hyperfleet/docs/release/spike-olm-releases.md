@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-01
+Last Updated: 2026-11-09
 ---
 
 # SPIKE: OLM Bundle and Catalog Release Process
@@ -243,6 +243,21 @@ Currently `konflux-template.yaml` is used, but we want to replace it with
 - Tradeoff: this relies on a manual template-editing step — pruning the RC and repointing `replaces` before the official release.
 
 **Major version coexistence:** `release-template.yaml` carries every major version that is still supported — when `stable-v2` ships, all `stable-v1` bundles and channels remain in the template alongside the `stable-v2` entries, and `defaultChannel` moves to `stable-v2` so new installs land on the current major by default. Existing `stable-v1` clusters are never upgraded across majors automatically: moving from `stable-v1` to `stable-v2` is an explicit decision by the user, made by switching the OLM `Subscription` (OLM classic) or `ClusterExtension` (OLM v1).
+
+**Cross-major upgrade path:** The channel switch only produces an upgrade if the `stable-v2` channel declares an edge from the installed v1 bundle. The first `stable-v2` entry carries a `skipRange` covering all v1 bundles, so a single edge serves every installed `stable-v1` version — no per-version `replaces`/`skips` enumeration against v1 releases is needed:
+
+```yaml
+- schema: olm.channel
+  name: stable-v2
+  package: hyperfleet-operator
+  entries:
+    - name: hyperfleet-operator.v2.0.0
+      skipRange: ">=1.0.0 <2.0.0"
+```
+
+The `skipRange` only makes the v1 → v2.0.0 edge *available*; OLM never traverses it until the user switches the channel, so the explicit-decision requirement is preserved. Subsequent `stable-v2` releases chain via `replaces` within the channel as usual, and the `skipRange` stays on `v2.0.0` indefinitely so clusters on any v1 patch release can still make the jump.
+
+When the second major version is released - RC upgrade testing MUST include a cross-major scenario: install the latest `stable-v1` bundle, switch the `Subscription`/`ClusterExtension` channel from `stable-v1` to `stable-v2`, and verify the resulting InstallPlan resolves to the head of `stable-v2` — `v2.0.0`.
 
 ##### Alternative Considered
 
@@ -645,7 +660,7 @@ Once the [Create a fbc application and component](#1-create-hyperfleet-fbc-appli
              value: $(params.TAG_REF)
    ```
 
-4. Update `BUILD_ARGS` to include `APP_VERSION=${VERSION}`
+4. Update `BUILD_ARGS` to include `APP_VERSION=$(tasks.parse-tag.results.VERSION`
 
 ### `konflux-release-data` Repository
 
