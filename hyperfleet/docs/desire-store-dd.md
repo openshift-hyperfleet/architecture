@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-06
+Last Updated: 2026-11-09
 ---
 
 # Desire Store Detailed Design
@@ -30,6 +30,7 @@ Last Updated: 2026-11-06
     - [Operator and Gateway Changes](#operator-and-gateway-changes)
 - [API Contract and Runtime Behavior](#api-contract-and-runtime-behavior)
   - [API Operations](#api-operations)
+  - [Owner Binding](#owner-binding)
   - [REST API (v1)](#rest-api-v1)
     - [Desire Identifier](#desire-identifier)
     - [Wire Schemas](#wire-schemas)
@@ -56,7 +57,7 @@ Last Updated: 2026-11-06
 
 ## Overview
 
-This document captures the detailed design for [HYPERFLEET-1645](https://redhat.atlassian.net/browse/HYPERFLEET-1645), covering caller permissions, Applier identity and partition binding, the gateway-to-API Wristband contract, the AuthConfig structure, the REST v1 API contract, consistency, and failure behavior. The [Desire Store HLD](desire-store-hld.md) provides the system context and high-level architectural decisions.
+This document captures the detailed design for [HYPERFLEET-1645](https://redhat.atlassian.net/browse/HYPERFLEET-1645), covering caller permissions, Applier identity and partition binding, the gateway-to-API Wristband contract, the AuthConfig structure, the REST v1 API contract, consistency, and failure behavior. The [Desire Store HLD](desire-store-hld.md) provides the system context and high-level architectural decisions. [HYPERFLEET-1871](https://redhat.atlassian.net/browse/HYPERFLEET-1871) amends it with the [owner binding](#owner-binding) and the [delete recovery rule](#cas--version-semantics).
 
 For system context and high-level interactions, see the [topology diagram](desire-store-hld.md#architecture) and [Applier request-flow diagram](desire-store-hld.md#request-flow).
 
@@ -310,7 +311,30 @@ The Desire Store API exposes these transport-neutral operations:
 
 The API derives the partition from the Wristband's trusted partition claim, never from a normal client request. All callers address the target partition in the route path; [Partition Selection](#partition-selection) defines the addressing and per-caller rules.
 
-The sweeper is exempt from the owner-collision check on its writes and deletes, per the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md). Sweeper-created `DeleteDesire` records carry the sweeper's identity as `owner`, and the sweeper removes them after the applier confirms deletion, so the transient record does not block a future owner.
+### Owner Binding
+
+A desire's `owner` is the exact `hf_identity` of the caller that writes it. That value is the caller's service-account subject from the Wristband ([Fleet-Scoped Caller AuthConfig](#fleet-scoped-caller-authconfig)), for example `system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter`. The API sets `owner` from the authenticated caller; clients never send it:
+
+- **Writes:** The API stores the caller's `hf_identity` as the record's `owner`. Write bodies carry no `owner` field, and a body that includes one returns 400.
+- **Deletes:** The API uses `hf_identity` as the caller's owner, as it does on writes.
+- **Owner collision:** A write or delete on an existing record returns 409 owner conflict when the record's stored `owner` differs from `hf_identity`.
+- **Sweeper exemption:** A request is exempt only when `hf_identity` is the sweeper's service-account subject.
+- **Caller's own identity:** Callers still compare a record's `owner` with their own identity before they act on a record they read, as the sweeper guard in [CAS / Version Semantics](#cas--version-semantics) does. They take that identity from the `sub` claim of the service-account token they present, which is the value Authorino sets as `hf_identity`, never from configuration.
+
+The sweeper is exempt from the owner-collision check on its writes and deletes, per the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md). The exemption lets it remove `DeleteDesire` records that adapters own, including the confirmed records adapters keep after a delete ([HYPERFLEET-1841](spike-desires-lost-mid-deletion.md)). The `DeleteDesire` records it creates carry the sweeper's `hf_identity` as `owner`, like any other caller's writes. The sweeper removes them after the applier confirms deletion, so the transient record does not block a future owner. The exemption covers this confirmed cleanup, not blind version-only retries: its deletes carry `version` like any other delete, and after a timed-out delete it follows the sweeper guard in [CAS / Version Semantics](#cas--version-semantics).
+
+**Alternatives considered:**
+
+- **Validate a submitted `owner` against `hf_identity` (403 on mismatch):** rejected. It grants nothing the Wristband does not, yet it duplicates the caller's identity in every write body while `DELETE` relies on the Wristband alone. Its only benefit is catching a client whose own identity is misconfigured. Taking that identity from the token's `sub` claim removes that misconfiguration instead.
+- **Keep the adapter name as `owner` and map it from the service-account name:** rejected. It couples the API to the operator's `<name>-hyperfleet-adapter` naming ([Operator and Gateway Changes](#operator-and-gateway-changes)). A separate owner claim in the Wristband would need a gateway change.
+- **Trust a client-supplied `owner`:** rejected. One adapter could write or delete as another, which defeats reject-on-collision (decision 1a in the [Desire Identity Spike](spike-desire-identity-ownership.md)).
+
+**Trade-off:** Renaming an adapter's service account or namespace changes its `owner`. Its existing desires then collide with 409 owner conflict until they are cleared. Renaming an adapter has the same effect today.
+
+**Acceptable because:**
+
+- String equality with `hf_identity` needs no naming convention and no extra Wristband claim, and Authorino already sets the claim.
+- The Desire Store is rebuildable, so clearing the old owner's desires after a rename loses no source of truth.
 
 ### REST API (v1)
 
@@ -324,9 +348,9 @@ The base path is `/api/hyperfleet/desire-store/v1`, and the routes follow the pa
 | `GET /partitions/{partition}/desires/{desire-id}` | Get desire |
 | `PUT /partitions/{partition}/desires/{desire-id}` | Write desire |
 | `PUT /partitions/{partition}/desires/{desire-id}/status` | Write status |
-| `DELETE /partitions/{partition}/desires/{desire-id}` | Delete desire |
+| `DELETE /partitions/{partition}/desires/{desire-id}?version={version}` | Delete desire |
 
-Query parameters: `type` filters by desire type (`apply`, `delete`, `read`); omitted returns all types. `limit` caps the page size, with a default and maximum defined in the OpenAPI specification — values above the maximum are clamped or rejected with 400, as that specification defines.
+Query parameters: `type` filters by desire type (`apply`, `delete`, `read`); omitted returns all types. `limit` caps the page size, with a default and maximum defined in the OpenAPI specification — values above the maximum are clamped or rejected with 400, as that specification defines. `version` is required on delete and carries the desire's current version ([CAS / Version Semantics](#cas--version-semantics)).
 
 #### Desire Identifier
 
@@ -350,7 +374,7 @@ The desire resource returned by Get:
   "resource": "deployments",
   "namespace": "kube-system",
   "name": "coredns",
-  "owner": "cluster-adapter",
+  "owner": "system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter",
   "resource_id": "clusters/cls-123",
   "kubeContent": { "...": "rendered Kubernetes manifest" },
   "status": { "...": "applier-written status" },
@@ -363,7 +387,8 @@ The desire resource returned by Get:
   - This is the references-only rule the [transport evaluation](spike-desire-store-transport.md) makes load-bearing; the Applier therefore applies from the GET response, not the list.
   - Carry `next_cursor`, omitted on the last page ([Pagination and Consistency](#pagination-and-consistency)).
 - **Write-desire requests:**
-  - Carry `owner`, `resource_id`, `kubeContent`, and `version` only; write bodies carry no identity fields, and the path is the sole identity source.
+  - Carry `resource_id`, `kubeContent`, and `version` only; write bodies carry no identity or ownership fields, and the path is the sole identity source.
+  - `owner` is set by the API from the caller's `hf_identity` and appears only in responses ([Owner Binding](#owner-binding)).
   - An omitted or zero `version` means create; a provided `version` means update ([CAS / Version Semantics](#cas--version-semantics)).
 - **Write-status requests:**
   - Carry only the `status` object.
@@ -378,11 +403,11 @@ The implementation story specifies these schemas in an OpenAPI document first, f
 | 200 OK | Get and list responses; successful desire update |
 | 201 Created | Desire created by a write |
 | 204 No Content | Successful delete or status write |
-| 400 Bad Request | Malformed request: invalid identifier encoding, query parameters, or JSON |
+| 400 Bad Request | Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete; `owner` in a write body |
 | 401 Unauthorized | Missing, invalid, or expired Wristband |
 | 403 Forbidden | Caller class not permitted for the operation, or path partition outside the caller's authorization |
 | 404 Not Found | Desire absent on a get, update, status write, or delete |
-| 409 Conflict | Version mismatch, create on an existing desire, or owner collision |
+| 409 Conflict | Version mismatch on a write or delete, create on an existing desire, or owner collision |
 | 422 Unprocessable Entity | Well-formed JSON that fails semantic validation, such as kubeContent whose Kubernetes identity does not match the path |
 | 429 Too Many Requests | Rate limited |
 | 500 / 503 | Internal error; 503 when the API is degraded |
@@ -420,7 +445,35 @@ Rate-limit errors add a `Retry-After` header and the standard's [rate-limit prob
 
 - **Desired-state writes (Write desire, all desire types):** The Adapter sends the current version. The API updates only when it matches, then increases it. A mismatch returns a version-conflict error; the Adapter reads the current record and retries.
 - **Status writes (Write status):** These do not require or change the desired-state version used by desired-state writes. An Applier can report status while an Adapter updates the desired state without either write failing because of the other. This preserves the [HYPERFLEET-1511](https://redhat.atlassian.net/browse/HYPERFLEET-1511) decision.
+- **Deletes (Delete desire):** The caller sends the desire's current version as the required `version` query parameter. The API deletes only when it matches and returns 204. A mismatch returns a 409 version-conflict error, the same problem type as on writes. An absent desire returns 404. This matches the shared store contract, where every delete requires the exact version.
 - **Timed-out writes:** If a write times out, the client reads the desire to check whether the requested change was applied. If it matches, the client treats the write as successful. Otherwise, it re-evaluates and retries. Status writes are idempotent because they update only status and do not change the desired-state version.
+- **Timed-out deletes:** If a delete times out, the client reads the desire:
+  - Absent: the delete succeeded.
+  - Present at the same version: the delete did not happen, or the desire was deleted and created again at the same version (see the trade-off below); the client retries the conditional `DELETE`.
+  - Present at a different version: the desire changed or was recreated; the client does not retry and re-evaluates instead.
+
+  For an Adapter, retrying the conditional `DELETE` directly gives the same outcomes: 204, 404 treated as success, and 409 for a changed desire or another owner's record.
+
+- **Sweeper guard on timed-out deletes:** The sweeper is exempt from the owner-collision check, so the API does not stop its retry from deleting another owner's record. After a timed-out delete, the sweeper re-reads the desire and retries only when the stored `owner` is still its own `hf_identity` and the version matches. When the `owner` differs, another owner may have created the desire again, so the sweeper does not retry; it re-evaluates the record as it does any other, and the new owner's record stays in place. The guard's read and the retry are separate requests, so the guard narrows the cross-owner case but does not close it (see the trade-off below).
+
+**Trade-off:** Versions restart at 1 for each record, and once every record for a target is deleted, any owner can create it again at version 1. A delete therefore cannot always tell a recreated desire from the original:
+
+- **Same owner:** If the caller itself creates the desire again at the version it read, the retried delete removes the new record.
+- **Another owner, sweeper only:** The sweeper's read and its delete are separate requests, and the API skips the owner check for the sweeper. If the original delete commits after the guard's read and another owner creates the desire at the same version before the retry, the retry removes that owner's record. The same window exists between any sweeper read and the delete that follows it.
+
+**Acceptable because:**
+
+- An Adapter's retry cannot remove another owner's record: the API checks it against the stored `owner` ([Owner Binding](#owner-binding)) and returns 409 owner conflict. Only the sweeper can remove another owner's record, and only in the window above. That window needs a delete and a create by a different owner, both at the same desire identity, between two sweeper requests.
+- Every lost record is rewritten by its owner. The Desire Store is rebuildable, so an Adapter writes a missing `ApplyDesire` again on its next reconcile, and it requests a missing unconfirmed `DeleteDesire` again instead of treating its absence as a completed delete ([Adapter Deletion Flow Design](../components/adapter/framework/lifecycle/adapter-lifecycle-delete-design.md#remote-transport-resources-9)).
+
+**Alternatives considered:**
+
+- **Client-side read rule with an unconditional `DELETE`:** rejected. A recreate that lands between the read and the retry gets deleted at any version, and the shared store conformance case that rejects a stale-version delete cannot pass over HTTP.
+- **`If-Match` header with 412 Precondition Failed:** rejected. It adds a second conflict status and an ETag that this API does not otherwise use, while the store reports both as the same version conflict.
+- **Globally unique versions:** rejected. The shared store conformance suite requires version 1 on create and an increase of 1 per update.
+- **`Idempotency-Key` header on deletes:** rejected. The API would store each key's result with the delete and return it on a retry, so a timed-out delete's retry could not remove a recreated record. That adds deduplication state with its own expiry to a store that is otherwise rebuildable. It also does not cover the sweeper's window: the sweeper decides from a read and then sends a new request with a new key.
+- **Per-incarnation `uid` precondition:** the API assigns a new `uid` on every create, and a delete carries the `uid` it read. A recreated desire never matches, so this closes both the retry case and the sweeper's read-to-delete window. It is rejected for v1 because the shared store delete operations take no parameter for it: adding one changes the store interface, every store implementation, and the conformance suite in `hyperfleet-applier`, to prevent a loss that the owner's next reconcile repairs. As an optional query parameter it can be added later without breaking v1 clients, and it is the preferred fix if records lost to these windows are observed.
+- **Expected-owner precondition on sweeper deletes:** the sweeper sends the `owner` it read, and the API checks it atomically with the version. This would close the cross-owner window. It is rejected for v1 because it adds a second delete precondition to the wire contract, and the loss it prevents is already repaired on the owner's next reconcile. Revisit it if records lost to this window are observed; the owner-collision exemption means the owner-conflict metric does not count them.
 
 ### Pagination and Consistency
 
