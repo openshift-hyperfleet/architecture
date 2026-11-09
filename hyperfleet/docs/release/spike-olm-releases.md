@@ -242,6 +242,8 @@ Currently `konflux-template.yaml` is used, but we want to replace it with
 - The official catalog image is then built from that RC-free template, so the official image only ever contains the validated bundles.
 - Tradeoff: this relies on a manual template-editing step — pruning the RC and repointing `replaces` before the official release.
 
+**Major version coexistence:** `release-template.yaml` carries every major version that is still supported — when `stable-v2` ships, all `stable-v1` bundles and channels remain in the template alongside the `stable-v2` entries, and `defaultChannel` moves to `stable-v2` so new installs land on the current major by default. Existing `stable-v1` clusters are never upgraded across majors automatically: moving from `stable-v1` to `stable-v2` is an explicit decision by the user, made by switching the OLM `Subscription` (OLM classic) or `ClusterExtension` (OLM v1).
+
 ##### Alternative Considered
 
 **Multi-channel (candidate and stable):** Define both `candidate-vX` and `stable-vX` per major version.
@@ -407,9 +409,9 @@ entries:
       - name: hyperfleet-operator.v1.0.1-rc1
         replaces: hyperfleet-operator.v1.0.0
   - schema: olm.bundle
-    image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<v1.0.0-digest>
+    image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<1.0.0-digest>
   - schema: olm.bundle
-    image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<v1.0.1-rc1-digest>
+    image: quay.io/redhat-services-prod/hyperfleet-tenant/hyperfleet/hyperfleet-operator-bundle@sha256:<1.0.1-rc1-digest>
 ```
 
 #### Steps for upgrade testing
@@ -523,46 +525,25 @@ Once RC verification has been completed and we decide to promote version `v1.0.1
 
 ### `hyperfleet-operator` Repository
 
-#### 1. Create a bundle tag pipeline - [HYPERFLEET-1764](https://redhat.atlassian.net/browse/HYPERFLEET-1764)
+#### 1. Amend the bundle tag pipeline
 
-Add `hyperfleet-operator-bundle-tag.yaml` to `.tekton/`. This pipeline triggers
-on release tag push:
+As part of [HYPERFLEET-1764](https://redhat.atlassian.net/browse/HYPERFLEET-1764) we implemented the bundle tag pipeline. The below modifications need to be made in accordance with this updated doc.
 
-The bundle-tag pipeline requires these changes:
-
-1. Annotations
+1. Update `BUILD_ARGS` to remove the candidate channel reference based on the decision [Decision to have a single stable channel](#decision-2)
 
    ```yaml
-      apiVersion: tekton.dev/v1
-      kind: PipelineRun
-      metadata:
-        annotations:
-          build.appstudio.openshift.io/repo: https://github.com/openshift-hyperfleet/hyperfleet-operator?rev={{revision}}
-          build.appstudio.redhat.com/commit_sha: '{{revision}}'
-          build.appstudio.redhat.com/target_branch: '{{target_branch}}'
-          pipelinesascode.tekton.dev/cancel-in-progress: "false"
-          pipelinesascode.tekton.dev/max-keep-runs: "3"
-          # Trigger on bundle release tags (e.g., bundle-v1.0.0-rc1, bundle-v1.0.0)
-          pipelinesascode.tekton.dev/on-cel-expression: |
-            event == "push"
-            && target_branch.matches("^refs/tags/bundle-v[0-9]+\\.[0-9]+\\.[0-9]+(-rc[0-9]+)?$")
+   - name: BUILD_ARGS
+     value:
+     - $(params.build-args[*])
+     - APP_VERSION=$(tasks.parse-tag.results.VERSION)
+     - KUSTOMIZE_VARIANT=config/manifests/prod
+     - BUNDLE_VERSION=$(tasks.parse-tag.results.VERSION)
+     - CHANNELS=stable-$(tasks.parse-tag.results.MAJOR_VERSION)
+     - DEFAULT_CHANNEL=stable-$(tasks.parse-tag.results.MAJOR_VERSION)
+     - VALIDATE_RELATED_IMAGES=true
    ```
 
-2. Set `BUILD_ARGS`
-
-   ```yaml
-    - name: BUILD_ARGS
-      value:
-      - $(params.build-args[*])
-      - APP_VERSION=$(tasks.parse-tag.results.VERSION)
-      - KUSTOMIZE_VARIANT=config/manifests/prod
-      - BUNDLE_VERSION=$(tasks.parse-tag.results.VERSION)
-      - CHANNELS=stable-$(tasks.parse-tag.results.MAJOR_VERSION)
-      - DEFAULT_CHANNEL=stable-$(tasks.parse-tag.results.MAJOR_VERSION)
-      - VALIDATE_RELATED_IMAGES=true
-   ```
-
-3. `parse-tag` task to extract values from git-tag
+2. Update the `parse-tag` task to extract just the major and version from the git tag
 
    ```yaml
    pipelineSpec:
@@ -579,7 +560,7 @@ The bundle-tag pipeline requires these changes:
           - name: VERSION
             description: Semantic version extracted from git tag ref
           - name: MAJOR_VERSION
-            description: Semantic version extracted from git tag ref
+            description: Major version (e.g. v1) extracted from git tag ref
           steps:
           - name: extract
             image: registry.access.redhat.com/ubi9-minimal:latest
@@ -597,10 +578,10 @@ The bundle-tag pipeline requires these changes:
 #### 2. Create a catalog tag pipeline - [HYPERFLEET-1884](https://redhat.atlassian.net/browse/HYPERFLEET-1884)
 
 Add `hyperfleet-operator-fbc-tag.yaml` to `.tekton/`. This pipeline triggers
-on a specific `tag` push of `catalog-vX.Y.Z-rcN` (candidate) or `catalog-vX.Y.Z`
-(stable)
+on a specific `tag` push of `catalog-vX.Y.Z-rcN` (RC) or `catalog-vX.Y.Z`
+(final)
 
-The catalog-tag pipeline requires these changes:
+Once the [Create a fbc application and component](#1-create-hyperfleet-fbc-application-and-component---hyperfleet-1770) are created, we have to create a `hyperfleet-operator-fbc-tag.yaml` catalog pipeline that requires these changes:
 
 1. Annotations
 
@@ -631,6 +612,40 @@ The catalog-tag pipeline requires these changes:
        - yaml
        - catalog/release-template.yaml
    ```
+
+3. Add a `parse-tag` task
+
+   ```yaml
+   pipelineSpec:
+     tasks:
+     - name: parse-tag
+       params:
+       - name: TAG_REF
+         value: $(params.target-branch)
+       taskSpec:
+         params:
+         - name: TAG_REF
+           type: string
+         results:
+         - name: VERSION
+           description: Semantic version extracted from git tag ref
+         - name: MAJOR_VERSION
+           description: Major version (e.g. v1) extracted from git tag ref
+         steps:
+         - name: extract
+           image: registry.access.redhat.com/ubi9-minimal:latest
+           script: |
+             #!/usr/bin/env bash
+             VERSION="${TAG_REF#refs/tags/catalog-v}"
+             MAJOR_VERSION="v${VERSION%%.*}"
+             printf '%s' "$VERSION" > "$(results.VERSION.path)"
+             printf '%s' "$MAJOR_VERSION" > "$(results.MAJOR_VERSION.path)"
+           env:
+           - name: TAG_REF
+             value: $(params.TAG_REF)
+   ```
+
+4. Update `BUILD_ARGS` to include `APP_VERSION=${VERSION}`
 
 ### `konflux-release-data` Repository
 
