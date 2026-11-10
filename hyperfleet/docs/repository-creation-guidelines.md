@@ -96,7 +96,9 @@ Navigate to: **Settings → Rules → Rulesets → New branch ruleset**
 
 The ruleset gates the *shape* of a merge, not who signed off. With zero required approvals GitHub would itself accept a pull request nobody approved, and the extra-approval setting above has no effect at that count. The approval requirement comes from Prow instead: Tide merges only a pull request that carries the `lgtm` and `approved` labels, which the `OWNERS`-driven plugins set from an area approver, and only once the presubmit contexts are green. The ruleset has no bypass actors, so it applies to organisation admins as well.
 
-Required status checks are deliberately absent from the ruleset. CI gating is Tide's job, against the Prow contexts the presubmits produce; duplicating them here would make a broken job block every merge until someone edits the ruleset.
+The ruleset carries no required status checks, and there is a second mechanism that does: Prow's branch protector. The `branch-protection` section of [`core-services/prow/02_config/_config.yaml`](https://github.com/openshift/release/blob/main/core-services/prow/02_config/_config.yaml) enables `protect-tested-repos`, so once a repository has jobs the protector adds classic branch protection to `main` with a required context per presubmit — `ci/prow/validate-commits`, `ci/prow/lint`, `ci/prow/unit`, and `ci/prow/presubmits-integration` where that step exists — with `strict: false` and no required reviews. Duplicating those contexts in the ruleset would mean two lists to keep in sync, and a job renamed in `openshift/release` would block every merge until someone edited the ruleset.
+
+The protector runs on a schedule, so a repository that has just merged its Prow configuration still has an unprotected `main` for a while. Until the protector has run, `gh api repos/openshift-hyperfleet/<repo>/branches/main/protection` answers `Branch not protected`, and a manual merge goes through with failing presubmits.
 
 ---
 
@@ -219,6 +221,7 @@ Each item names the evidence to check. A green checklist means the repository is
 - [ ] The ruleset blocks deletion and force pushes
 - [ ] The ruleset requires a pull request and dismisses stale reviews on push
 - [ ] The ruleset sets zero required approvals and no required status checks, and has no bypass actors, as in the table above
+- [ ] `main` reports classic branch protection with the `ci/prow/*` contexts, which Prow's branch protector applies after the Prow configuration merges
 - [ ] The approval gate is Prow's: Tide reports `Needs approved, lgtm labels` on a pull request that has neither
 
 ### Team Access
