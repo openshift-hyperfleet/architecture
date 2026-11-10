@@ -88,11 +88,13 @@ Navigate to: **Settings → Rules → Rulesets → New branch ruleset**
 | --------- | ----- | --- |
 | Required approvals | `0` | The gate is who approves, not how many. See [How a merge works](owners.md#how-a-merge-works) |
 | Dismiss stale reviews on push | enabled | A push after approval needs a fresh look |
-| Require approval for unattributed changes | enabled | Blocks a merge where no approver signed off |
 | Require review from code owners | disabled | Ownership is enforced by Prow's `OWNERS` files, not by GitHub |
 | Require approval of the most recent push | disabled | The approver is not necessarily the last pusher |
+| Require extra approval for unattributed pull requests | left at the GitHub default | It adds one approval on top of the configured count for a pull request opened by an app identity, and does nothing at a count of zero |
 | Require conversation resolution | disabled | Review threads are a review concern, not a merge gate |
 | Allowed merge methods | merge, squash, rebase | Tide squashes on merge; the other methods stay available for manual work |
+
+The ruleset gates the *shape* of a merge, not who signed off. With zero required approvals GitHub would itself accept a pull request nobody approved, and the extra-approval setting above has no effect at that count. The approval requirement comes from Prow instead: Tide merges only a pull request that carries the `lgtm` and `approved` labels, which the `OWNERS`-driven plugins set from an area approver, and only once the presubmit contexts are green. The ruleset has no bypass actors, so it applies to organisation admins as well.
 
 Required status checks are deliberately absent from the ruleset. CI gating is Tide's job, against the Prow contexts the presubmits produce; duplicating them here would make a broken job block every merge until someone edits the ruleset.
 
@@ -141,7 +143,7 @@ Konflux builds and releases the artifacts. Two Applications exist: `hyperfleet` 
 | Image | `<name>-push.yaml`, `<name>-tag.yaml` | `<name>` in `hyperfleet` | `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/<name>` |
 | Chart | `<name>-chart-push.yaml`, `<name>-chart-tag.yaml` | `<name>-chart` in `hyperfleet-charts` | `quay.io/redhat-user-workloads/hyperfleet-tenant/hyperfleet/<name>-chart` |
 
-The PipelineRuns build on push to `main` and on version tags only. They do not build pull requests: PR validation belongs to Prow, so an empty check list on a PR is expected even after the Component works.
+The PipelineRuns build on push to `main` and on version tags only, so they add no check to a pull request. PR validation is Prow's: a pull request shows the presubmit contexts from the Prow section above and nothing from Konflux. An empty check list means the Prow configuration is missing, not that Konflux has not been wired up yet.
 
 Registration is not a click in the Konflux UI: it is an MR against the `releng/konflux-release-data` GitLab repository with a Component and an `ImageRepository` per artifact, the kustomization entry, the regenerated output, and the ReleasePlanAdmission component mapping. The files and their locations are listed in the [release configuration map](release/operations/configuration-map.md); the naming and pipeline conventions are in the [Konflux Release Pipeline Design](release/konflux-release-pipeline-design.md).
 
@@ -215,8 +217,9 @@ Each item names the evidence to check. A green checklist means the repository is
 - [ ] `main` is the default branch
 - [ ] A ruleset named `hyperfleet-main-protection` is active on the default branch
 - [ ] The ruleset blocks deletion and force pushes
-- [ ] The ruleset requires a pull request, dismisses stale reviews, and requires approval for unattributed changes
-- [ ] The ruleset sets zero required approvals and no required status checks, as in the table above
+- [ ] The ruleset requires a pull request and dismisses stale reviews on push
+- [ ] The ruleset sets zero required approvals and no required status checks, and has no bypass actors, as in the table above
+- [ ] The approval gate is Prow's: Tide reports `Needs approved, lgtm labels` on a pull request that has neither
 
 ### Team Access
 
