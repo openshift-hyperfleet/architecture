@@ -6,7 +6,7 @@ Last Updated: 2026-11-10
 
 # 0035 — Mode-Aware E2E Authentication
 
-> **Superseded in part.** [ADR-0037](0037-e2e-human-and-machine-identities.md) limits the service account token choice below to machine identities; normal API calls now run as a human with a token from the mock OIDC issuer. The mode-aware scheme selection remains in force. The text below is unchanged from the original decision.
+> **Superseded in part.** [ADR-0037](0037-e2e-human-and-machine-identities.md) limits the service account token choice below to machine identities; in `API`, `EDGE` and `EDGE+API`, normal API calls now run as a human with a token from the mock OIDC issuer. `NONE` still sends no token and needs no issuer. The mode-aware scheme selection remains in force. The text below is unchanged from the original decision.
 
 ## Context
 
