@@ -138,7 +138,7 @@ C7 and C8 do not assert global handler order across replicas. `reserveRange` let
 
 | ID | Scenario and assertion | Layer | Environment | Entry point | Owner | Status |
 |---|---|---|---|---|---|---|
-| L1 | Retry scope: one of two subscriptions fails: only it reaches the cap, the other delivers; two sequences count separately; two topics with one subscription ID and the same sequence number: a failure on one topic leaves the other topic's attempts at zero | Integration | testcontainers | hyperfleet-broker `make test-integration` | HYPERFLEET-1876 | new, G2 |
+| L1 | Retry scope: both subscriptions fail on the same event: one reaches the cap and is skipped, the other fails fewer times than the cap and still delivers, so each has its own budget; two sequences count separately; two topics with one subscription ID and the same sequence number: a failure on one topic leaves the other topic's attempts at zero | Integration | testcontainers | hyperfleet-broker `make test-integration` | HYPERFLEET-1876 | new, G2 |
 | L2 | Skip and advance: at the cap the cursor passes the sequence, the error channel gets one error, the next event arrives | Integration | testcontainers | hyperfleet-broker `make test-integration` | HYPERFLEET-1876 | new, G2 |
 | L3 | Failure inside a batch: `batch_size` 10, fifth event fails: retry follows `retry_backoff`, not the full lease | Integration | testcontainers | hyperfleet-broker `make test-integration` | HYPERFLEET-1876 | new, G2, G5 |
 | L4 | Empty topic, no pending range: all rows expired, publish races reconciliation: reconciliation holds the `broker_topic_seq` row lock, and the next published event is the first delivered | Integration | testcontainers | hyperfleet-broker `make test-integration` | HYPERFLEET-1876 | new, G3 |
