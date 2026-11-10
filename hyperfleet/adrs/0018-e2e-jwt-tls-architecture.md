@@ -6,7 +6,12 @@ Last Updated: 2026-11-10
 
 # 0018 — E2E JWT/TLS Architecture
 
-> **Superseded in part.** [ADR-0035](0035-e2e-mode-aware-authentication.md) replaces the client flow, the fixed gateway-header contract and the HTTP-only path from Envoy to the API. [ADR-0037](0037-e2e-human-and-machine-identities.md) replaces the service account token choice for normal API calls and reverses the rejection of a mock OIDC server. The cloud-agnostic approach, external runner and exclusion of TLS testing remain in force. Neither record changes the text below.
+> **Superseded in part.** The text below is the original decision, kept for history. Where it conflicts with the records below, they take precedence:
+>
+> - [ADR-0035](0035-e2e-mode-aware-authentication.md) replaces the client flow, the fixed gateway-header contract and the HTTP-only path from Envoy to the API.
+> - [ADR-0037](0037-e2e-human-and-machine-identities.md) replaces the service account token choice for normal API calls and reverses the rejection of a mock OIDC server.
+>
+> The [E2E client contract](../docs/gateway-authentication-design.md#e2e-client-contract) gives the current scheme for each `AUTH_MODE`. The cloud-agnostic approach, external runner and exclusion of TLS testing remain in force.
 
 ## Context
 

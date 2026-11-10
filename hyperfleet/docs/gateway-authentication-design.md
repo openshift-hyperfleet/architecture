@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-09
+Last Updated: 2026-11-10
 ---
 
 # Gateway Authentication Design
@@ -10,7 +10,7 @@ Last Updated: 2026-11-09
 
 **Implements**: [ADR-0034: Gateway Authentication Modes and Wristband Trust](../adrs/0034-gateway-authentication-modes.md)
 
-**Related**: [ADR-0035: Mode-Aware E2E Authentication](../adrs/0035-e2e-mode-aware-authentication.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
+**Related**: [ADR-0035: Mode-Aware E2E Authentication](../adrs/0035-e2e-mode-aware-authentication.md), [ADR-0037: Human and Machine Identities in E2E Authentication](../adrs/0037-e2e-human-and-machine-identities.md), [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md), [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
 
 ## Table of Contents
 
@@ -145,10 +145,10 @@ TLS-protected hops use server TLS only. There is no mTLS: no component presents 
 
 ### E2E client contract
 
-The E2E runner runs outside the cluster. Its configured `AUTH_MODE` and tenant model must match the deployment. It uses two identity classes:
+The E2E runner runs outside the cluster. Its `AUTH_MODE` and tenant model must match the deployment. It uses two identity classes ([ADR-0037](../adrs/0037-e2e-human-and-machine-identities.md)):
 
-- **Human:** normal API operations. Each test process mints a token for one default human from `hyperfleet-mock-oidc`, the mock OIDC issuer in the run namespace, through the Kubernetes API server service proxy. Mock tokens last 600 seconds. The runner reuses a token until 30 seconds before it expires, its HTTP timeout, so a token cannot expire during a request.
-- **Machine:** Kubernetes ServiceAccount tokens. The test adapters send their projected tokens; the machine-auth specs obtain tokens through the TokenRequest API.
+- **Human:** normal API operations. Each test process mints a token for one default human from `hyperfleet-mock-oidc`, the Mock OIDC Issuer in the E2E Run Namespace. It reaches the issuer through the Kubernetes API server service proxy. Mock tokens last 600 seconds. The runner gets a new token 30 seconds before the old one expires. 30 seconds is the runner's HTTP timeout, so a token cannot expire during a request.
+- **Machine:** Kubernetes service account tokens. The test adapters send their projected tokens; the machine-auth specs obtain tokens through the TokenRequest API.
 
 Each identity class sends the scheme the deployed mode requires:
 
@@ -207,5 +207,6 @@ The `hyperfleet-e2e` suite exercises client authentication through the deployed 
 - [ADR-0018: E2E JWT/TLS Architecture](../adrs/0018-e2e-jwt-tls-architecture.md)
 - [ADR-0034: Gateway Authentication Modes and Wristband Trust](../adrs/0034-gateway-authentication-modes.md)
 - [ADR-0035: Mode-Aware E2E Authentication](../adrs/0035-e2e-mode-aware-authentication.md)
+- [ADR-0037: Human and Machine Identities in E2E Authentication](../adrs/0037-e2e-human-and-machine-identities.md)
 - [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md)
 - [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md)
