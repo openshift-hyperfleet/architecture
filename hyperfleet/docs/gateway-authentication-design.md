@@ -147,7 +147,7 @@ TLS-protected hops use server TLS only. There is no mTLS: no component presents 
 
 The E2E runner runs outside the cluster. Its configured `AUTH_MODE` and tenant model must match the deployment. It uses two identity classes:
 
-- **Human:** normal API operations. Each test process mints a token for one default human from `hyperfleet-mock-oidc`, the mock OIDC issuer in the run namespace, through the Kubernetes API server service proxy. It caches the token and mints a new one before the old one expires.
+- **Human:** normal API operations. Each test process mints a token for one default human from `hyperfleet-mock-oidc`, the mock OIDC issuer in the run namespace, through the Kubernetes API server service proxy. Mock tokens last 600 seconds. The runner reuses a token until 30 seconds before it expires, its HTTP timeout, so a token cannot expire during a request.
 - **Machine:** Kubernetes ServiceAccount tokens. The test adapters send their projected tokens; the machine-auth specs obtain tokens through the TokenRequest API.
 
 Each identity class sends the scheme the deployed mode requires:
