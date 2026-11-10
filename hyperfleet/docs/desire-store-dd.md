@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-09
+Last Updated: 2026-11-10
 ---
 
 # Desire Store Detailed Design
@@ -269,7 +269,7 @@ Their AuthConfig differs from a remote-Applier binding's in four ways:
 - **Host:** uses the shared hostname `desire-store.hub.example.com`.
 - **Authentication:** validates Hub service-account tokens using Kubernetes TokenReview with the `hyperfleet-desire-store` audience.
 - **Authorization:** allows the deployed adapters' and the sweeper's service-account subjects.
-- **Wristband claims:** sets `hf_caller_class` to `fleet-scoped`, `hf_identity` to the caller's service-account subject, and `hf_partition` to the partition from the request path.
+- **Wristband claims:** sets `hf_caller_class` to `fleet-scoped`, `hf_identity` to the caller's service-account subject, and `hf_partition` to the partition from the request path. The `hf_identity` selector is `auth.identity.user.username`. TokenReview returns the caller's name in this field and has no `sub` field. The general gateway's AuthConfig uses the same selector. The value is `system:serviceaccount:<namespace>:<name>`, the same as the token's `sub` claim.
 
 The Adapter and sweeper have different permissions, enforced from `hf_identity` ([Wristband Claims and Validation](#wristband-claims-and-validation)). Being fleet-scoped grants different partitions, not unrestricted access to every operation.
 
@@ -317,23 +317,24 @@ A desire's `owner` is the exact `hf_identity` of the caller that writes it. That
 
 - **Writes:** The API stores the caller's `hf_identity` as the record's `owner`. Write bodies carry no `owner` field, and a body that includes one returns 400.
 - **Deletes:** The API uses `hf_identity` as the caller's owner, as it does on writes.
-- **Owner collision:** A write or delete on an existing record returns 409 owner conflict when the record's stored `owner` differs from `hf_identity`.
+- **Owner collision:** All desires for one Kubernetes object in one partition have the same `owner`: the caller that created the first of them. While one of these desires exists, a different caller gets 409 owner conflict ([Conflict Responses](#conflict-responses)) when it creates, writes, or deletes a desire for that object. The shared store applies this rule.
+- **Status writes:** Write status does not check the `owner`. The remote Applier writes status on desires that adapters own. The shared store's status operations also do not check the `owner`.
 - **Sweeper exemption:** A request is exempt only when `hf_identity` is the sweeper's service-account subject.
-- **Caller's own identity:** Callers still compare a record's `owner` with their own identity before they act on a record they read, as the sweeper guard in [CAS / Version Semantics](#cas--version-semantics) does. They take that identity from the `sub` claim of the service-account token they present, which is the value Authorino sets as `hf_identity`, never from configuration.
+- **Caller's own identity:** Callers still compare a record's `owner` with their own identity before they act on a record they read, as the sweeper guard in [CAS / Version Semantics](#cas--version-semantics) does. They take that identity from the `sub` claim of their service-account token, not from configuration. This value is the same as the `hf_identity` that the API gets ([Fleet-Scoped Caller AuthConfig](#fleet-scoped-caller-authconfig)).
 
 The sweeper is exempt from the owner-collision check on its writes and deletes, per the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md). The exemption lets it remove `DeleteDesire` records that adapters own, including the confirmed records adapters keep after a delete ([HYPERFLEET-1841](spike-desires-lost-mid-deletion.md)). The `DeleteDesire` records it creates carry the sweeper's `hf_identity` as `owner`, like any other caller's writes. The sweeper removes them after the applier confirms deletion, so the transient record does not block a future owner. The exemption covers this confirmed cleanup, not blind version-only retries: its deletes carry `version` like any other delete, and after a timed-out delete it follows the sweeper guard in [CAS / Version Semantics](#cas--version-semantics).
 
 **Alternatives considered:**
 
 - **Validate a submitted `owner` against `hf_identity` (403 on mismatch):** rejected. It grants nothing the Wristband does not, yet it duplicates the caller's identity in every write body while `DELETE` relies on the Wristband alone. Its only benefit is catching a client whose own identity is misconfigured. Taking that identity from the token's `sub` claim removes that misconfiguration instead.
-- **Keep the adapter name as `owner` and map it from the service-account name:** rejected. It couples the API to the operator's `<name>-hyperfleet-adapter` naming ([Operator and Gateway Changes](#operator-and-gateway-changes)). A separate owner claim in the Wristband would need a gateway change.
+- **Keep the adapter name as `owner` and map it from the service-account name:** rejected. The API would then depend on how adapter service accounts are named. The adapter Helm chart names it `<release>-hyperfleet-adapter` by default, but the chart's `serviceAccount.name` and `fullnameOverride` values can change it. A separate owner claim in the Wristband would need a gateway change.
 - **Trust a client-supplied `owner`:** rejected. One adapter could write or delete as another, which defeats reject-on-collision (decision 1a in the [Desire Identity Spike](spike-desire-identity-ownership.md)).
 
-**Trade-off:** Renaming an adapter's service account or namespace changes its `owner`. Its existing desires then collide with 409 owner conflict until they are cleared. Renaming an adapter has the same effect today.
+**Trade-off:** Renaming an adapter's service account or namespace changes its `owner`. Its existing desires then collide with 409 owner conflict until they are cleared. A new adapter name has the same effect today, because the adapter sends its configured name as `owner`.
 
 **Acceptable because:**
 
-- String equality with `hf_identity` needs no naming convention and no extra Wristband claim, and Authorino already sets the claim.
+- String equality with `hf_identity` needs no naming convention and no extra Wristband claim. The fleet-scoped AuthConfig already sets `hf_identity` for authorization.
 - The Desire Store is rebuildable, so clearing the old owner's desires after a rename loses no source of truth.
 
 ### REST API (v1)
@@ -407,7 +408,7 @@ The implementation story specifies these schemas in an OpenAPI document first, f
 | 401 Unauthorized | Missing, invalid, or expired Wristband |
 | 403 Forbidden | Caller class not permitted for the operation, or path partition outside the caller's authorization |
 | 404 Not Found | Desire absent on a get, update, status write, or delete |
-| 409 Conflict | Version mismatch on a write or delete, create on an existing desire, or owner collision |
+| 409 Conflict | One of four conflicts. The `code` field tells which one ([Conflict Responses](#conflict-responses)) |
 | 422 Unprocessable Entity | Well-formed JSON that fails semantic validation, such as kubeContent whose Kubernetes identity does not match the path |
 | 429 Too Many Requests | Rate limited |
 | 500 / 503 | Internal error; 503 when the API is degraded |
@@ -433,6 +434,21 @@ Errors follow the [Error Model](../standards/error-model.md) standard: RFC 9457 
 
 Rate-limit errors add a `Retry-After` header and the standard's [rate-limit problem type](../standards/error-model.md#rate-limit-errors-lmt).
 
+#### Conflict Responses
+
+Each 409 response has its own [conflict code](../standards/error-model.md#conflict-errors-cnf). The code tells the client if it can retry:
+
+| Cause | Store error | Type | Code | Client action |
+|-------|-------------|------|------|---------------|
+| The version in a write or delete is not current | `ErrVersionConflict` | `version-conflict` | `HYPERFLEET-CNF-002` | Read the desire again. If the change is still necessary, retry with the current version |
+| The caller creates a desire that it already has | `ErrAlreadyExists` | `resource-conflict` | `HYPERFLEET-CNF-001` | Read the desire, then update it with its version |
+| The caller creates an `ApplyDesire` while the `DeleteDesire` for the object is not confirmed | `ErrDeletePending` | `resource-conflict` | `HYPERFLEET-CNF-003` | Retry after the Applier confirms the delete. The store then replaces the `DeleteDesire` with the new `ApplyDesire` |
+| A different caller owns the object | `ErrOwnerConflict` | `resource-conflict` | `HYPERFLEET-CNF-004` | Do not retry. No request from this caller changes the `owner` |
+
+On a write or a delete, the store checks the version before the `owner`. When both are wrong, the response is `HYPERFLEET-CNF-002`. The retry with the current version then gets `HYPERFLEET-CNF-004`.
+
+The API tests must cover each row. The `HYPERFLEET-CNF-004` test must use a second caller identity.
+
 ### Compatibility
 
 - Supported v1 Appliers must continue working when the API is deployed independently.
@@ -445,14 +461,14 @@ Rate-limit errors add a `Retry-After` header and the standard's [rate-limit prob
 
 - **Desired-state writes (Write desire, all desire types):** The Adapter sends the current version. The API updates only when it matches, then increases it. A mismatch returns a version-conflict error; the Adapter reads the current record and retries.
 - **Status writes (Write status):** These do not require or change the desired-state version used by desired-state writes. An Applier can report status while an Adapter updates the desired state without either write failing because of the other. This preserves the [HYPERFLEET-1511](https://redhat.atlassian.net/browse/HYPERFLEET-1511) decision.
-- **Deletes (Delete desire):** The caller sends the desire's current version as the required `version` query parameter. The API deletes only when it matches and returns 204. A mismatch returns a 409 version-conflict error, the same problem type as on writes. An absent desire returns 404. This matches the shared store contract, where every delete requires the exact version.
+- **Deletes (Delete desire):** The caller sends the desire's current version as the required `version` query parameter. The API deletes only when it matches and returns 204. A mismatch returns a 409 version-conflict error, the same problem type as on writes. An absent desire returns 404. The shared store's single-desire deletes (`DeleteApplyDesire`, `DeleteDeleteDesire`, `DeleteReadDesire`) also require the exact version and the `owner`.
 - **Timed-out writes:** If a write times out, the client reads the desire to check whether the requested change was applied. If it matches, the client treats the write as successful. Otherwise, it re-evaluates and retries. Status writes are idempotent because they update only status and do not change the desired-state version.
 - **Timed-out deletes:** If a delete times out, the client reads the desire:
   - Absent: the delete succeeded.
   - Present at the same version: the delete did not happen, or the desire was deleted and created again at the same version (see the trade-off below); the client retries the conditional `DELETE`.
   - Present at a different version: the desire changed or was recreated; the client does not retry and re-evaluates instead.
 
-  For an Adapter, retrying the conditional `DELETE` directly gives the same outcomes: 204, 404 treated as success, and 409 for a changed desire or another owner's record.
+  For an Adapter, a direct retry of the conditional `DELETE` gives the same results: 204, or 404 (treated as success), or 409. The 409 code is `HYPERFLEET-CNF-002` when the desire changed and `HYPERFLEET-CNF-004` when a different caller owns it. When both are true, the code is `HYPERFLEET-CNF-002` ([Conflict Responses](#conflict-responses)).
 
 - **Sweeper guard on timed-out deletes:** The sweeper is exempt from the owner-collision check, so the API does not stop its retry from deleting another owner's record. After a timed-out delete, the sweeper re-reads the desire and retries only when the stored `owner` is still its own `hf_identity` and the version matches. When the `owner` differs, another owner may have created the desire again, so the sweeper does not retry; it re-evaluates the record as it does any other, and the new owner's record stays in place. The guard's read and the retry are separate requests, so the guard narrows the cross-owner case but does not close it (see the trade-off below).
 
@@ -463,12 +479,12 @@ Rate-limit errors add a `Retry-After` header and the standard's [rate-limit prob
 
 **Acceptable because:**
 
-- An Adapter's retry cannot remove another owner's record: the API checks it against the stored `owner` ([Owner Binding](#owner-binding)) and returns 409 owner conflict. Only the sweeper can remove another owner's record, and only in the window above. That window needs a delete and a create by a different owner, both at the same desire identity, between two sweeper requests.
+- An Adapter's retry cannot remove another owner's record: the API checks it against the stored `owner` ([Owner Binding](#owner-binding)) and returns 409 owner conflict (`HYPERFLEET-CNF-004`). Only the sweeper can remove another owner's record, and only in the window above. That window needs a delete and a create by a different owner, both at the same desire identity, between two sweeper requests.
 - Every lost record is rewritten by its owner. The Desire Store is rebuildable, so an Adapter writes a missing `ApplyDesire` again on its next reconcile, and it requests a missing unconfirmed `DeleteDesire` again instead of treating its absence as a completed delete ([Adapter Deletion Flow Design](../components/adapter/framework/lifecycle/adapter-lifecycle-delete-design.md#remote-transport-resources-9)).
 
 **Alternatives considered:**
 
-- **Client-side read rule with an unconditional `DELETE`:** rejected. A recreate that lands between the read and the retry gets deleted at any version, and the shared store conformance case that rejects a stale-version delete cannot pass over HTTP.
+- **Client-side read rule with an unconditional `DELETE`:** rejected. A recreate that lands between the read and the retry gets deleted at any version. Also, the shared store conformance tests that reject a delete with an old version (`DeleteStaleVersionRejected`, for `DeleteDesire` and `ReadDesire`) cannot pass over HTTP.
 - **`If-Match` header with 412 Precondition Failed:** rejected. It adds a second conflict status and an ETag that this API does not otherwise use, while the store reports both as the same version conflict.
 - **Globally unique versions:** rejected. The shared store conformance suite requires version 1 on create and an increase of 1 per update.
 - **`Idempotency-Key` header on deletes:** rejected. The API would store each key's result with the delete and return it on a retry, so a timed-out delete's retry could not remove a recreated record. That adds deduplication state with its own expiry to a store that is otherwise rebuildable. It also does not cover the sweeper's window: the sweeper decides from a read and then sends a new request with a new key.
@@ -483,7 +499,7 @@ Rate-limit errors add a `Retry-After` header and the standard's [rate-limit prob
 
 ### Failure, Retry, and Degraded Behavior
 
-- **Non-retryable errors:** Return an error for invalid credentials, permissions, input, ownership, or version. The caller must correct the problem before retrying.
+- **Non-retryable errors:** Return an error for invalid credentials, permissions, input, or ownership. The caller must correct the problem before it retries. A version conflict is different: the caller reads the desire again and retries ([Conflict Responses](#conflict-responses)).
 - **Rate limits:** Honor the server's retry guidance before retrying.
 - **Temporary failures:** Retry network failures, timeouts, and transient service failures with capped exponential backoff and jitter.
 - **Suggested starting defaults:**

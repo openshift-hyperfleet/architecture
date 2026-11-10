@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-06-26
+Last Updated: 2026-11-10
 ---
 
 # HyperFleet Error Model and Codes Standard
@@ -370,6 +370,7 @@ Content-Type: application/problem+json
 | `HYPERFLEET-CNF-001` | Resource Already Exists | Resource with same identifier exists |
 | `HYPERFLEET-CNF-002` | Version Conflict | Resource was modified by another request |
 | `HYPERFLEET-CNF-003` | State Conflict | Operation not allowed in current state |
+| `HYPERFLEET-CNF-004` | Owner Conflict | A different caller owns the resource. A retry does not succeed |
 
 ### Rate Limit Errors (LMT)
 
