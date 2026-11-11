@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Team
-Last Updated: 2026-10-12
+Last Updated: 2026-11-11
 ---
 
 # Repository Ownership
@@ -27,14 +27,16 @@ Approvers are also reviewers. The reviewer pool is where people grow into an are
 
 Two things happen automatically when a PR is opened, and neither gates the merge:
 
-- **Labels.** The `owners-label` plugin reads the `labels` field of every `OWNERS` file covering a changed file and adds those labels to the PR, for example `area/tenancy` and `area/api` for a change under `pkg/tenant`. The daily open-PRs digest groups by these labels.
+- **Labels.** The `owners-label` plugin reads the `labels` field of every `OWNERS` file covering a changed file and adds those labels to the PR, for example `area/tenancy` and `area/api` for a change under `pkg/tenant`.
 - **Reviewer requests.** The `blunderbuss` plugin requests two reviewers, picked at random from the `reviewers` of the closest `OWNERS` file for each touched path.
+
+Review requests and `/assign` reach people as GitHub notifications. To get them as Slack direct messages, connect the GitHub app in Slack and turn on real-time alerts under scheduled reminders in your GitHub settings. A scheduled reminder on the `hyperfleet` GitHub team also posts the PRs waiting for review to the team channel on weekdays.
 
 Then the merge itself:
 
 1. Anyone in the area's reviewer or approver pool reads the PR and either requests changes or approves.
 2. If the person who approves is an **area approver** for every touched path, their `/lgtm` or GitHub approving review sets both `lgtm` and `approved`, and Tide merges when CI is green. One person, but the right person.
-3. If the person who approves is a **reviewer**, their approval sets `lgtm` only. They `/assign` an area approver, or the approver picks it up from the digest, and the approver's `/approve` completes it.
+3. If the person who approves is a **reviewer**, their approval sets `lgtm` only. They `/assign` an area approver, and the approver's `/approve` completes it.
 
 Rules that go with it:
 
