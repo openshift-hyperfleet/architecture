@@ -184,7 +184,7 @@ The order matters: that MR creates the tenant namespace and the Components the `
 
 CodeRabbit reviews every pull request. The organisation configuration lives in [`openshift-hyperfleet/coderabbit`](https://github.com/openshift-hyperfleet/coderabbit), whose `.coderabbit.yaml` applies to every repository in the organisation that does not have its own, with `auto_review` enabled for the ones that are not drafts or work in progress. A repository must not add a local `.coderabbit.yaml`: it overrides the shared rules.
 
-There is no per-repository setup and nothing to install in the new repository. The App is installed for the organisation, so the onboarding action is to confirm it reviews the first pull request, and an organisation admin is only involved when it does not.
+There is no setup step in the new repository: the App is installed at the organisation level, and a repository created today is reviewed on its first pull request. `hyperfleet-desire-store` was created and had its first pull request reviewed by `coderabbitai[bot]` minutes later, with no configuration in between. The lever, if a new repository is missed, is the App's repository access list under **Organization settings → GitHub Apps → CodeRabbit → Configure**, and only an organisation admin can change it.
 
 Two behaviours are worth knowing before opening the first PR:
 
@@ -202,7 +202,7 @@ Dependency updates come from one of two services, and which one covers a reposit
 | A container image or a chart, registered in Konflux | MintMaker, which runs per Konflux tenant | `red-hat-konflux-kflux-prd-rh02` |
 | Nothing Konflux builds | The hosted Renovate App | `renovate` |
 
-Schedule, grouping, and update policy live in `renovate-config`, so a repository-level override is an exception that needs a reason in the PR. Which of the two services covers a repository is an organisation-level setting that an organisation admin changes; the repository itself only supplies the config file. A repository that falls through both opens no dependency PRs at all, which is easy to miss: `hyperfleet-e2e`, `hyperfleet-logger`, and `hyperfleet-broker` carry `renovate.json` and have no bot PRs. The evidence that the wiring works is a dependency dashboard issue or a dependency PR from the bot for the row that applies. Watch the first run for `pre-commit` pins: the `rev: <sha>  # frozen: <tag>` format exists because Renovate once rewrote those pins to mutable tags.
+Schedule, grouping, and update policy live in `renovate-config`, so a repository-level override is an exception that needs a reason in the PR. Coverage follows from the route above rather than from a setting in the repository: a repository registered as a Component in the `hyperfleet` Konflux tenant is covered by MintMaker with no further request, and one Konflux does not build depends on the hosted Renovate App's repository access list under **Organization settings → GitHub Apps → Renovate → Configure**, which an organisation admin edits. Either way the evidence is a dependency dashboard issue or the first dependency PR from the bot for the row that applies. A repository that falls through both opens no dependency PRs at all, which is easy to miss: `hyperfleet-e2e`, `hyperfleet-logger`, and `hyperfleet-broker` carry `renovate.json` and have no bot PRs. Watch the first run for `pre-commit` pins: the `rev: <sha>  # frozen: <tag>` format exists because Renovate once rewrote those pins to mutable tags.
 
 ---
 
@@ -219,7 +219,8 @@ Some steps need more than repository admin, which is worth knowing before planni
 | Prow plugins, Tide query, and jobs | A PR to `openshift/release`, approved by its release approvers |
 | The `tide` required context, in `_prowconfig.yaml` | The same PR to `openshift/release` |
 | Konflux registration | An MR to `releng/konflux-release-data`, reviewed by releng |
-| CodeRabbit App, and MintMaker or the Renovate App | An organisation admin |
+| CodeRabbit coverage | Automatic for a new repository; an organisation admin only if the bot never reviews |
+| Dependency bot coverage | MintMaker follows the Konflux registration; otherwise an organisation admin adds the repository to the Renovate App |
 | First release | Release owners, after the Prow and Konflux steps are green |
 
 ---
