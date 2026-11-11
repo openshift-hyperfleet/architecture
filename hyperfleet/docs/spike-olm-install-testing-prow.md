@@ -3,7 +3,6 @@ Status: Active
 Owner: HyperFleet Team
 Last Updated: 2026-11-10
 ---
-
 # Spike Report: OLM Install Testing in Prow
 
 **Ticket:** [HYPERFLEET-1616](https://redhat.atlassian.net/browse/HYPERFLEET-1616)
@@ -14,7 +13,9 @@ This spike investigates how to test the installation of the hyperfleet operator 
 
 This is the first part of HYPERFLEET-1616. The investigation covers presubmit testing of changes in the hyperfleet-operator repo and consists of 4 options based on OLM v0 installation. OLM v1 installation can be verified in a similar fashion, this document is just the first iteration.
 
-Cost figures are on-demand estimates for `us-central1` as of November 2026, assuming ~10 PR/day * ~avg 3 runs/PR (upper bound); need to verify billing, these are rough estimates.
+**Note:** Cost estimates are approximate and taken from the [google pricing calculator](https://cloud.google.com/products/calculator). Estimations may need to be modified.
+
+- ~10 PR/day * ~avg 3 runs/PR (upper bound)
 
 ## Presubmit Installation of hyperfleet-operator via OLM v0
 
@@ -40,7 +41,7 @@ Cost figures are on-demand estimates for `us-central1` as of November 2026, assu
 5. Installing the hyperfleet operator bundle: 30s - 2 minutes
 6. **Total:** ~6-17 minutes
 
-**Cost Estimate:** ~$117-$130/month. 600 nodes (20 days × 10 PRs/day × ~3 runs/PR), usage time ~30 minutes. Zonal cluster. Instance: e2-standard-4, 4 vCPUs, 16 GB of RAM and 100 GB boot disk.
+**Cost Estimate:** ~ `$117 - $130/month`. 600 nodes (20 days × 10 PRs/day × ~3 runs/PR), usage time \~30 minutes (upper bound). Zonal cluster. Instance: e2-standard-4, 4 vCPUs, 16 GB of RAM and 100 GB boot disk.
 
 **Pros:**
 
@@ -72,7 +73,7 @@ Cost figures are on-demand estimates for `us-central1` as of November 2026, assu
 5. Installing the operator bundle: 30s - 2 minutes
 6. **Total:** ~4-9 minutes
 
-**Cost Estimate:** ~$148.66-$200/month. ~240 hours per month w/ weekend governance (12 hours/day, 5 days/week, 4 weeks/month). Instance: e2-standard-16, 16 vCPUs, 64 GB of RAM and 200 GB boot disk.
+**Cost Estimate:** ~ `$148.66 - $200/month`. ~240 hours per month w/ weekend governance (12 hours/day, 5 days/week, 4 weeks/month). Instance: e2-standard-16, 16 vCPUs, 64 GB of RAM and 200 GB boot disk.
 
 **Pros:**
 
@@ -109,7 +110,7 @@ Cost figures are on-demand estimates for `us-central1` as of November 2026, assu
 6. Installing the operator bundle: 30s - 2 minutes
 7. **Total:** ~5-12 minutes
 
-**Cost Estimate:** ~$36-40/month. 600 instances (20 days × 10 PRs/day × ~3 runs/PR) running for ~20 minutes each. Instance: e2-standard-4, 4 vCPUs, 16GB of RAM and 100 GB boot disk.
+**Cost Estimate:** ~ `$36 - $40/month`. 600 instances (20 days × 10 PRs/day × ~3 runs/PR) running for ~20 minutes each (upper bound). Instance: e2-standard-4, 4 vCPUs, 16GB of RAM and 100 GB boot disk.
 
 **Pros:**
 
@@ -147,7 +148,7 @@ Vcluster is a tool for creating and managing virtual Kubernetes clusters — bas
 5. Installing the bundle: 30s - 2 minutes
 6. **Total:** ~3-8 minutes
 
-**Cost Estimate:** ~$200-$300/month. ~240 hours per month w/ weekend + nightly governance (12 hours/day, 5 days/week, 4 weeks/month). 2 node zonal cluster. Instance: e2-standard-8, 8 vCPUs, 32 GB of RAM and 100 GB boot disk.
+**Cost Estimate:** ~ `$200 - $300/month`. ~240 hours per month w/ weekend + nightly governance (12 hours/day, 5 days/week, 4 weeks/month). 2 node zonal cluster. Instance: e2-standard-8, 8 vCPUs, 32 GB of RAM and 100 GB boot disk.
 
 **Pros:**
 
@@ -167,9 +168,7 @@ Vcluster is a tool for creating and managing virtual Kubernetes clusters — bas
 
 ## Presubmit hyperfleet-operator E2E testing — [HYPERFLEET-1707](https://redhat.atlassian.net/browse/HYPERFLEET-1707)
 
-Whichever option is chosen, we can extend the presubmit CI to also run the hyperfleet-operator E2E tests. No additional infrastructure is required: the E2E suite runs against the same cluster the operator was installed into. We would need to modify the E2E tests to drop their own operator image build and installation steps, since the presubmit flow installs the operator via OLM before the tests run.
-
-**Note:** Cost estimates are approximate and taken from the [google pricing calculator](https://cloud.google.com/products/calculator). Estimations may need to be modified.
+Whichever option is chosen, we can extend the presubmit CI to also run the hyperfleet-operator E2E tests on the same infrastructure. The E2E suite could run on the same cluster and run after the installation of the operator. We would need to modify the E2E tests to drop the test BeforeSuite that builds the operator image.
 
 ## Open Questions
 
