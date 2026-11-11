@@ -381,21 +381,45 @@ The desire resource returned by Get:
   "resource_id": "clusters/cls-123",
   "kubeContent": { "...": "rendered Kubernetes manifest" },
   "status": { "...": "applier-written status" },
+  "generation": 2,
   "version": 3
 }
 ```
 
+The `generation` field is the [desire generation](glossary.md). The API sets it, and clients never send it. It is 1 on create and advances only when an ApplyDesire's `kubeContent` changes. It does not change on a status write. The Applier copies it into each condition's `observedGeneration`. It is not the HyperFleet API resource's generation or the Kubernetes `metadata.generation`. A DeleteDesire and a ReadDesire have no update, so their `generation` stays 1.
+
+A ReadDesire has no `kubeContent` at the top level. It carries its `target_version`, and `status.kubeContent` holds the mirrored object:
+
+```json
+{
+  "id": "read:apps:deployments:kube-system:coredns",
+  "type": "read",
+  "group": "apps",
+  "resource": "deployments",
+  "namespace": "kube-system",
+  "name": "coredns",
+  "owner": "system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter",
+  "resource_id": "clusters/cls-123",
+  "target_version": "v1",
+  "status": { "kubeContent": { "...": "mirrored live object" } },
+  "generation": 1,
+  "version": 1
+}
+```
+
 - **List responses:**
-  - Return each desire's reference only — the identity fields and `version` — omitting `kubeContent`, `status`, `owner`, and `resource_id`; Get serves the full record.
+  - Return each desire's reference only — the identity fields and `version` — omitting `kubeContent`, `status`, `owner`, `resource_id`, `generation`, and `target_version`; Get serves the full record.
   - This is the references-only rule the [transport evaluation](spike-desire-store-transport.md) makes load-bearing; the Applier therefore applies from the GET response, not the list.
   - Carry `next_cursor`, omitted on the last page ([Pagination and Consistency](#pagination-and-consistency)).
 - **Write-desire requests:**
-  - Carry `resource_id`, `kubeContent`, and `version` only; write bodies carry no identity or ownership fields, and the path is the sole identity source.
-  - `owner` is set by the API from the caller's `hf_identity` and appears only in responses ([Owner Binding](#owner-binding)).
+  - Carry `resource_id`, `kubeContent`, and `version`, and a ReadDesire write also carries `target_version`. Write bodies carry no identity or ownership fields, and the path is the sole identity source.
+  - `owner` is set by the API from the caller's `hf_identity` and appears only in responses ([Owner Binding](#owner-binding)). `generation` is set by the API.
+  - `target_version` is the Kubernetes API version to read the object as, for example `v1`. A ReadDesire write requires it ([`types.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/types.go#L137), [`validate.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/validate.go#L136-L138)).
   - An omitted or zero `version` means create; a provided `version` means update ([CAS / Version Semantics](#cas--version-semantics)).
 - **Write-status requests:**
-  - Carry only the `status` object.
-  - Are idempotent: they neither send nor change the desired-state version and return no body.
+  - An ApplyDesire or DeleteDesire status write carries the `status` object and a required `version`. The API checks the version and increments it ([CAS / Version Semantics](#cas--version-semantics)).
+  - A ReadDesire status write carries `status` only, and `status.kubeContent` holds the mirrored object.
+  - All status writes return 204 with no body.
 
 The implementation story specifies these schemas in an OpenAPI document first, following [ADR-0003](../adrs/0003-openapi-first-contract.md). New v1 wire fields use snake_case (`next_cursor`), matching the Error Model extension fields; inherited desire fields keep their established spellings (`kubeContent`, `resource_id`).
 
@@ -404,9 +428,9 @@ The implementation story specifies these schemas in an OpenAPI document first, f
 | Code | When |
 |------|------|
 | 200 OK | Get and list responses; successful desire update |
-| 201 Created | Desire created by a write |
+| 201 Created | Desire created by a write, including a `DeleteDesire` that supersedes an `ApplyDesire` |
 | 204 No Content | Successful delete or status write |
-| 400 Bad Request | Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete; `owner` in a write body |
+| 400 Bad Request | Malformed request: invalid identifier encoding, query parameters, or JSON; missing or non-integer `version` on a delete, or on an `ApplyDesire` or `DeleteDesire` status write; `owner` in a write body; `target_version` missing on a `ReadDesire` write |
 | 401 Unauthorized | Missing, invalid, or expired Wristband |
 | 403 Forbidden | Caller class not permitted for the operation, or path partition outside the caller's authorization |
 | 404 Not Found | Desire absent on a get, update, status write, or delete |
@@ -442,14 +466,14 @@ Each 409 response has its own [conflict code](../standards/error-model.md#confli
 
 | Cause | Store error | Type | Code | Client action |
 |-------|-------------|------|------|---------------|
-| The version in a write or delete is not current | `ErrVersionConflict` | `version-conflict` | `HYPERFLEET-CNF-002` | Read the desire again. If the change is still necessary, retry with the current version |
+| The version in a write, a status write, or a delete is not current | `ErrVersionConflict` | `version-conflict` | `HYPERFLEET-CNF-002` | Read the desire again. If the change is still necessary, retry with the current version. The Applier drops a stale status write and computes the status again on its next poll |
 | The caller creates a desire that it already has | `ErrAlreadyExists` | `resource-conflict` | `HYPERFLEET-CNF-001` | Read the desire, then update it with its version |
 | The caller creates an `ApplyDesire` while the `DeleteDesire` for the object is not confirmed | `ErrDeletePending` | `resource-conflict` | `HYPERFLEET-CNF-003` | Retry after the Applier confirms the delete. The store then replaces the `DeleteDesire` with the new `ApplyDesire` |
 | A different caller owns the object | `ErrOwnerConflict` | `resource-conflict` | `HYPERFLEET-CNF-004` | Do not retry. No request from this caller changes the `owner` |
 
-On a write or a delete, the store checks the version before the `owner`. When both are wrong, the response is `HYPERFLEET-CNF-002`. The retry with the current version then gets `HYPERFLEET-CNF-004`.
+On a write or a delete, the store checks the version before the `owner`. When both are wrong, the response is `HYPERFLEET-CNF-002`. The retry with the current version then gets `HYPERFLEET-CNF-004`. Status writes do not check the `owner` ([Owner Binding](#owner-binding)), so `HYPERFLEET-CNF-002` is the only conflict code that a status write can get.
 
-The API tests must cover each row. The `HYPERFLEET-CNF-004` test must use a second caller identity.
+The API tests must cover each row. The `HYPERFLEET-CNF-002` test must include a stale status write. The `HYPERFLEET-CNF-004` test must use a second caller identity.
 
 ### Compatibility
 
@@ -461,10 +485,13 @@ The API tests must cover each row. The `HYPERFLEET-CNF-004` test must use a seco
 
 ### CAS / Version Semantics
 
-- **Desired-state writes (Write desire, all desire types):** The Adapter sends the current version. The API updates only when it matches, then increases it. A mismatch returns a version-conflict error; the Adapter reads the current record and retries.
-- **Status writes (Write status):** These do not require or change the desired-state version used by desired-state writes. An Applier can report status while an Adapter updates the desired state without either write failing because of the other. This preserves the [HYPERFLEET-1511](https://redhat.atlassian.net/browse/HYPERFLEET-1511) decision.
+- **Desired-state updates (Write desire, ApplyDesire):** The Adapter sends the current version. The API updates only when it matches, then increases it. A mismatch returns a version-conflict error; the Adapter reads the current record and retries.
+- **Status writes (Write status):** An `ApplyDesire` or `DeleteDesire` status write carries the `version` that the Applier read with the desire. The API writes only when it matches the stored version, then increments it. A stale `version` returns a version-conflict error (`HYPERFLEET-CNF-002`), and a missing or non-integer `version` returns 400. A status write does not change `generation`. A spec update and a status write use the same version, so a status write computed for an older spec is rejected, and an Adapter update that loses to a status write gets `HYPERFLEET-CNF-002`, reads the record again, and retries. The Applier writes status only when it changed, and it drops a rejected status write and computes the status again on its next poll ([`applydesire/controller.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/applydesire/controller.go#L133-L143), [`deletedesire/controller.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/deletedesire/controller.go#L157-L166)). A `ReadDesire` status write carries no `version` and does not change it. [HYPERFLEET-1511](https://redhat.atlassian.net/browse/HYPERFLEET-1511) removed the version check for `ReadDesire` status writes only, and the shared store keeps the exact-version check on the other two ([`pkg/desire/store.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store.go#L144-L165)).
 - **Deletes (Delete desire):** The caller sends the desire's current version as the required `version` query parameter. The API deletes only when it matches and returns 204. A mismatch returns a 409 version-conflict error, the same problem type as on writes. An absent desire returns 404. The shared store's single-desire deletes (`DeleteApplyDesire`, `DeleteDeleteDesire`, `DeleteReadDesire`) also require the exact version and the `owner`.
-- **Timed-out writes:** If a write times out, the client reads the desire to check whether the requested change was applied. If it matches, the client treats the write as successful. Otherwise, it re-evaluates and retries. Status writes are idempotent because they update only status and do not change the desired-state version.
+- **Delete supersedes apply (Write desire, DeleteDesire):** Creating a `DeleteDesire` removes the `ApplyDesire` for the same object, at any version, in the same transaction, and returns 201. The `ApplyDesire`'s version is not checked, so an Adapter update to it that is in flight gets 404, and so does an Applier status write to it. The `ReadDesire` is not changed and keeps its `owner`. A caller that does not own the object gets 409 `HYPERFLEET-CNF-004` and nothing changes ([Owner Binding](#owner-binding)). When a `DeleteDesire` for the object exists, the create gets 409 `HYPERFLEET-CNF-001` and nothing changes.
+  - **Open limit:** The sweeper is exempt from the owner check ([Owner Binding](#owner-binding)), but the shared store runs the owner check inside the `DeleteDesire` create and inside the single-desire `DeleteDesire` delete. A sweeper `DeleteDesire` for an object that an adapter owns therefore gets `HYPERFLEET-CNF-004`, the supersede does not run for it, and the sweeper's delete of an adapter-owned `DeleteDesire` gets `HYPERFLEET-CNF-004` too. Making the exemption reach these calls needs a store-interface change that [HYPERFLEET-1825](https://redhat.atlassian.net/browse/HYPERFLEET-1825) owns ([gap G15](e2e-testing/desire-store-test-plan.md#gaps-and-deferred-work)).
+  - **Owners after a supersede:** The `ReadDesire` keeps its own `owner`. If the store accepted a sweeper `DeleteDesire` for an adapter-owned object, the object would have an adapter-owned `ReadDesire` and a sweeper-owned `DeleteDesire`. The one-owner rule ([Owner Binding](#owner-binding)) does not allow that state.
+- **Timed-out writes:** If a write times out, the client reads the desire to check whether the requested change was applied. If it matches, the client treats the write as successful. Otherwise, it re-evaluates and retries. A retried `ApplyDesire` or `DeleteDesire` status write whose first attempt succeeded gets `HYPERFLEET-CNF-002`, because the first attempt incremented the version. The Applier drops it and computes the status again on its next poll. A `ReadDesire` status write can be retried unchanged.
 - **Timed-out deletes:** If a delete times out, the client reads the desire:
   - Absent: the delete succeeded.
   - Present at the same version: the delete did not happen, or the desire was deleted and created again at the same version (see the trade-off below); the client retries the conditional `DELETE`.
@@ -492,6 +519,10 @@ The API tests must cover each row. The `HYPERFLEET-CNF-004` test must use a seco
 - **`Idempotency-Key` header on deletes:** rejected. The API would store each key's result with the delete and return it on a retry, so a timed-out delete's retry could not remove a recreated record. That adds deduplication state with its own expiry to a store that is otherwise rebuildable. It also does not cover the sweeper's window: the sweeper decides from a read and then sends a new request with a new key.
 - **Per-incarnation `uid` precondition:** the API assigns a new `uid` on every create, and a delete carries the `uid` it read. A recreated desire never matches, so this closes both the retry case and the sweeper's read-to-delete window. It is rejected for v1 because the shared store delete operations take no parameter for it: adding one changes the store interface, every store implementation, and the conformance suite in `hyperfleet-applier`, to prevent a loss that the owner's next reconcile repairs. As an optional query parameter it can be added later without breaking v1 clients, and it is the preferred fix if records lost to these windows are observed.
 - **Expected-owner precondition on sweeper deletes:** the sweeper sends the `owner` it read, and the API checks it atomically with the version. This would close the cross-owner window. It is rejected for v1 because it adds a second delete precondition to the wire contract, and the loss it prevents is already repaired on the owner's next reconcile. Revisit it if records lost to this window are observed; the owner-collision exemption means the owner-conflict metric does not count them.
+- **Status writes: a `generation` precondition instead of the version:** rejected. It changes the store's status operations, every backend, and the conformance suite. A `DeleteDesire`'s `generation` never advances, so it would check nothing there. After v1 it needs a new API version ([Compatibility](#compatibility)).
+- **Status writes: no precondition:** rejected. A status computed for an older spec can overwrite a newer one, and the shared store's `StaleStatusWriteAfterSpecUpdateIsRejected` case cannot pass.
+- **Reject a `DeleteDesire` while an `ApplyDesire` exists:** rejected. It needs a second request, opens a window in which neither desire exists, and makes the sweeper remove `ApplyDesire` records.
+- **ReadDesire target version in `kubeContent`, or as camelCase `targetVersion`:** rejected. `kubeContent` is checked against the path (422), so carrying the target version there overloads it, and `targetVersion` breaks the snake_case rule for new v1 fields.
 
 ### Pagination and Consistency
 
