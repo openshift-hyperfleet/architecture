@@ -2,7 +2,7 @@
 
 **Status**: Active
 **Owner**: HyperFleet Team
-**Last Updated**: 2026-10-15
+**Last Updated**: 2026-11-11
 
 ---
 
@@ -131,7 +131,18 @@ TypeSpec definitions generating OpenAPI 3.0 specifications (with optional OpenAP
 
 > **Note:** Both `hyperfleet-api` and `hyperfleet-sentinel` consume the OpenAPI schema directly from the `hyperfleet-api-spec` Go module — `openapi/openapi.yaml` is extracted from the module cache at code-generation time and is not tracked in git in either repository. See [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-api/blob/main/openapi/README.md) in `hyperfleet-api` and [openapi/README.md](https://github.com/openshift-hyperfleet/hyperfleet-sentinel/blob/main/openapi/README.md) in `hyperfleet-sentinel` for full details.
 
-### 2.2 CloudEvents Contract
+### 2.2 Desire Store API Spec (TypeSpec)
+
+| Field | Value |
+|-------|-------|
+| Repository | [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec) |
+| Language | TypeSpec |
+| Version | 0.1.0 (not yet released) |
+| Consumed by | Planned: the Desire Store API service, the Applier client, and the Adapter client, via the `github.com/openshift-hyperfleet/hyperfleet-desire-store-spec` Go module |
+
+TypeSpec definitions generating the OpenAPI 3.0 contract for the Desire Store REST v1 API under `/api/hyperfleet/desire-store/v1`. The contract is transcribed from the [Desire Store detailed design](./docs/desire-store-dd.md#rest-api-v1) and reviewed before implementation, per [ADR-0003](./adrs/0003-openapi-first-contract.md). Each release publishes the generated `openapi.yaml` as a GitHub Release artifact and as a Go module tag; the `schemas` package embeds the file. The repository is independent of `hyperfleet-api-spec` and does not import its shared models. The routes and schemas are not yet specified ([HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821)).
+
+### 2.3 CloudEvents Contract
 
 All inter-service events use CloudEvents v1.0 with anemic payloads (resource ID, kind, generation only) and W3C `traceparent` for distributed tracing. Formal schema defined in [`hyperfleet/components/broker/asyncapi.yaml`](https://github.com/openshift-hyperfleet/architecture/blob/main/hyperfleet/components/broker/asyncapi.yaml).
 
@@ -231,3 +242,4 @@ CI system for PR validation and E2E testing. Presubmit and postsubmit jobs acros
 | 2026-05-11 | 1.1 | Updated Konflux section: cluster to kflux-prd-rh02, added Helm OCI distribution, fixed ADR reference | Ciaran Roche |
 | 2026-08-24 | 1.2 | Added HyperFleet Applier as a core service (HYPERFLEET-1435) | Dmitrii Andreev |
 | 2026-10-15 | 1.3 | Removed Maestro artifacts: maestro-cli repository, infra `maestro` umbrella chart, Maestro transport E2E suite, and the stale Maestro claims in the adapter framework and testing summaries, following the Maestro teardown ([HYPERFLEET-1509](https://redhat.atlassian.net/browse/HYPERFLEET-1509)) | Rafael Benevides |
+| 2026-11-11 | 1.4 | Added the Desire Store API Spec repository ([HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821)) | Dmitrii Andreev |
