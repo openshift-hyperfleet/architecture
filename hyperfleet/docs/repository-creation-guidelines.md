@@ -65,9 +65,9 @@ repository:
 Do not hand-write `OWNERS` from scratch, and do not copy another repository's. Ownership is declared once, in [`owners.yaml`](owners.yaml), and the files are generated from it. For a new repository:
 
 1. Name the area it belongs to. A repository that continues an existing area reuses that area's row; a repository that starts one needs a new entry under `areas:` with at least two approvers and its reviewers, chosen by the tech leads from the people who will do the work. The reviewer and approver criteria in [Repository Ownership](owners.md) apply to everyone who joins that area afterwards.
-2. Add the repository under `repos:` with a root (`""`) entry pointing at the area, for example `{area: Desire delivery, approvers: [desire-owners, tech-leads], reviewers: [desire-reviewers], labels: [area/desire-delivery]}`.
+2. Add the repository under `repos:` with a root (`""`) entry pointing at the area, and one entry per path that another area owns. A repository that ships an artifact needs `.tekton` under Release and packaging, or Prow falls back to the root approvers for its pipelines: `""` at `{area: Desire delivery, approvers: [desire-owners, tech-leads], reviewers: [desire-reviewers], labels: [area/desire-delivery]}` and `.tekton` at `{area: Release and packaging, approvers: [release-owners], reviewers: [release-reviewers], labels: [area/release]}`.
 3. Run `make owners`. It refreshes the area table in [Repository Ownership](owners.md) and writes the `OWNERS` and `OWNERS_ALIASES` files for every repository to `hack/owners/out/`.
-4. Send the `owners.yaml` change in a PR against this repository, and copy `hack/owners/out/<repo>/OWNERS` and `OWNERS_ALIASES` into the new repository.
+4. Send the `owners.yaml` change in a PR against this repository, and copy the whole `hack/owners/out/<repo>/` tree into the new repository: the root files and the `OWNERS` for each sub-path.
 
 `make verify-owners` fails when the table and `owners.yaml` disagree, which is what keeps step 3 from being skipped.
 
@@ -83,7 +83,7 @@ Do not hand-write `OWNERS` from scratch, and do not copy another repository's. O
 
 The organisation owns this ruleset; a repository does not create its own.
 
-- Ruleset: `hyperfleet-main-protection` (organization ruleset, id 15199170)
+- Ruleset: `hyperfleet-main-protection` (organisation ruleset, id 15199170)
 - Enforcement status: **Active**
 - Target: the default branch of every repository it lists
 - Rules:
@@ -101,7 +101,7 @@ The organisation owns this ruleset; a repository does not create its own.
 | Require conversation resolution | disabled | Review threads are a review concern, not a merge gate |
 | Allowed merge methods | merge, squash, rebase | Tide squashes on merge; the other methods stay available for manual work |
 
-The ruleset does not cover a new repository automatically. It lists its target repositories, and an organisation admin adds the new one under **Organization settings → Repository → Rulesets → `hyperfleet-main-protection` → Target repositories**. Until that happens the default branch is unprotected, whatever the repository settings say. Do not create a repository-level ruleset with the same name: it duplicates the organization ruleset, drifts from it, and disappears as a reference the next time the organization ruleset changes.
+The ruleset does not cover a new repository automatically. It lists its target repositories, and an organisation admin adds the new one under **Organization settings → Repository → Rulesets → `hyperfleet-main-protection` → Target repositories**. Until that happens the default branch is unprotected, whatever the repository settings say. Do not create a repository-level ruleset with the same name: it duplicates the organisation ruleset, drifts from it, and disappears as a reference the next time the organisation ruleset changes.
 
 The ruleset gates the *shape* of a merge, not who signed off. With zero required approvals GitHub would accept a pull request nobody approved, and the extra-approval setting above has no effect at that count. The ruleset has no bypass actors, so it applies to organisation admins as much as to anyone else; it simply asks for no approval.
 
@@ -243,7 +243,7 @@ Each item names the evidence to check. A green checklist means the repository is
 ### Branch Configuration
 
 - [ ] `main` is the default branch
-- [ ] The repository is a target of the organization ruleset: `gh api repos/openshift-hyperfleet/<repo>/rules/branches/main` reports `hyperfleet-main-protection` with source `Organization`
+- [ ] The repository is a target of the organisation ruleset: `gh api repos/openshift-hyperfleet/<repo>/rules/branches/main` reports `ruleset_source_type: Organization` and `ruleset_id` 15199170
 - [ ] The ruleset blocks deletion and force pushes
 - [ ] The ruleset requires a pull request and dismisses stale reviews on push
 - [ ] The ruleset sets zero required approvals and no required status checks, and has no bypass actors, as in the table above
