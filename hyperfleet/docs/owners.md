@@ -58,7 +58,7 @@ The tech leads sit in every root approver set as the fallback, not the routine m
 | Tenancy and auth | `pkg/tenant`, `pkg/auth`, `pkg/middleware`; e2e `e2e/auth` | Phuongnhat (pnguyen44), Martin (mliptak0) | Dmitrii (kuudori), Michaela (Mischulee) |
 | Generic model | `pkg/dao`, `pkg/db`, `pkg/registry`, `pkg/services`, `pkg/handlers` | Dmitrii (kuudori), Phuongnhat (pnguyen44) | Tirth (tirthct), Michaela (Mischulee), Mallory (ma-hill), Martin (mliptak0) |
 | Search | `pkg/validation`, `pkg/validators`, `pkg/api` | inherits Generic model | Michaela (Mischulee), Mallory (ma-hill), Martin (mliptak0) |
-| Contracts | hyperfleet-api-spec, hyperfleet-api-spec-template, `openapi/` | Angel (rh-amarin), Martin (mliptak0), Dmitrii (kuudori), Ciaran (ciaranRoche) | Phuongnhat (pnguyen44), Michaela (Mischulee), Tirth (tirthct) |
+| Contracts | hyperfleet-api-spec, hyperfleet-api-spec-template, hyperfleet-desire-store-spec, `openapi/` | Angel (rh-amarin), Martin (mliptak0), Dmitrii (kuudori), Ciaran (ciaranRoche) | Phuongnhat (pnguyen44), Michaela (Mischulee), Tirth (tirthct) |
 | Adapter framework | hyperfleet-adapter root | Angel (rh-amarin), Rafael (rafabene), Dmitrii (kuudori) | Michal (Ruclo), Michaela (Mischulee), Martin (mliptak0), Tirth (tirthct) |
 | Desire delivery | adapter `internal/desireclient`, `internal/transportclient`, `internal/transportregistry`; hyperfleet-applier | Dmitrii (kuudori), Angel (rh-amarin), Phuongnhat (pnguyen44) | Michal (Ruclo), Mallory (ma-hill), Tirth (tirthct) |
 | Sentinel | hyperfleet-sentinel | Phuongnhat (pnguyen44), Dmitrii (kuudori), Angel (rh-amarin) | Tirth (tirthct), Michal (Ruclo), Leonardo (ldornele), Martin (mliptak0) |

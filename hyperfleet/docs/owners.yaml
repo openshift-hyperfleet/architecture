@@ -93,7 +93,7 @@ areas:
     reviewers: [search-reviewers]
     label: area/search
   - name: Contracts
-    paths: "hyperfleet-api-spec, hyperfleet-api-spec-template, `openapi/`"
+    paths: "hyperfleet-api-spec, hyperfleet-api-spec-template, hyperfleet-desire-store-spec, `openapi/`"
     approvers: [contracts-owners]
     reviewers: [contracts-reviewers]
     label: area/contracts
@@ -229,6 +229,8 @@ repos:
   hyperfleet-api-spec:
     "": {area: Contracts, approvers: [contracts-owners], reviewers: [contracts-reviewers], labels: [area/contracts]}
   hyperfleet-api-spec-template:
+    "": {area: Contracts, approvers: [contracts-owners], reviewers: [contracts-reviewers], labels: [area/contracts]}
+  hyperfleet-desire-store-spec:
     "": {area: Contracts, approvers: [contracts-owners], reviewers: [contracts-reviewers], labels: [area/contracts]}
   hyperfleet-adapter:
     "": {area: Adapter framework, approvers: [adapter-owners, tech-leads], reviewers: [adapter-reviewers], labels: [area/adapter]}
