@@ -14,13 +14,13 @@ This spike investigates how to test the installation of the hyperfleet operator 
 
 This is the first part of HYPERFLEET-1616. The investigation covers presubmit testing of changes in the hyperfleet-operator repo and consists of 4 options based on OLM v0 installation. OLM v1 installation can be verified in a similar fashion, this document is just the first iteration.
 
-Cost figures are on-demand estimates for `us-central1` as of November 2026, assuming ~10 presubmit runs/day (upper bound); need to verify billing, these are rough estimates.
+Cost figures are on-demand estimates for `us-central1` as of November 2026, assuming ~10 PR/day * ~avg 3 runs/PR (upper bound); need to verify billing, these are rough estimates.
 
 ## Presubmit Installation of hyperfleet-operator via OLM v0
 
-### Option 1 — GKE based installation
+**Note:** Each of these options requires installing the hyperfleet operator on a fresh cluster — there can only be one version of the hyperfleet operator per cluster.
 
-**Note:** OLM technically permits installing the operator in more than one namespace, but this would not exercise real workflows, since `HyperFleetConfig` is a cluster-scoped singleton — one install per cluster.
+### Option 1 — GKE based installation
 
 **Workflow:**
 
@@ -40,7 +40,7 @@ Cost figures are on-demand estimates for `us-central1` as of November 2026, assu
 5. Installing the hyperfleet operator bundle: 30s - 2 minutes
 6. **Total:** ~6-17 minutes
 
-**Cost Estimate:** ~$82-$100/month, 200 nodes created, running for 17 minutes each. Instance: e2-standard-4, 4 vCPUS, 16 GB of RAM and 200 GB boot disk.
+**Cost Estimate:** ~$117-$130/month. 600 nodes (20 days × 10 PRs/day × ~3 runs/PR), usage time ~30 minutes. Zonal cluster. Instance: e2-standard-4, 4 vCPUs, 16 GB of RAM and 100 GB boot disk.
 
 **Pros:**
 
@@ -72,7 +72,7 @@ Cost figures are on-demand estimates for `us-central1` as of November 2026, assu
 5. Installing the operator bundle: 30s - 2 minutes
 6. **Total:** ~4-9 minutes
 
-**Cost Estimate:** ~$258-$300/month. ~480 hours per month, w/ weekend governance. Instance: e2-standard-16, 16 vCPUs, 64 GB of RAM and 200 GB boot disk.
+**Cost Estimate:** ~$148.66-$200/month. ~240 hours per month w/ weekend governance (12 hours/day, 5 days/week, 4 weeks/month). Instance: e2-standard-16, 16 vCPUs, 64 GB of RAM and 200 GB boot disk.
 
 **Pros:**
 
@@ -109,7 +109,7 @@ Cost figures are on-demand estimates for `us-central1` as of November 2026, assu
 6. Installing the operator bundle: 30s - 2 minutes
 7. **Total:** ~5-12 minutes
 
-**Cost Estimate:** ~$17-20/month. 200 instances (10Prs X 20 days). Instance: e2-standard-4, 4 vCPUs, 16GB of RAM and 100 GB boot disk.
+**Cost Estimate:** ~$36-40/month. 600 instances (20 days × 10 PRs/day × ~3 runs/PR) running for ~20 minutes each. Instance: e2-standard-4, 4 vCPUs, 16GB of RAM and 100 GB boot disk.
 
 **Pros:**
 
@@ -147,7 +147,7 @@ Vcluster is a tool for creating and managing virtual Kubernetes clusters — bas
 5. Installing the bundle: 30s - 2 minutes
 6. **Total:** ~3-8 minutes
 
-**Cost Estimate:** ~$77-$90/month. 2 nodes running ~480 minutes (8 hours) per day on weekdays only, with weekends off. 1 zonal cluster. Instance: e2-standard-8, 8 vCPUs, 32 GB of RAM and 100 GB boot disk.
+**Cost Estimate:** ~$200-$300/month. ~240 hours per month w/ weekend + nightly governance (12 hours/day, 5 days/week, 4 weeks/month). 2 node zonal cluster. Instance: e2-standard-8, 8 vCPUs, 32 GB of RAM and 100 GB boot disk.
 
 **Pros:**
 
@@ -173,4 +173,5 @@ Whichever option is chosen, we can extend the presubmit CI to also run the hyper
 
 ## Open Questions
 
-- Is it duplicative to run image and bundle builds in Prow when Konflux already builds them? There is no way around it for presubmits: E2E tests need images built from the PR's changes, which Konflux does produce.
+- Is presubmit the best place to verify OLM installation? Presubmit testing requires building the operator and bundle image in each PR. Konflux builds the final image on push to main. Which obviously cannot be consumed by the presubmit job, what would be the advantages or disadvantages of moving this to a nightly job, using the most recent konflux artifacts?
+- If we decide to go with one of the long running options vcluster or gce instance, what would it look like if a PR is created outside of the 12 hour window when the machines are running?
