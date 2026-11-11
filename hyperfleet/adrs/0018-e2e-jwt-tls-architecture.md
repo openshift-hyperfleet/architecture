@@ -1,14 +1,21 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-10
 ---
 
 # 0018 — E2E JWT/TLS Architecture
 
+> **Superseded in part.** The text below is the original decision, kept for history. Where it conflicts with the records below, they take precedence:
+>
+> - [ADR-0035](0035-e2e-mode-aware-authentication.md) replaces the client flow, the fixed gateway-header contract and the HTTP-only path from Envoy to the API.
+> - [ADR-0037](0037-e2e-human-and-machine-identities.md) replaces the service account token choice for normal API calls and reverses the rejection of a mock OIDC server.
+>
+> The [E2E client contract](../docs/gateway-authentication-design.md#e2e-client-contract) gives the current scheme for each `AUTH_MODE`. The cloud-agnostic approach, external runner and exclusion of TLS testing remain in force.
+
 ## Context
 
-The E2E test framework ([hyperfleet-e2e](https://gitlab.cee.redhat.com/service/hyperfleet/hyperfleet-e2e)) currently runs without JWT/TLS (development mode), creating a gap between test and production environments. Before implementing security in E2E tests, critical architectural questions were answered to ensure the correct approach and avoid wasted effort.
+The E2E test framework ([hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e)) currently runs without JWT/TLS (development mode), creating a gap between test and production environments. Before implementing security in E2E tests, critical architectural questions were answered to ensure the correct approach and avoid wasted effort.
 
 **Key Decision Point from Office Hours (2026-07-01)**: The team agreed to define a **cloud-agnostic contract** for TLS and JWT handling to avoid relying on specific cloud provider behaviors (GCP, AWS, Azure, OCI).
 
@@ -109,7 +116,7 @@ sequenceDiagram
     E2E->>E2E: Ginkgo assertions verify response
 ```
 
-**E2E Client Changes** (in [hyperfleet-e2e](https://gitlab.cee.redhat.com/service/hyperfleet/hyperfleet-e2e) repository):
+**E2E Client Changes** (in [hyperfleet-e2e](https://github.com/openshift-hyperfleet/hyperfleet-e2e) repository):
 
 Read token from `HYPERFLEET_API_TOKEN` environment variable and inject in `Authorization: Bearer` header for all requests.
 

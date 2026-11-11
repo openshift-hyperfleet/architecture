@@ -1,10 +1,12 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-02
+Last Updated: 2026-11-10
 ---
 
 # 0035 — Mode-Aware E2E Authentication
+
+> **Superseded in part.** The text below is the original decision, kept for history. Where it conflicts with [ADR-0037](0037-e2e-human-and-machine-identities.md), ADR-0037 takes precedence. ADR-0037 limits service account tokens to machine identities. Normal API calls in `API`, `EDGE` and `EDGE+API` run as a human. `NONE` sends no token and needs no issuer. The mode-aware scheme selection remains in force.
 
 ## Context
 
