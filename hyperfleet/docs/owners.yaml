@@ -231,7 +231,7 @@ repos:
   hyperfleet-api-spec-template:
     "": {area: Contracts, approvers: [contracts-owners], reviewers: [contracts-reviewers], labels: [area/contracts]}
   hyperfleet-desire-store-spec:
-    "": {area: Contracts, approvers: [contracts-owners], reviewers: [contracts-reviewers], labels: [area/contracts]}
+    "": {area: Contracts, approvers: [contracts-owners, tech-leads], reviewers: [contracts-reviewers], labels: [area/contracts]}
   hyperfleet-adapter:
     "": {area: Adapter framework, approvers: [adapter-owners, tech-leads], reviewers: [adapter-reviewers], labels: [area/adapter]}
     internal/desireclient: {area: Desire delivery, approvers: [desire-owners], reviewers: [desire-reviewers], labels: [area/desire-delivery]}
