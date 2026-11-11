@@ -49,27 +49,19 @@ These files live in the repository and are reviewed like any other change.
 | `.hyperfleet.yaml` | The repository type, read by HyperFleet tooling | [Repository Type Indicator](../standards/makefile-conventions.md#repository-type-indicator) |
 | `Makefile` | The targets the declared repository type requires | [Makefile Conventions](../standards/makefile-conventions.md) |
 | `.pre-commit-config.yaml` | The `hyperfleet-hooks` set, including commitlint | [Pre-commit Hooks](pre-commit-hooks.md) |
-| `renovate.json` | Dependency automation, extending the shared config | [Renovate](#renovate) |
+| `renovate.json` | Dependency automation, extending the shared preset | [`renovate-config`](https://github.com/openshift-hyperfleet/renovate-config) |
 
-The `.hyperfleet.yaml` file states the type instead of leaving tooling to infer it from `go.mod` or a `charts/` directory:
-
-```yaml
-# .hyperfleet.yaml - Repository metadata for HyperFleet tooling
-version: v1
-repository:
-  types: [service]
-  name: example-service
-  description: One line describing what the repository holds
-```
+The `.hyperfleet.yaml` file states the type instead of leaving tooling to infer it from `go.mod` or a `charts/` directory. The format and the valid types are in [Repository Type Indicator](../standards/makefile-conventions.md#repository-type-indicator); this document does not repeat the example, so a change to the format has one place to land.
 
 Do not hand-write `OWNERS` from scratch, and do not copy another repository's. Ownership is declared once, in [`owners.yaml`](owners.yaml), and the files are generated from it. For a new repository:
 
 1. Name the area it belongs to. A repository that continues an existing area reuses that area's row; a repository that starts one needs a new entry under `areas:` with at least two approvers and its reviewers, chosen by the tech leads from the people who will do the work. The reviewer and approver criteria in [Repository Ownership](owners.md) apply to everyone who joins that area afterwards.
 2. Add the repository under `repos:` with a root (`""`) entry pointing at the area, and one entry per path that another area owns. A repository that ships an artifact needs `.tekton` under Release and packaging, or Prow falls back to the root approvers for its pipelines: `""` at `{area: Desire delivery, approvers: [desire-owners, tech-leads], reviewers: [desire-reviewers], labels: [area/desire-delivery]}` and `.tekton` at `{area: Release and packaging, approvers: [release-owners], reviewers: [release-reviewers], labels: [area/release]}`.
 3. Run `make owners`. It refreshes the area table in [Repository Ownership](owners.md) and writes the `OWNERS` and `OWNERS_ALIASES` files for every repository to `hack/owners/out/`.
-4. Send the `owners.yaml` change in a PR against this repository, and copy the whole `hack/owners/out/<repo>/` tree into the new repository: the root files and the `OWNERS` for each sub-path.
+4. Copy the generated tree to its two destinations: into the new repository (the root files and the `OWNERS` for each sub-path), and into `core-services/prow/02_config/openshift-hyperfleet/<repo>/OWNERS` in `openshift/release`, where Prow's `approve` and `owners-label` plugins read it. A missing copy on the Prow side makes `/approve` and the area labels silently do nothing.
+5. Create the area labels. `owners-label` only applies labels that already exist, and `hack/owners/labels.sh` creates them from `owners.yaml` in every listed repository; without it the `OWNERS` files are correct and the pull requests carry no `area/*` label, with nothing failing.
 
-`make verify-owners` fails when the table and `owners.yaml` disagree, which is what keeps step 3 from being skipped.
+Send the `owners.yaml` change, the two `openshift/release` files, and the generated tree in PRs. `make verify-owners` fails when `owners.yaml` and the rendered table in [Repository Ownership](owners.md) disagree, or when the YAML is inconsistent; it does not look at the generated files, so step 3 is still the author's to remember.
 
 ---
 
@@ -97,7 +89,7 @@ The organisation owns this ruleset; a repository does not create its own.
 | Dismiss stale reviews on push | enabled | A push after approval needs a fresh look |
 | Require review from code owners | disabled | Ownership is enforced by Prow's `OWNERS` files, not by GitHub |
 | Require approval of the most recent push | disabled | The approver is not necessarily the last pusher |
-| Require extra approval for unattributed pull requests | left at the GitHub default | It adds one approval on top of the configured count for a pull request opened by an app identity, and does nothing at a count of zero |
+| Require extra approval for unattributed pull requests | `true` (GitHub default) | Adds one approval on top of the configured count when an app identity opens a pull request, so at a count of zero it changes nothing |
 | Require conversation resolution | disabled | Review threads are a review concern, not a merge gate |
 | Allowed merge methods | merge, squash, rebase | Tide squashes on merge; the other methods stay available for manual work |
 
@@ -111,7 +103,7 @@ The ruleset carries no required status checks, and there is a second mechanism t
 
 The protector runs on a schedule, so a repository that has just merged its Prow configuration still has an unprotected `main` for a while. Until the protector has run, `gh api repos/openshift-hyperfleet/<repo>/branches/main/protection` answers `Branch not protected`, and a manual merge goes through with failing presubmits.
 
-A repository without jobs gets nothing from the protector, because there is no context of its own to require. That is the case where the `tide` context described in [Prow CI](#prow-ci) is set by hand, and it is the only check such a repository needs.
+A repository without presubmits gets nothing from the protector, because there is no context of its own to require. That is the case where the `branch-protection` block in its `_prowconfig.yaml` asks for the `tide` context, described in [Prow CI](#prow-ci), and it is the only check such a repository needs.
 
 ---
 
@@ -141,16 +133,33 @@ All HyperFleet repositories **MUST** be configured with the following team acces
 
 ## Prow CI
 
-Two independent pieces of configuration live in [openshift/release](https://github.com/openshift/release), and a repository can have the first without the second.
+Three pieces of configuration live in [openshift/release](https://github.com/openshift/release), all of them under `core-services/prow/02_config/$org/$repo/` or `ci-operator/config/$org/$repo/`.
 
-- **The plugins**, in `core-services/prow/02_config/$org/$repo/_pluginconfig.yaml`. They provide `/lgtm`, `/approve`, `/hold`, the `OWNERS`-driven labels, and Tide. Without this file, those commands do nothing and a pull request reports `no checks reported`.
-- **The jobs**, in `ci-operator/config/$org/$repo/`. They provide the `ci/prow/*` contexts. Without them the repository is "jobless": the labels work and Tide merges, but nothing runs against the code.
+- **The plugins**, in `_pluginconfig.yaml`. They provide `/lgtm`, `/approve`, `/hold`, `/assign`, and the `OWNERS`-driven labels. Without this file those commands do nothing and a pull request reports `no checks reported`.
+- **The Tide query**, in `_prowconfig.yaml`. It declares which repositories Tide merges, and with which labels — for HyperFleet, `approved` and `lgtm`. The `branch-protection` block in the same file is where a repository asks for the `tide` required context.
+- **The jobs**, in `ci-operator/config/$org/$repo/`. They provide the `ci/prow/*` contexts.
 
 Follow [Onboarding a New Component for Testing and Merge Automation](release/test-release/onboarding-a-new-component-for-testing-and-merge-automation.md). It covers bootstrapping `_pluginconfig.yaml` with `make new-repo`, copying `OWNERS` into the same directory, and adding the presubmits.
 
 The presubmits every HyperFleet Go repository carries are the commit-message check and the repository's own `make lint` and `make test`, so the Makefile targets are the contract: a target that does not exist in the repository fails the job.
 
-A jobless repository still needs the merge gate, and gets it from one required context: `tide`, which Tide reports with its merge verdict, so a pull request can only merge once Tide says it is mergeable. Six repositories are in that shape today: `hyperfleet-api-spec`, `hyperfleet-api-spec-template`, `hyperfleet-release`, `coderabbit`, `.github`, and `renovate-config`. A repository with jobs does not need it, because its presubmit contexts are the required checks.
+Tide is the merge gate for pull requests: one merges only when Tide says it is mergeable, which means the `lgtm` and `approved` labels and green required contexts. Tide's verdict can also be required from GitHub as a status context named `tide`, which is what stops a merge made by hand. A repository with its own presubmits does not need it, because those contexts are the required checks; a repository without any declares it in `_prowconfig.yaml`:
+
+```yaml
+branch-protection:
+  orgs:
+    openshift-hyperfleet:
+      repos:
+        <repo>:
+          branches:
+            main:
+              protect: true
+              required_status_checks:
+                contexts:
+                - tide
+```
+
+Six repositories declare it today: `hyperfleet-api-spec`, `hyperfleet-api-spec-template`, `hyperfleet-release`, `coderabbit`, `.github`, and `renovate-config`.
 
 ---
 
@@ -167,41 +176,33 @@ The PipelineRuns build on push to `main` and on version tags only, so they add n
 
 Registration is not a click in the Konflux UI: it is an MR against the `releng/konflux-release-data` GitLab repository with a Component and an `ImageRepository` per artifact, the kustomization entry, the regenerated output, and the ReleasePlanAdmission component mapping. The files and their locations are listed in the [release configuration map](release/operations/configuration-map.md); the naming and pipeline conventions are in the [Konflux Release Pipeline Design](release/konflux-release-pipeline-design.md).
 
+The order matters: that MR creates the tenant namespace and the Components the `.tekton` PipelineRuns refer to, so it has to merge before the first push to `main` can build. Until it does, the PipelineRun fails on a Component that does not exist yet, which looks like a broken pipeline rather than a missing registration.
+
 ---
 
 ## CodeRabbit
 
-CodeRabbit reviews every PR. The organisation configuration in `openshift-hyperfleet/coderabbit/.coderabbit.yaml` applies to all repositories with `auto_review` enabled, so a repository does not need its own `.coderabbit.yaml` and must not add one: a local file overrides the shared rules.
+CodeRabbit reviews every pull request. The organisation configuration lives in [`openshift-hyperfleet/coderabbit`](https://github.com/openshift-hyperfleet/coderabbit), whose `.coderabbit.yaml` applies to every repository in the organisation that does not have its own, with `auto_review` enabled for the ones that are not drafts or work in progress. A repository must not add a local `.coderabbit.yaml`: it overrides the shared rules.
 
-The App is installed per repository, so a new repository is silently unreviewed until it is added. Only an organisation admin can change the installation.
+There is no per-repository setup and nothing to install in the new repository. The App is installed for the organisation, so the onboarding action is to confirm it reviews the first pull request, and an organisation admin is only involved when it does not.
 
 Two behaviours are worth knowing before opening the first PR:
 
-- The installation does not review PRs opened before it. A PR that predates the installation needs a `@coderabbitai review` comment.
-- The evidence that the wiring works is a walkthrough comment from `coderabbitai[bot]` on the PR, not the absence of a check failure.
+- A repository created minutes ago may not be picked up until CodeRabbit syncs its repository list, and a pull request opened in that window gets no review until someone comments `@coderabbitai review`. That is the normal first-PR step for a new repository, not a sign of a broken installation.
+- The evidence that the wiring works is a walkthrough comment from `coderabbitai[bot]` on the pull request, not the absence of a check failure.
 
 ---
 
 ## Renovate
 
-Dependency updates come from one of two services, and which one covers a repository depends on whether Konflux builds it. The repository side is identical in both cases: a `renovate.json` whose only content is the shared configuration.
-
-```json
-{
-  "extends": [
-    "github>openshift-hyperfleet/renovate-config"
-  ]
-}
-```
-
-Schedule, grouping, and update policy live in `openshift-hyperfleet/renovate-config`, so a repository-level override is an exception that needs a reason in the PR.
+Dependency updates come from one of two services, and which one covers a repository depends on whether Konflux builds it. The repository side is identical in both cases: a `renovate.json` that extends the shared preset, whose format and policy are documented in [`openshift-hyperfleet/renovate-config`](https://github.com/openshift-hyperfleet/renovate-config). Copy the consumer example from that README rather than from here, so the `$schema` line and the preset name have one place to change.
 
 | The repository ships | Service | Bot that opens the PRs |
 | -------------------- | ------- | ---------------------- |
 | A container image or a chart, registered in Konflux | MintMaker, which runs per Konflux tenant | `red-hat-konflux-kflux-prd-rh02` |
 | Nothing Konflux builds | The hosted Renovate App | `renovate` |
 
-Both are installed per repository, and only an organisation admin can change either. A repository that slips through both opens no dependency PRs at all, which is easy to miss: `hyperfleet-e2e`, `hyperfleet-logger`, and `hyperfleet-broker` carry `renovate.json` and have no bot PRs. The evidence that the wiring works is a dependency dashboard issue or a dependency PR from the bot for the row that applies. Watch the first run for `pre-commit` pins: the `rev: <sha>  # frozen: <tag>` format exists because Renovate once rewrote those pins to mutable tags.
+Schedule, grouping, and update policy live in `renovate-config`, so a repository-level override is an exception that needs a reason in the PR. Which of the two services covers a repository is an organisation-level setting that an organisation admin changes; the repository itself only supplies the config file. A repository that falls through both opens no dependency PRs at all, which is easy to miss: `hyperfleet-e2e`, `hyperfleet-logger`, and `hyperfleet-broker` carry `renovate.json` and have no bot PRs. The evidence that the wiring works is a dependency dashboard issue or a dependency PR from the bot for the row that applies. Watch the first run for `pre-commit` pins: the `rev: <sha>  # frozen: <tag>` format exists because Renovate once rewrote those pins to mutable tags.
 
 ---
 
@@ -215,8 +216,8 @@ Some steps need more than repository admin, which is worth knowing before planni
 | Add the repository to the `hyperfleet-main-protection` ruleset | An organisation admin |
 | Add the repository files and the scaffold | Any maintainer, through a PR |
 | Declare the area in `owners.yaml` and copy the generated `OWNERS` | A PR against this repository, merged by an area approver |
-| Prow plugins and jobs | A PR to `openshift/release`, approved by its release approvers |
-| The `tide` required context on a jobless repository | Someone with admin on the repository |
+| Prow plugins, Tide query, and jobs | A PR to `openshift/release`, approved by its release approvers |
+| The `tide` required context, in `_prowconfig.yaml` | The same PR to `openshift/release` |
 | Konflux registration | An MR to `releng/konflux-release-data`, reviewed by releng |
 | CodeRabbit App, and MintMaker or the Renovate App | An organisation admin |
 | First release | Release owners, after the Prow and Konflux steps are green |
@@ -246,9 +247,9 @@ Each item names the evidence to check. A green checklist means the repository is
 - [ ] The repository is a target of the organisation ruleset: `gh api repos/openshift-hyperfleet/<repo>/rules/branches/main` reports `ruleset_source_type: Organization` and `ruleset_id` 15199170
 - [ ] The ruleset blocks deletion and force pushes
 - [ ] The ruleset requires a pull request and dismisses stale reviews on push
-- [ ] The ruleset sets zero required approvals and no required status checks, and has no bypass actors, as in the table above
+- [ ] The ruleset sets zero required approvals and no required status checks, as in the table above; the absence of bypass actors is a property of the organisation ruleset, which an organisation admin confirms
 - [ ] `main` reports classic branch protection with the `ci/prow/*` contexts, which Prow's branch protector applies after the Prow configuration merges
-- [ ] A repository with no jobs requires the `tide` context instead, and a repository with jobs does not
+- [ ] A repository without presubmits requires the `tide` context from its `_prowconfig.yaml` instead, and a repository with presubmits does not
 - [ ] The approval gate is Prow's: Tide reports `Needs approved, lgtm labels` on a pull request that has neither
 
 ### Team Access
@@ -258,10 +259,12 @@ Each item names the evidence to check. A green checklist means the repository is
 
 ### CI and Automation
 
-- [ ] `core-services/prow/02_config/openshift-hyperfleet/<repo>/_pluginconfig.yaml` exists in `openshift/release`, and `/lgtm` and `/approve` work on a PR
-- [ ] `ci-operator/config/openshift-hyperfleet/<repo>` exists, and a PR reports its presubmits instead of `no checks reported`, unless the repository is deliberately jobless
-- [ ] Repositories that ship an artifact have their PipelineRuns in `.tekton/` and their Component registered, and the first build on `main` is green
-- [ ] `coderabbitai[bot]` commented on a PR
+- [ ] `_pluginconfig.yaml` and `_prowconfig.yaml` exist in `core-services/prow/02_config/openshift-hyperfleet/<repo>/` in `openshift/release`, the latter with the Tide query, and `/lgtm` and `/approve` work on a PR
+- [ ] `OWNERS` exists both in the repository and in `core-services/prow/02_config/openshift-hyperfleet/<repo>/`, generated from `owners.yaml` in both places
+- [ ] `hack/owners/labels.sh` has run for the repository, and a PR carries its `area/*` label
+- [ ] `ci-operator/config/openshift-hyperfleet/<repo>` exists, and a PR reports its presubmits instead of `no checks reported`, unless the repository deliberately has none
+- [ ] Repositories that ship an artifact have their PipelineRuns in `.tekton/`, their Component registered before the first push to `main`, and that first build green
+- [ ] `coderabbitai[bot]` commented on a PR, after the `@coderabbitai review` a brand-new repository needs on its first one
 - [ ] A dependency PR or dependency dashboard issue exists from the bot that matches the repository: `red-hat-konflux-kflux-prd-rh02` when Konflux builds it, `renovate` when it does not
 - [ ] No `pre-commit` pin was rewritten to a tag
 
