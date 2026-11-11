@@ -137,10 +137,10 @@ TypeSpec definitions generating OpenAPI 3.0 specifications (with optional OpenAP
 |-------|-------|
 | Repository | [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec) |
 | Language | TypeSpec |
-| Version | 0.1.0 (not yet released) |
-| Consumed by | Planned: the Desire Store API service, the Applier client, and the Adapter client, via the `github.com/openshift-hyperfleet/hyperfleet-desire-store-spec` Go module |
+| Version | 0.1.0 |
+| Consumed by | Planned: the Desire Store API service, the Applier client, and the Adapter client, through the `github.com/openshift-hyperfleet/hyperfleet-desire-store-spec` Go module |
 
-TypeSpec definitions generating the OpenAPI 3.0 contract for the Desire Store REST v1 API under `/api/hyperfleet/desire-store/v1`. The contract is transcribed from the [Desire Store detailed design](./docs/desire-store-dd.md#rest-api-v1) and reviewed before implementation, per [ADR-0003](./adrs/0003-openapi-first-contract.md). Each release publishes the generated `openapi.yaml` as a GitHub Release artifact and as a Go module tag; the `schemas` package embeds the file. The repository is independent of `hyperfleet-api-spec` and does not import its shared models. The routes and schemas are not yet specified ([HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821)).
+TypeSpec definitions that generate the OpenAPI 3.0 contract for the Desire Store REST v1 API. The base path is `/api/hyperfleet/desire-store/v1`. The contract comes from the [Desire Store detailed design](./docs/desire-store-dd.md#rest-api-v1). Per [ADR-0003](./adrs/0003-openapi-first-contract.md), reviewers approve the contract before implementation starts. Version 0.1.0 has no routes or schemas yet. [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) adds them. Each release attaches the generated contract to the GitHub Release as `desire-store-openapi.yaml`. The release tag is also the Go module version. The `schemas` package embeds the contract. The repository does not import the shared models from `hyperfleet-api-spec`.
 
 ### 2.3 CloudEvents Contract
 
