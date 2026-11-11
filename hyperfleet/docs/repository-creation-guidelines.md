@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-10
+Last Updated: 2026-11-11
 ---
 
 # HyperFleet Repository Creation Guidelines
@@ -61,7 +61,7 @@ Do not hand-write `OWNERS` from scratch, and do not copy another repository's. O
 4. Copy the generated tree to its two destinations: into the new repository (the root files and the `OWNERS` for each sub-path), and into `core-services/prow/02_config/openshift-hyperfleet/<repo>/OWNERS` in `openshift/release`, where Prow's `approve` and `owners-label` plugins read it. A missing copy on the Prow side makes `/approve` and the area labels silently do nothing.
 5. Create the area labels. `owners-label` only applies labels that already exist, and `hack/owners/labels.sh` creates them from `owners.yaml` in every listed repository; without it the `OWNERS` files are correct and the pull requests carry no `area/*` label, with nothing failing.
 
-Send the `owners.yaml` change, the two `openshift/release` files, and the generated tree in PRs. `make verify-owners` fails when `owners.yaml` and the rendered table in [Repository Ownership](owners.md) disagree, or when the YAML is inconsistent; it does not look at the generated files, so step 3 is still the author's to remember.
+Send the `owners.yaml` change and the rendered table in a pull request here. In `openshift/release`, send `_pluginconfig.yaml`, `_prowconfig.yaml`, and the `OWNERS` copy. The generated tree goes in the new repository. `make verify-owners` fails when `owners.yaml` and the rendered table in [Repository Ownership](owners.md) disagree, or when the YAML is inconsistent; it does not look at the generated files, so step 3 is still the author's to remember.
 
 ---
 
@@ -89,7 +89,7 @@ The organisation owns this ruleset; a repository does not create its own.
 | Dismiss stale reviews on push | enabled | A push after approval needs a fresh look |
 | Require review from code owners | disabled | Ownership is enforced by Prow's `OWNERS` files, not by GitHub |
 | Require approval of the most recent push | disabled | The approver is not necessarily the last pusher |
-| Require extra approval for unattributed pull requests | `true` (GitHub default) | Adds one approval on top of the configured count when an app identity opens a pull request, so at a count of zero it changes nothing |
+| Require an additional approval for unattributed pull requests | `true` (GitHub default) | Requires one more approval than the configured count when Copilot opens a pull request that is not attributed to a person; GitHub states it has no effect at a count of zero, so it is recorded here rather than relied on |
 | Require conversation resolution | disabled | Review threads are a review concern, not a merge gate |
 | Allowed merge methods | merge, squash, rebase | Tide squashes on merge; the other methods stay available for manual work |
 
