@@ -129,7 +129,7 @@ The DD and the current code disagree, or the DD is silent. The affected rows can
 - **C9, rules across desire types:**
   - The store rejects an apply while a delete is pending with `ErrDeletePending` (`pkg/desire/store.go:28`). The DD on `main` has no status code or REST rule for it.
   - The Store Conformance Suite asserts that a delete supersedes an apply, that a confirmed delete lets a new apply recreate the object, and that all desire types for one object share one owner. The DD on `main` states none of these rules.
-  - [architecture PR #267](https://github.com/openshift-hyperfleet/architecture/pull/267) proposes `HYPERFLEET-CNF-003` for an apply while a delete is pending, recreation after a confirmed delete, and one owner for all desires of one object. It does not state the supersede rule.
+  - [architecture PR #267](https://github.com/openshift-hyperfleet/architecture/pull/267) proposes `HYPERFLEET-CNF-003` for an apply while a delete is pending. It allows recreation after a confirmed delete. It gives all desires of one object one owner, and returns `HYPERFLEET-CNF-004` on an owner conflict. It does not state the supersede rule.
   - The [Desires Lost Mid-Deletion spike](../spike-desires-lost-mid-deletion.md) requires `ConfirmedDeleteThenApplyRecreates` to pass.
 - **C10, ReadDesire target version:**
   - A ReadDesire requires `TargetVersion` (`pkg/desire/types.go:137`, checked in `pkg/desire/validate.go:136`).
