@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-11
+Last Updated: 2026-11-12
 ---
 
 # Desire Store Detailed Design
@@ -36,6 +36,7 @@ Last Updated: 2026-11-11
     - [Wire Schemas](#wire-schemas)
     - [Status Codes](#status-codes)
     - [Error Responses](#error-responses)
+  - [Sweeper Partition Enumeration (Proposed)](#sweeper-partition-enumeration-proposed)
   - [Compatibility](#compatibility)
   - [CAS / Version Semantics](#cas--version-semantics)
   - [Pagination and Consistency](#pagination-and-consistency)
@@ -54,6 +55,7 @@ Last Updated: 2026-11-11
 - [Desire Identity and Ownership Spike](spike-desire-identity-ownership.md) — defines the desire identity tuple and content fields used by the wire schemas.
 - [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) — describes the related tenant and gateway identity model.
 - [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md) — selects a centralized Hub sweeper and resource-reference correlation for orphan cleanup.
+- [Sweeper Orphan-Scan spike](spike-sweeper-orphan-scan.md) — proposes partition enumeration, confirmation, cleanup rules, and cadence for HYPERFLEET-1823; identifies review gates before implementation.
 
 ## Overview
 
@@ -118,7 +120,7 @@ The concrete `AuthConfig` CR rendered for each binding is defined in [AuthConfig
 
 ### Partition Selection
 
-Every Desire Store route addresses the target partition in its path, as the segment following the fixed `/partitions` prefix — `/partitions/{partition}/desires/...` — and the route paths are uniform for all callers. The authorization rules and the gateway hostnames differ by caller class — the hostname selection is defined in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation):
+Every desire-record route addresses the target partition in its path, as the segment following the fixed `/partitions` prefix — `/partitions/{partition}/desires/...` — and the route paths are uniform for all callers. The proposed [partition enumeration operation](#sweeper-partition-enumeration-proposed) is a separate, sweeper-only metadata exception; it does not relax these rules for desire records. The authorization rules and the gateway hostnames differ by caller class — the hostname selection is defined in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation):
 
 - **Remote Applier:** the path partition must equal the partition in its AuthConfig binding; a mismatch is rejected ([ADR-0022](../adrs/0022-api-mediated-desire-store-access.md)).
 - **Adapter and sweeper:** may target any partition per request; the path partition is the requested target, Authorino stamps it into the Wristband, and the API authorizes from that claim (see [Fleet-Scoped Caller AuthConfig](#fleet-scoped-caller-authconfig)).
@@ -262,7 +264,7 @@ spec:
 
 The Adapter and sweeper run on the Hub and authenticate using Hub service accounts. Unlike a remote Applier, which is restricted to one partition, they can access different partitions, one per request.
 
-For each request, Authorino reads the target partition from the URL path (`request.path.split('/')[6]`) and includes it in the Wristband. The index form is illustrative: the implementation must anchor the extraction to the `/partitions/` marker rather than a position and reject paths that do not match the expected shape, so route changes fail closed instead of injecting a wrong partition.
+For each desire-record request, Authorino reads the target partition from the URL path (`request.path.split('/')[6]`) and includes it in the Wristband. The index form is illustrative: the implementation must anchor the extraction to the `/partitions/` marker rather than a position and reject paths that do not match the expected shape, so route changes fail closed instead of injecting a wrong partition. The proposed metadata operation has a separate exact method/path rule, defined in [Sweeper Partition Enumeration](#sweeper-partition-enumeration-proposed); extraction failure must never select that rule.
 
 Their AuthConfig differs from a remote-Applier binding's in four ways:
 
@@ -309,7 +311,7 @@ The Desire Store API exposes these transport-neutral operations:
 | Write status | Remote Applier | Writes status only. |
 | Delete desire | Adapter, sweeper | Deletes a desire. To remove an applied resource, the Adapter creates a `DeleteDesire`. |
 
-The API derives the partition from the Wristband's trusted partition claim, never from a normal client request. All callers address the target partition in the route path; [Partition Selection](#partition-selection) defines the addressing and per-caller rules.
+For these desire-record operations, the API derives the partition from the Wristband's trusted partition claim, never from a normal client request. All callers address the target partition in the route path; [Partition Selection](#partition-selection) defines the addressing and per-caller rules. Proposed partition metadata enumeration is specified separately below.
 
 ### Owner Binding
 
@@ -450,6 +452,45 @@ Each 409 response has its own [conflict code](../standards/error-model.md#confli
 On a write or a delete, the store checks the version before the `owner`. When both are wrong, the response is `HYPERFLEET-CNF-002`. The retry with the current version then gets `HYPERFLEET-CNF-004`.
 
 The API tests must cover each row. The `HYPERFLEET-CNF-004` test must use a second caller identity.
+
+### Sweeper Partition Enumeration (Proposed)
+
+**Review state:** This is the proposed API amendment for [HYPERFLEET-1823](spike-sweeper-orphan-scan.md), to be accepted or revised before [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) finalizes OpenAPI. It is not an implemented endpoint. The spike's confirmation and cleanup rules also depend on the generation/status contract proposed in [PR #273](https://github.com/openshift-hyperfleet/architecture/pull/273); that PR was open when this amendment was written.
+
+#### Operation and Response
+
+Add `GET /partitions?cursor={cursor}&limit={limit}` under the existing `/api/hyperfleet/desire-store/v1` base path. It lists distinct partitions represented by at least one stored desire of any type (`apply`, `delete`, or `read`). It must not filter by registration, AuthConfig, active Applier, owner, or originating API-resource existence. It returns identifiers only, without desire content, credentials, or registration metadata.
+
+Example response (illustrative identifiers and opaque cursor):
+
+```json
+{
+  "items": [
+    { "partition": "mc-01" },
+    { "partition": "mc-02" }
+  ],
+  "next_cursor": "opaque-continuation-token"
+}
+```
+
+- `items` is required, including an empty array when no partitions remain. Each `partition` has the existing `managementCluster` identifier format. Omit `next_cursor` on the final page; return no total count.
+- Use ascending bytewise lexicographic order of the partition identifiers and an opaque keyset cursor, independent of database locale. A cursor belongs to this operation and cannot be used on a desire-list route or vice versa; malformed or incompatible cursors return 400.
+- Use the same default/maximum `limit` and over-limit behavior as the desire-list operation, finalized in HYPERFLEET-1821 (test-plan C8). Do not introduce a second paging policy. Both operations need explicit values in OpenAPI; this spike makes no unmeasured capacity claim for those values.
+- The response is 200 on success, including an empty list. Use existing 400, 401, 403, 429, 500, and 503 error contracts. Do not turn a database/query failure into an empty 200 response.
+- Pagination is not a snapshot. A partition inserted behind the cursor may be found on the next scan; disappearing rows may make a returned partition empty when read. Restart scans from the beginning on subsequent runs. Do not use the list as evidence of source-resource or Kubernetes-object absence.
+- The API/backend performs enumeration through its data layer; the sweeper receives no database access. Partition identifiers are derived from remaining records, not a new registry. Select and validate a bounded query/index strategy against the actual schema, including partitions containing only deletes or reads.
+
+#### Metadata Authorization Exception
+
+This operation intentionally has no target partition. Its permission is separate from every desire-record permission:
+
+1. On the existing fleet base host, authenticate the Hub token through TokenReview and require the exact deployed sweeper service-account identity. Other allowlisted Hub identities, including Adapters, cannot use this route. Remote Appliers cannot use it through either hostname class.
+2. Match only `GET` on the canonical partition-collection path. Authorino issues a signed Wristband with `hf_caller_class=fleet-scoped`, the sweeper's `hf_identity`, and a new `hf_operation=partition-list` claim. Omit `hf_partition` for this operation; never use an empty or wildcard partition to query desire records. Keep the existing signature, issuer, audience, expiry, and key-validation requirements.
+3. The API admits the metadata query only when method/path, identity, caller class, and `hf_operation` all match. A metadata request carrying `hf_partition` is inconsistent and must be rejected. A valid partition-scoped Wristband does not grant metadata permission.
+4. On every desire-record route, reject a metadata `hf_operation` claim and continue requiring the existing non-empty partition claim and route equality. The metadata scope is not a fallback when partition extraction fails. Normal partition-scoped Wristbands need no new operation claim.
+5. Strip client-supplied identity, scope, partition, and Wristband headers at the gateway as before. Client input must never populate `hf_operation`. Grant the exception only to the enumeration handler/data-layer method, never by disabling shared partition enforcement.
+
+Accepting this proposal requires recording the metadata exception in ADR-0029, using its existing relationship to ADR-0022; those ADRs are unchanged in this draft. The exception would apply only to this metadata operation. Review the AuthConfig generation, gateway route matching, API claim validation, and data-layer interface together. Required negative tests include forged scope, Adapter/Applier access, mixed claims, metadata-token replay on desire routes, malformed paths, and missing partition on ordinary routes. Gateway expression syntax and normalization behavior must be verified in implementation, not inferred from this conceptual claim contract.
 
 ### Compatibility
 
