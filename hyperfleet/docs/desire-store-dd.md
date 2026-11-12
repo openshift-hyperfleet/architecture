@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-10
+Last Updated: 2026-11-11
 ---
 
 # Desire Store Detailed Design
@@ -340,6 +340,8 @@ The sweeper is exempt from the owner-collision check on its writes and deletes, 
 ### REST API (v1)
 
 REST/JSON over HTTPS is the selected transport, confirmed by the [transport evaluation](spike-desire-store-transport.md) ([HYPERFLEET-1743](https://redhat.atlassian.net/browse/HYPERFLEET-1743)).
+
+The OpenAPI specification for this API is in [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec). The specification does not contain the routes and wire schemas from this section yet. [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) adds them.
 
 The base path is `/api/hyperfleet/desire-store/v1`, and the routes follow the partition addressing defined in [Partition Selection](#partition-selection):
 

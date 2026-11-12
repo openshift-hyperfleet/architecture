@@ -136,6 +136,7 @@ Kubernetes resources (Jobs, Secrets, ConfigMaps, Services) created by adapters t
 ## Related Repositories
 
 - [hyperfleet-api-spec](https://github.com/openshift-hyperfleet/hyperfleet-api-spec) - TypeSpec-based OpenAPI contract generator
+- [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec) - TypeSpec-based OpenAPI contract for the Desire Store REST v1 API
 - [hyperfleet-api](https://github.com/openshift-hyperfleet/hyperfleet-api) - REST API implementation
 - [hyperfleet-sentinel](https://github.com/openshift-hyperfleet/hyperfleet-sentinel) - Orchestration and decision engine
 - [hyperfleet-adapter](https://github.com/openshift-hyperfleet/hyperfleet-adapter) - Adapter framework implementation
