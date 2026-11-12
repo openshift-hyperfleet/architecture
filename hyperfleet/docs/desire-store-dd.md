@@ -345,10 +345,11 @@ REST/JSON over HTTPS is the selected transport, confirmed by the [transport eval
 
 The OpenAPI specification for this API is in [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec). The specification does not contain the routes and wire schemas from this section yet. [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) adds them.
 
-The base path is `/api/hyperfleet/desire-store/v1`, and the routes follow the partition addressing defined in [Partition Selection](#partition-selection):
+The base path is `/api/hyperfleet/desire-store/v1`. The desire-record routes follow the partition addressing defined in [Partition Selection](#partition-selection). The proposed partition-listing route has separate [authorization rules](#sweeper-partition-enumeration-proposed):
 
 | REST route | Operation |
 |------------|-----------|
+| `GET /partitions?cursor={cursor}&limit={limit}` | List partitions (sweeper only; [proposed](#sweeper-partition-enumeration-proposed)) |
 | `GET /partitions/{partition}/desires?type={type}&cursor={cursor}&limit={limit}` | List desires |
 | `GET /partitions/{partition}/desires/{desire-id}` | Get desire |
 | `PUT /partitions/{partition}/desires/{desire-id}` | Write desire |
@@ -455,7 +456,7 @@ The API tests must cover each row. The `HYPERFLEET-CNF-004` test must use a seco
 
 ### Sweeper Partition Enumeration (Proposed)
 
-**Review state:** This is the proposed API amendment for [HYPERFLEET-1823](spike-sweeper-orphan-scan.md), to be accepted or revised before [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) finalizes OpenAPI. It is not an implemented endpoint. The spike's confirmation and cleanup rules also depend on the generation/status contract proposed in [PR #273](https://github.com/openshift-hyperfleet/architecture/pull/273); that PR was open when this amendment was written.
+**Review state:** This is the proposed API amendment for [HYPERFLEET-1823](spike-sweeper-orphan-scan.md), to be accepted or revised before [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) finalizes OpenAPI. It is not an implemented endpoint. The spike's confirmation and cleanup rules also depend on the generation/status contract proposed in [PR #273](https://github.com/openshift-hyperfleet/architecture/pull/273); that PR is still open and documents a false-confirmation risk after a DeleteDesire is recreated. The spike records this as a review gate.
 
 #### Operation and Response
 
@@ -495,9 +496,10 @@ Accepting this proposal requires recording the metadata exception in ADR-0029, u
 ### Compatibility
 
 - Supported v1 Appliers must continue working when the API is deployed independently.
-- Operation behavior and authorization rules remain stable in v1.
+- Existing operation behavior and authorization rules remain stable in v1.
 - Optional additive request and response fields are compatible within v1.
-- Changes to required fields, operation behavior, authorization, CAS, or idempotency require a new API version.
+- The [proposed sweeper-only partition listing](#sweeper-partition-enumeration-proposed) is an additive operation to settle before v1 is finalized. Its metadata permission is limited to one service identity and rejected on every desire-record route. This compatibility assessment is part of the proposal, not an approved API contract.
+- After v1 is finalized, changes to required fields, behavior, authorization, CAS, or idempotency of an existing operation require a new API version.
 - CAS and idempotency details are defined in [CAS / Version Semantics](#cas--version-semantics).
 
 ### CAS / Version Semantics
