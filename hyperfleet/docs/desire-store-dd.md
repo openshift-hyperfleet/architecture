@@ -408,7 +408,8 @@ A ReadDesire has no `kubeContent` at the top level. It carries its `target_versi
 ```
 
 - **List responses:**
-  - Return each desire's reference only — the identity fields and `version` — omitting `kubeContent`, `status`, `owner`, `resource_id`, `generation`, and `target_version`; Get serves the full record.
+  - Return each desire's reference only — the identity fields and `version` — omitting `kubeContent`, `status`, `owner`, `resource_id`, and `generation`; Get serves the full record.
+  - A ReadDesire reference also carries `target_version`. The Applier's read poll uses it on every pass to watch the object at that version. Without it, the poll would have to GET every ReadDesire, and that GET carries the mirrored `status.kubeContent`. A recreated ReadDesire keeps its identity and restarts at `version` 1, so a changed target version shows only through this field.
   - This is the references-only rule the [transport evaluation](spike-desire-store-transport.md) makes load-bearing; the Applier therefore applies from the GET response, not the list.
   - Carry `next_cursor`, omitted on the last page ([Pagination and Consistency](#pagination-and-consistency)).
 - **Write-desire requests:**
