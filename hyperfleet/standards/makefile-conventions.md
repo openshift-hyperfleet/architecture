@@ -427,14 +427,18 @@ LDFLAGS := -s -w \
 
 For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults:
 
+The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
+
+<!-- markdownlint-disable MD010 -->
 ```makefile
 CGO_ENABLED ?= 1
 GOEXPERIMENT ?= noboringcrypto
 GOFIPS140 ?= v1.0.0
 
 build:
-  CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build -o bin/my-service ./cmd/my-service
+	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build -o bin/my-service ./cmd/my-service
 ```
+<!-- markdownlint-enable MD010 -->
 
 The test target **SHOULD** pass the same settings to `go test` so tests exercise the selected module. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
 
