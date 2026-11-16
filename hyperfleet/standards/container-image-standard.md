@@ -177,11 +177,11 @@ USER 65532:65532
 
 All shipped HyperFleet Go services **MUST** build FIPS-compliant, currently `hyperfleet-api`, `hyperfleet-operator`, `hyperfleet-applier`, `hyperfleet-sentinel`, and `hyperfleet-adapter`.
 
-Shipped service builds **MUST** select Go's [native FIPS 140-3 module](https://go.dev/doc/security/fips140) with `GOFIPS140=v1.0.0`. This pinned module has [CMVP Certificate #5247](https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/5247), and selecting it enables FIPS mode by default at runtime. The deprecated BoringCrypto experiment is incompatible with native FIPS; set `GOEXPERIMENT=noboringcrypto` explicitly so builds also succeed when `boringcrypto` was persisted with `go env -w`. Without this explicit negation, Go rejects the incompatible combination with `GOFIPS140=v1.0.0`; it does not silently fall back to non-FIPS cryptography. The negation is a build-compatibility requirement, not an additional FIPS enforcement mechanism.
+Shipped service builds **MUST** select Go's [native FIPS 140-3 module](https://go.dev/doc/security/fips140) with `GOFIPS140=v1.0.0`. This pinned module has [CMVP Certificate #5247](https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/5247). Upstream Go enables FIPS mode by default when this module is selected, but the Red Hat Go 1.26 toolset used by our images does **not**: a binary with `GOFIPS140=v1.0.0` can report `crypto/fips140.Enabled() == false`. Shipped services **MUST** also declare `godebug fips140=on` in their main `go.mod` to enable FIPS mode by default on both toolchains. The deprecated BoringCrypto experiment is incompatible with native FIPS; set `GOEXPERIMENT=noboringcrypto` explicitly so builds also succeed when `boringcrypto` was persisted with `go env -w`. Without this explicit negation, Go rejects the incompatible combination with `GOFIPS140=v1.0.0`; it does not silently fall back to non-FIPS cryptography.
 
 FIPS production builds and deployments **MUST NOT** disable the mode through runtime overrides or compiled defaults. This includes `GODEBUG=fips140=off` and `GODEBUG=fips140=` (empty value), including either entry in a comma-separated `GODEBUG` value; `godebug fips140=off` or `godebug fips140=` directives in `go.mod` or `go.work`; and `//go:debug fips140=off` or `//go:debug fips140=` directives in the main package. An empty `fips140=` entry is not equivalent to leaving the setting unspecified; an unset or entirely empty `GODEBUG` environment variable preserves the compiled default.
 
-The image's module-selection check verifies `GOFIPS140`, not the effective runtime mode: a disabling compiled default can appear separately as `DefaultGODEBUG` in the build info while the module-selection check still passes. Build and deployment review **MUST** check both compiled defaults and runtime overrides for disabling settings. This requirement does not imply that the services currently reject such overrides at startup.
+The image **MUST** verify both the selected `GOFIPS140` module and `DefaultGODEBUG=fips140=on` in build info. This checks the compiled default, not the effective runtime mode: build and deployment review **MUST** also check runtime overrides for disabling settings. This requirement does not imply that the services reject such overrides at startup.
 
 The current service images use `registry.access.redhat.com/ubi9/ubi-minimal:latest` and **MAY** continue to use it for its runtime libraries and CA certificates. Native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If switching to `ubi9-micro`, check CGO runtime dependencies and copy a CA bundle if the service needs TLS.
 
@@ -192,15 +192,17 @@ ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 Verify the build setting:
 
 ```bash
-go version -m <binary> | grep -E 'CGO_ENABLED|GOEXPERIMENT|GOFIPS140'
-# Must show: GOFIPS140=v1.0.0-<hash> (or v1.0.0) and no BoringCrypto.
+go version -m <binary> | grep -E 'CGO_ENABLED|GOEXPERIMENT|GOFIPS140|DefaultGODEBUG'
+# Must show: GOFIPS140=v1.0.0-<hash> (or v1.0.0),
+# DefaultGODEBUG including fips140=on, and no BoringCrypto.
 # Current service images also check CGO_ENABLED=1.
 ```
 
-Container builds **MUST** reject binaries lacking `GOFIPS140=v1.0.0`. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
+Container builds **MUST** reject binaries lacking either `GOFIPS140=v1.0.0` or a compiled `DefaultGODEBUG=fips140=on`. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
 
 ```dockerfile
 RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq 'DefaultGODEBUG=([^,]*,)*fips140=on(,|$)' || { echo "FIPS check FAILED: FIPS mode is not enabled by default"; exit 1; }
 ```
 
 ### Build Flags
@@ -319,6 +321,7 @@ RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,uid=1001 \
 
 RUN go version -m /build/bin/<service-name> | grep -q 'CGO_ENABLED=1' || { echo "FIPS check FAILED: missing CGO_ENABLED=1"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq 'DefaultGODEBUG=([^,]*,)*fips140=on(,|$)' || { echo "FIPS check FAILED: FIPS mode is not enabled by default"; exit 1; }
 
 FROM ${BASE_IMAGE}
 
