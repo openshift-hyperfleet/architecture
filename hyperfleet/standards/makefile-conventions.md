@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-16
 ---
 
 # HyperFleet Makefile Conventions
@@ -318,7 +318,9 @@ All Makefiles **SHOULD** support these environment variables:
 | `IMAGE_NAME` | (repo-specific) | Container image name | `make image IMAGE_NAME=my-service` |
 | `GOOS` | (host OS) | Target operating system for build | `make build GOOS=linux` |
 | `GOARCH` | (host arch) | Target architecture for build | `make build GOARCH=amd64` |
-| `CGO_ENABLED` | `0` | Enable/disable CGO. Services requiring FIPS compliance (`GOEXPERIMENT=boringcrypto`) **MUST** set `CGO_ENABLED ?= 1` | `make build CGO_ENABLED=1` |
+| `CGO_ENABLED` | `0` | Enable/disable CGO. Existing production services keep `CGO_ENABLED ?= 1` for runtime compatibility; native Go FIPS does not depend on CGO. | `make build CGO_ENABLED=1` |
+| `GOEXPERIMENT` | (toolchain default) | FIPS production services **MUST** set `GOEXPERIMENT ?= noboringcrypto` to disable the incompatible legacy experiment, even if saved with `go env -w`. | `make build GOEXPERIMENT=noboringcrypto` |
+| `GOFIPS140` | `off` (upstream default) | FIPS production services **MUST** set `GOFIPS140 ?= v1.0.0` to select the validated Go Cryptographic Module and enable FIPS mode by default. | `make build GOFIPS140=v1.0.0` |
 | `PLATFORM` | `linux/amd64` | Target platform for container builds | `make image PLATFORM=linux/arm64` |
 | `CONTAINER_TOOL` | (auto-detected) | Container tool (`podman` or `docker`) | `make image CONTAINER_TOOL=docker` |
 | `GIT_SHA` | (auto-detected) | Short git commit hash | — |
@@ -422,6 +424,21 @@ LDFLAGS := -s -w \
 | `-X main.date=...` | Embed build date at compile time |
 
 ### Example build target
+
+For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults:
+
+```makefile
+CGO_ENABLED ?= 1
+GOEXPERIMENT ?= noboringcrypto
+GOFIPS140 ?= v1.0.0
+
+build:
+  CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build -o bin/my-service ./cmd/my-service
+```
+
+The test target **SHOULD** pass the same settings to `go test` so tests exercise the selected module. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
+
+For services without FIPS requirements, use the ordinary build target:
 
 ```makefile
 BIN_DIR := bin

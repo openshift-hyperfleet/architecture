@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-10-20
+Last Updated: 2026-11-16
 ---
 
 # HyperFleet Container Image Standard
@@ -45,7 +45,7 @@ This standard applies to all HyperFleet repositories that produce container imag
 All Go service Dockerfiles **MUST** use Red Hat UBI9 Go toolset as the builder image:
 
 ```dockerfile
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 ```
 
 **Why UBI9 Go toolset?**
@@ -71,7 +71,7 @@ Using `ARG BASE_IMAGE` makes the runtime configurable for different build scenar
 | Scenario | Base Image | Notes |
 |----------|-----------|-------|
 | Standard production | `registry.access.redhat.com/ubi9-micro:latest` | Default. Minimal UBI with glibc, Red Hat supported |
-| FIPS-compliant (`CGO_ENABLED=1`) | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | See [FIPS-Compliant Builds](#fips-compliant-builds) |
+| FIPS-compliant (current services) | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Existing services keep this image; native FIPS does not require system OpenSSL |
 | Development / debugging | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Includes shell and microdnf for troubleshooting |
 
 ---
@@ -84,7 +84,7 @@ All service Dockerfiles **MUST** use multi-stage builds with the following struc
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9-micro:latest
 
 # ── Builder stage ──
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 
 ARG GIT_SHA=unknown
 ARG GIT_DIRTY=""
@@ -169,17 +169,17 @@ USER 65532:65532
 | Value | When to Use | Runtime Image |
 |-------|-------------|---------------|
 | `0` (default) | Standard builds producing static binaries | `ubi9-micro` (default) |
-| `1` | FIPS-compliant builds with `GOEXPERIMENT=boringcrypto` | `ubi9/ubi-minimal` (includes openssl-libs, FIPS provider, and CA certs) |
+| `1` | Current production service builds, retained for compatibility with their existing container gates | `ubi9/ubi-minimal` |
 
-`CGO_ENABLED` is a Makefile-level decision (see [Makefile Conventions](makefile-conventions.md#standard-variables)); `GOEXPERIMENT=boringcrypto` is set alongside it in the build command whenever `CGO_ENABLED=1` is chosen.
+`CGO_ENABLED` is a Makefile-level decision (see [Makefile Conventions](makefile-conventions.md#standard-variables)). It does **not** select FIPS mode. The existing shipped services keep `CGO_ENABLED=1`; the native FIPS module does not require CGO or system OpenSSL.
 
 ### FIPS-Compliant Builds
 
 All shipped HyperFleet Go services **MUST** build FIPS-compliant, currently `hyperfleet-api`, `hyperfleet-operator`, `hyperfleet-applier`, `hyperfleet-sentinel`, and `hyperfleet-adapter`.
 
-`GOEXPERIMENT=boringcrypto` on the Red Hat Go toolchain loads the system OpenSSL at runtime. `ubi9-micro` ships no OpenSSL, so a `CGO_ENABLED=1` binary built on it crashes at startup once it runs in FIPS mode (it silently falls back to non-FIPS crypto otherwise).
+Shipped service builds **MUST** select Go's [native FIPS 140-3 module](https://go.dev/doc/security/fips140) with `GOFIPS140=v1.0.0`. This pinned module has [CMVP Certificate #5247](https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/5247), and selecting it enables FIPS mode by default at runtime. The deprecated BoringCrypto experiment is incompatible with native FIPS; set `GOEXPERIMENT=noboringcrypto` explicitly so a value persisted by `go env -w` cannot enable it.
 
-For FIPS builds, switch `BASE_IMAGE` to `registry.access.redhat.com/ubi9/ubi-minimal:latest`, which ships `openssl-libs`, its FIPS provider, and CA certs as RPMs (the CA bundle copy step used for `ubi9-micro` isn't needed here).
+The current service images use `registry.access.redhat.com/ubi9/ubi-minimal:latest` and **MAY** continue to use it for its runtime libraries and CA certificates. Native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If switching to `ubi9-micro`, check CGO runtime dependencies and copy a CA bundle if the service needs TLS.
 
 ```dockerfile
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
@@ -188,11 +188,16 @@ ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 Verify the build setting:
 
 ```bash
-go version -m <binary> | grep -E 'CGO_ENABLED|GOEXPERIMENT'
-# Must show: CGO_ENABLED=1 and GOEXPERIMENT=boringcrypto
+go version -m <binary> | grep -E 'CGO_ENABLED|GOEXPERIMENT|GOFIPS140'
+# Must show: GOFIPS140=v1.0.0-<hash> (or v1.0.0) and no BoringCrypto.
+# Current service images also check CGO_ENABLED=1.
 ```
 
-`GOEXPERIMENT=boringcrypto` must be set in the build command (see [CGO_ENABLED](#cgo_enabled) above).
+Container builds **MUST** reject binaries lacking `GOFIPS140=v1.0.0`. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
+
+```dockerfile
+RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
+```
 
 ### Build Flags
 
@@ -275,12 +280,12 @@ Services **MAY** append additional service-specific entries (e.g. generated code
 
 ## Reference Dockerfile
 
-A complete reference Dockerfile incorporating all standards above. Replace `<service-name>` with the actual service binary name:
+A complete reference Dockerfile for a shipped FIPS service incorporating the standards above. Replace `<service-name>` with the actual service binary name:
 
 ```dockerfile
-ARG BASE_IMAGE=registry.access.redhat.com/ubi9-micro:latest
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 
 ARG GIT_SHA=unknown
 ARG GIT_DIRTY=""
@@ -301,19 +306,20 @@ RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,uid=1001 \
 
 COPY --chown=1001:0 . .
 
-# CGO_ENABLED comes from the Makefile, GOEXPERIMENT=boringcrypto is set alongside it
+# Native FIPS settings come from the Makefile (GOFIPS140=v1.0.0, GOEXPERIMENT=noboringcrypto)
 RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,uid=1001 \
     --mount=type=cache,target=/opt/app-root/src/.cache/go-build,uid=1001 \
     GOOS=linux \
     GIT_SHA=${GIT_SHA} GIT_DIRTY=${GIT_DIRTY} BUILD_DATE=${BUILD_DATE} \
     make build
 
+RUN go version -m /build/bin/<service-name> | grep -q 'CGO_ENABLED=1' || { echo "FIPS check FAILED: missing CGO_ENABLED=1"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
+
 FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# ubi9-micro doesn't include CA certificates; copy from builder for TLS (e.g. Google Pub/Sub)
-COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 COPY --from=builder /build/bin/<service-name> /app/<service-name>
 
 USER 65532:65532
