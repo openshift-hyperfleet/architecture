@@ -440,7 +440,7 @@ build:
 ```
 <!-- markdownlint-enable MD010 -->
 
-The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds). That build-time check does not enforce the runtime mode: FIPS production deployments **MUST NOT** set `GODEBUG=fips140=off`, including within a comma-separated value.
+The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds). That module-selection check does not enforce the runtime mode: FIPS production builds and deployments **MUST NOT** disable FIPS through compiled defaults or runtime overrides, including `GODEBUG=fips140=off` or `GODEBUG=fips140=` (empty entry). The linked standard specifies the environment and `go.mod`, `go.work`, and main-package directive forms that build and deployment review must check.
 
 For services without FIPS requirements, use the ordinary build target:
 
