@@ -319,7 +319,7 @@ All Makefiles **SHOULD** support these environment variables:
 | `GOOS` | (host OS) | Target operating system for build | `make build GOOS=linux` |
 | `GOARCH` | (host arch) | Target architecture for build | `make build GOARCH=amd64` |
 | `CGO_ENABLED` | `0` | Enable/disable CGO. Existing production services keep `CGO_ENABLED ?= 1` for runtime compatibility; native Go FIPS does not depend on CGO. | `make build CGO_ENABLED=1` |
-| `GOEXPERIMENT` | (toolchain default) | FIPS production services **MUST** set `GOEXPERIMENT ?= noboringcrypto` to disable the incompatible legacy experiment, even if saved with `go env -w`. | `make build GOEXPERIMENT=noboringcrypto` |
+| `GOEXPERIMENT` | (toolchain default) | FIPS production services **MUST** set `GOEXPERIMENT ?= noboringcrypto` for build compatibility when the incompatible legacy experiment was saved with `go env -w`. Without the negation, Go rejects the combination with `GOFIPS140=v1.0.0`; there is no silent non-FIPS fallback. | `make build GOEXPERIMENT=noboringcrypto` |
 | `GOFIPS140` | `off` (upstream default) | FIPS production services **MUST** set `GOFIPS140 ?= v1.0.0` to select the validated Go Cryptographic Module and enable FIPS mode by default. | `make build GOFIPS140=v1.0.0` |
 | `PLATFORM` | `linux/amd64` | Target platform for container builds | `make image PLATFORM=linux/arm64` |
 | `CONTAINER_TOOL` | (auto-detected) | Container tool (`podman` or `docker`) | `make image CONTAINER_TOOL=docker` |
@@ -440,7 +440,7 @@ build:
 ```
 <!-- markdownlint-enable MD010 -->
 
-The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
+The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds). That build-time check does not enforce the runtime mode: FIPS production deployments **MUST NOT** set `GODEBUG=fips140=off`, including within a comma-separated value.
 
 For services without FIPS requirements, use the ordinary build target:
 
