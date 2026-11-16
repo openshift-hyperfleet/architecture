@@ -436,11 +436,11 @@ GOEXPERIMENT ?= noboringcrypto
 GOFIPS140 ?= v1.0.0
 
 build:
-	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build -o bin/my-service ./cmd/my-service
+	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/my-service ./cmd/my-service
 ```
 <!-- markdownlint-enable MD010 -->
 
-The test target **SHOULD** pass the same settings to `go test` so tests exercise the selected module. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
+The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test` so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
 
 For services without FIPS requirements, use the ordinary build target:
 
