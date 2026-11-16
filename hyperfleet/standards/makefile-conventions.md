@@ -425,7 +425,7 @@ LDFLAGS := -s -w \
 
 ### Example build target
 
-For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults:
+For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults. Set them on the recipe as shown, or `export` them from Make when other Go commands (such as code generators and test setup) need the same settings:
 
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
 
@@ -440,7 +440,7 @@ build:
 ```
 <!-- markdownlint-enable MD010 -->
 
-The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test` so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
+The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds).
 
 For services without FIPS requirements, use the ordinary build target:
 
