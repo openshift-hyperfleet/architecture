@@ -429,6 +429,8 @@ For a shipped FIPS service, the build target **MUST** pass both FIPS settings in
 
 Add the tag to `GOFLAGS` as `-tags=no_openssl`, not `-tags no_openssl`: the go command splits `GOFLAGS` on whitespace and rejects a value that is not part of a `-flag=value` pair, failing with `go: parsing $GOFLAGS: non-flag "no_openssl"`. This breaks every target that shells out to `go`, including tool builds such as `go tool`. Merge the tag into a caller-supplied `-tags` list instead of emitting a second flag, because the go command replaces the earlier list rather than combining them, and use `override` so a `GOFLAGS` passed on the make command line keeps the tag.
 
+Normalize empty values for `CGO_ENABLED`, `GOEXPERIMENT` and `GOFIPS140`: an empty environment value falls back to the persisted `go env -w` setting, so a caller that passes `CGO_ENABLED=` or `GOFIPS140=` can silently build without cgo or with a different crypto module. Pin each one with `override` when it is empty.
+
 Do not export `GOFLAGS` to make tests inherit the tag: that also adds `-trimpath` to test binaries, which rewrites the source paths recorded by `runtime.Caller` and breaks tests that locate the repository from them. A target that passes its own `-tags` on the command line overrides the tag either way, so test binaries may keep the default backend; only the shipped binary must select the native one, and the container gate verifies that.
 
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
