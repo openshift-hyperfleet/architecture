@@ -179,11 +179,13 @@ Shipped HyperFleet control-plane Go services **MUST** build FIPS-compliant, curr
 
 These production service builds **MUST** select Go's [native FIPS 140-3 module](https://go.dev/doc/security/fips140) with `GOFIPS140=v1.0.0`. This pinned module has [CMVP Certificate #5247](https://csrc.nist.gov/projects/cryptographic-module-validation-program/certificate/5247). Upstream Go enables FIPS mode by default when this module is selected, but the Red Hat Go 1.26 toolset used by our images does **not**: a binary with `GOFIPS140=v1.0.0` can report `crypto/fips140.Enabled() == false`. These services **MUST** also declare `godebug fips140=on` in their main `go.mod` to enable FIPS mode by default on both toolchains. The deprecated BoringCrypto experiment is incompatible with native FIPS; set `GOEXPERIMENT=noboringcrypto` explicitly so builds also succeed when `boringcrypto` was persisted with `go env -w`. Without this explicit negation, Go rejects the incompatible combination with `GOFIPS140=v1.0.0`; it does not silently fall back to non-FIPS cryptography.
 
+On a Red Hat Go toolset, a `linux` build with cgo uses the OpenSSL crypto backend by default (`crypto/internal/backend`), not the module the `GOFIPS140` setting selects. That backend aborts during package initialization on a FIPS-enabled host once a `fips140` GODEBUG value is present: `panic: opensslcrypto: GOLANG_FIPS and GODEBUG=fips140 are mutually exclusive`. FIPS builds on these toolchains therefore **MUST** select Go's native backend with the `no_openssl` build tag. Apply the tag only when `go version` reports a Red Hat toolchain, so builds on upstream Go do not carry a tag that has no effect there. Without the tag the binary keeps a runtime dependency on the host OpenSSL and its FIPS provider.
+
 FIPS production builds and deployments **MUST NOT** disable the mode through runtime overrides or compiled defaults. This includes `GODEBUG=fips140=off` and `GODEBUG=fips140=` (empty value), including either entry in a comma-separated `GODEBUG` value; `GODEBUG=fips140ems=0`, which drops Extended Master Secret enforcement for TLS 1.2 in FIPS mode (Go 1.27, backported to Go 1.26.6); `godebug fips140=off` or `godebug fips140=` directives in `go.mod` or `go.work`; and `//go:debug fips140=off` or `//go:debug fips140=` directives in the main package. An empty `fips140=` entry is not equivalent to leaving the setting unspecified; an unset or entirely empty `GODEBUG` environment variable preserves the compiled default.
 
-The image **MUST** verify both the selected `GOFIPS140` module and `DefaultGODEBUG=fips140=on` in build info. This checks the compiled default, not the effective runtime mode: build and deployment review **MUST** also check runtime overrides for disabling settings. This requirement does not imply that the services reject such overrides at startup.
+The image **MUST** verify the `GOFIPS140` module selection, the compiled `DefaultGODEBUG=fips140=on`, and, on Red Hat toolchains, the `no_openssl` build tag in build info. These checks cover the compiled default and the crypto backend, not the effective runtime mode: build and deployment review **MUST** also check runtime overrides for disabling settings. This requirement does not imply that the services reject such overrides at startup.
 
-The default runtime image in [Production Runtime](#production-runtime) is `registry.access.redhat.com/ubi9/ubi-minimal:latest`, which ships the libraries and CA certificates the shipped services need. Native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If a service moves to `ubi9-micro`, check its CGO runtime dependencies and copy a CA bundle if the service needs TLS.
+The default runtime image in [Production Runtime](#production-runtime) is `registry.access.redhat.com/ubi9/ubi-minimal:latest`, which ships the libraries and CA certificates the shipped services need. With the native backend selected, native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If a service moves to `ubi9-micro`, check its CGO runtime dependencies and copy a CA bundle if the service needs TLS.
 
 ```dockerfile
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
@@ -198,12 +200,15 @@ go version -m <binary> | grep -E 'CGO_ENABLED|GOEXPERIMENT|GOFIPS140|DefaultGODE
 # Current service images also check CGO_ENABLED=1.
 ```
 
-Container builds **MUST** reject binaries lacking either `GOFIPS140=v1.0.0` or a compiled `DefaultGODEBUG=fips140=on`. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
+Container builds **MUST** reject binaries lacking the `GOFIPS140=v1.0.0` module, a compiled `DefaultGODEBUG=fips140=on`, or, on Red Hat toolchains, the `no_openssl` build tag. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
 
 ```dockerfile
 RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'DefaultGODEBUG=([^,]*,)*fips140=on(,|$)' || { echo "FIPS check FAILED: FIPS mode is not enabled by default"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq -- '-tags=[^[:space:]]*no_openssl' || { echo "FIPS check FAILED: OpenSSL crypto backend selected; build with -tags no_openssl"; exit 1; }
 ```
+
+CI **SHOULD** also run a smoke check that starts the built binary with `GOLANG_FIPS=1`, which takes the same code path as a FIPS-enabled kernel: `GOLANG_FIPS=1 <binary> --help` must exit zero. A binary built without the native backend panics during initialization under that environment, which is how the failure reaches a cluster otherwise.
 
 ### Build Flags
 
@@ -322,6 +327,7 @@ RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,uid=1001 \
 RUN go version -m /build/bin/<service-name> | grep -q 'CGO_ENABLED=1' || { echo "FIPS check FAILED: missing CGO_ENABLED=1"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'DefaultGODEBUG=([^,]*,)*fips140=on(,|$)' || { echo "FIPS check FAILED: FIPS mode is not enabled by default"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq -- '-tags=[^[:space:]]*no_openssl' || { echo "FIPS check FAILED: OpenSSL crypto backend selected; build with -tags no_openssl"; exit 1; }
 
 FROM ${BASE_IMAGE}
 

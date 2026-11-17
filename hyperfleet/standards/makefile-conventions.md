@@ -425,7 +425,7 @@ LDFLAGS := -s -w \
 
 ### Example build target
 
-For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults. Set them on the recipe as shown, or `export` them from Make when other Go commands (such as code generators and test setup) need the same settings:
+For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults. Set them on the recipe as shown, or `export` them from Make when other Go commands (such as code generators and test setup) need the same settings. On a Red Hat Go toolset the build **MUST** also select Go's native crypto backend with the `no_openssl` tag: that toolset uses an OpenSSL backend by default on `linux` with cgo, and the backend aborts at startup on FIPS-enabled hosts once a `fips140` GODEBUG value is set. Detect the toolchain so upstream Go builds do not carry a tag that has no effect there.
 
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
 
@@ -434,13 +434,16 @@ The recipe line below contains a literal tab required by GNU Make. The MD010 exc
 CGO_ENABLED ?= 1
 GOEXPERIMENT ?= noboringcrypto
 GOFIPS140 ?= v1.0.0
+ifneq (,$(findstring Red Hat,$(shell $(GO) version 2>/dev/null)))
+GOFLAGS += -tags no_openssl
+endif
 
 build:
 	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/my-service ./cmd/my-service
 ```
 <!-- markdownlint-enable MD010 -->
 
-The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. When a `go.work` file is active, Go ignores the `godebug` directive in `go.mod` ([go.dev/doc/godebug](https://go.dev/doc/godebug)): run the test target with `GOWORK=off` unless the workspace itself declares `godebug fips140=on`, otherwise the test binary selects the module but runs with FIPS mode off. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds), which requires both the module selection and `DefaultGODEBUG=fips140=on`. FIPS production deployments **MUST NOT** disable that compiled default through runtime overrides, including `GODEBUG=fips140=off` or `GODEBUG=fips140=` (empty entry). The linked standard specifies the environment, `go.work`, and main-package directive forms that deployment review must check.
+The test target **SHOULD** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. When a `go.work` file is active, Go ignores the `godebug` directive in `go.mod` ([go.dev/doc/godebug](https://go.dev/doc/godebug)): run the test target with `GOWORK=off` unless the workspace itself declares `godebug fips140=on`, otherwise the test binary selects the module but runs with FIPS mode off. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds), which requires the module selection, `DefaultGODEBUG=fips140=on`, and the native backend tag. FIPS production deployments **MUST NOT** disable that compiled default through runtime overrides, including `GODEBUG=fips140=off` or `GODEBUG=fips140=` (empty entry). The linked standard specifies the environment, `go.work`, and main-package directive forms that deployment review must check.
 
 For services without FIPS requirements, use the ordinary build target:
 
