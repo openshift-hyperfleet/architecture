@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-16
+Last Updated: 2026-11-17
 ---
 
 # HyperFleet Container Image Standard
@@ -59,10 +59,10 @@ FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
 
 ### Production Runtime
 
-The default production runtime image **MUST** be Red Hat UBI9 Micro:
+The default production runtime image **MUST** be Red Hat UBI9 Minimal:
 
 ```dockerfile
-ARG BASE_IMAGE=registry.access.redhat.com/ubi9-micro:latest
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 FROM ${BASE_IMAGE}
 ```
 
@@ -70,8 +70,8 @@ Using `ARG BASE_IMAGE` makes the runtime configurable for different build scenar
 
 | Scenario | Base Image | Notes |
 |----------|-----------|-------|
-| Standard production | `registry.access.redhat.com/ubi9-micro:latest` | Default. Minimal UBI with glibc, Red Hat supported |
-| FIPS-compliant (current services) | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Existing services keep this image; native FIPS does not require system OpenSSL |
+| Standard production | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Default. Ships glibc, CA certificates and `microdnf`; what all shipped services use |
+| Static tooling (`CGO_ENABLED=0`) | `registry.access.redhat.com/ubi9-micro:latest` | Smallest runtime for static binaries that need no shell or CA bundle from RPMs |
 | Development / debugging | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Includes shell and microdnf for troubleshooting |
 
 ---
@@ -81,7 +81,7 @@ Using `ARG BASE_IMAGE` makes the runtime configurable for different build scenar
 All service Dockerfiles **MUST** use multi-stage builds with the following structure:
 
 ```dockerfile
-ARG BASE_IMAGE=registry.access.redhat.com/ubi9-micro:latest
+ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # ── Builder stage ──
 FROM registry.access.redhat.com/ubi9/go-toolset:1.26 AS builder
@@ -116,8 +116,6 @@ FROM ${BASE_IMAGE}
 
 WORKDIR /app
 
-# ubi9-micro doesn't include CA certificates; copy from builder for TLS (e.g. Google Pub/Sub)
-COPY --from=builder /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem /etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem
 COPY --from=builder /build/bin/<service-name> /app/<service-name>
 
 USER 65532:65532
@@ -128,7 +126,7 @@ ENTRYPOINT ["/app/<service-name>"]
 
 ### Key Practices
 
-- **CA certificates** copied from builder stage — `ubi9-micro` doesn't include `ca-certificates`; required for TLS connections to external services
+- **CA certificates** ship in the default `ubi9-minimal` runtime — a `ubi9-micro` runtime instead needs the bundle copied from the builder stage, which is why [Production Runtime](#production-runtime) treats micro as opt-in
 - **Cache mounts** for Go module and build caches to speed up rebuilds
 - **`go mod download`** as a separate layer before copying source for better layer caching
 - **`--chown=1001:0`** on COPY commands for the builder stage (UBI9 convention)
@@ -168,8 +166,8 @@ USER 65532:65532
 
 | Value | When to Use | Runtime Image |
 |-------|-------------|---------------|
-| `0` (default) | Standard builds producing static binaries | `ubi9-micro` (default) |
-| `1` | Current production service builds, retained for compatibility with their existing container gates | `ubi9/ubi-minimal` |
+| `0` (default) | Static binaries and tooling images (`hyperfleet-hooks`) | `ubi9-micro` (opt-in) |
+| `1` | Shipped control-plane services; retained for compatibility with their existing container gates | `ubi9/ubi-minimal` (default) |
 
 `CGO_ENABLED` is a Makefile-level decision (see [Makefile Conventions](makefile-conventions.md#standard-variables)). It does **not** select FIPS mode. The existing shipped services keep `CGO_ENABLED=1`; the native FIPS module does not require CGO or system OpenSSL.
 
@@ -183,7 +181,7 @@ FIPS production builds and deployments **MUST NOT** disable the mode through run
 
 The image **MUST** verify both the selected `GOFIPS140` module and `DefaultGODEBUG=fips140=on` in build info. This checks the compiled default, not the effective runtime mode: build and deployment review **MUST** also check runtime overrides for disabling settings. This requirement does not imply that the services reject such overrides at startup.
 
-The five production service images use `registry.access.redhat.com/ubi9/ubi-minimal:latest` and **MAY** continue to use it for its runtime libraries and CA certificates. Native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If switching to `ubi9-micro`, check CGO runtime dependencies and copy a CA bundle if the service needs TLS.
+The default runtime image in [Production Runtime](#production-runtime) is `registry.access.redhat.com/ubi9/ubi-minimal:latest`, which ships the libraries and CA certificates the shipped services need. Native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If a service moves to `ubi9-micro`, check its CGO runtime dependencies and copy a CA bundle if the service needs TLS.
 
 ```dockerfile
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal:latest
