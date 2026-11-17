@@ -71,8 +71,10 @@ Using `ARG BASE_IMAGE` makes the runtime configurable for different build scenar
 | Scenario | Base Image | Notes |
 |----------|-----------|-------|
 | Standard production | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Default. Ships glibc, CA certificates and `microdnf`; what all shipped services use |
-| Static tooling (`CGO_ENABLED=0`) | `registry.access.redhat.com/ubi9-micro:latest` | Smallest runtime for static binaries that need no shell or CA bundle from RPMs |
+| Static tooling (`CGO_ENABLED=0`, e.g. `hyperfleet-hooks`) | `registry.access.redhat.com/ubi9-micro:latest` | Opt-in. Smallest runtime for static binaries that need no shell and no CA bundle from RPMs |
 | Development / debugging | `registry.access.redhat.com/ubi9/ubi-minimal:latest` | Includes shell and microdnf for troubleshooting |
+
+Choose `ubi9-micro` only for binaries built with `CGO_ENABLED=0` that need neither a shell nor RPM-provided CA certificates. A tooling binary that makes TLS connections on micro must copy the bundle from the builder stage. Measured on the same architecture, `ubi9-minimal` is 103.6 MB and `ubi9-micro` is 22.6 MB: about 81 MB saved per image, which pays off for a CLI pulled into pipelines and does not justify giving up glibc, CA certificates and `microdnf` in a service image.
 
 ---
 
