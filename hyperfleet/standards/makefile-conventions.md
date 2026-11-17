@@ -439,7 +439,8 @@ CGO_ENABLED ?= 1
 GOEXPERIMENT ?= noboringcrypto
 GOFIPS140 ?= v1.0.0
 ifneq (,$(findstring Red Hat,$(shell $(GO) version 2>/dev/null)))
-GOFLAGS_CALLER_TAGS := $(strip $(patsubst -tags=%,%,$(filter -tags=%,$(GOFLAGS))))
+# Repeated -tags options keep the last list, so merge into that one.
+GOFLAGS_CALLER_TAGS := $(patsubst -tags=%,%,$(lastword $(filter -tags=%,$(GOFLAGS))))
 ifeq (,$(GOFLAGS_CALLER_TAGS))
 override GOFLAGS += -tags=no_openssl
 else
