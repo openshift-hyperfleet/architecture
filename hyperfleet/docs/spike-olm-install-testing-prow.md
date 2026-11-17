@@ -209,7 +209,6 @@ Every other option makes us own some piece of throwaway infrastructure per run (
 |---------|----------------|-------------------|---------------------|--------------------------|
 | Job time | ~12-23 min | ~10-17 min | ~11-15 min | ~18 min |
 | Monthly cost | ~$117-130 | ~$36-200 | ~$200-300 | $0 (platform-operated) |
-| Target-platform fidelity | No -- GKE, not OpenShift | No -- kind, not OpenShift | No -- virtual clusters differ from real clusters in API behavior | Yes -- real OpenShift |
 | OLM under test | Pinned v0.28.0 we install | Pinned v0.28.0 we install | Pinned v0.28.0 we install | Shipped by the cluster |
 | Infrastructure we own | GKE cluster per run | GCE instance(s), kind lifecycle | Host GKE cluster, vcluster lifecycle | None |
 | Cleanup burden | Per-run teardown | Stale kind clusters | Stale virtual clusters | None (pool reclaims) |
