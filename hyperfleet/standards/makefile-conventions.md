@@ -427,6 +427,8 @@ LDFLAGS := -s -w \
 
 For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults. Set them on the recipe as shown, or `export` them from Make when other Go commands (such as code generators and test setup) need the same settings. On a Red Hat Go toolset the build **MUST** also select Go's native crypto backend with the `no_openssl` tag: that toolset uses an OpenSSL backend by default on `linux` with cgo, and the backend aborts at startup on FIPS-enabled hosts once a `fips140` GODEBUG value is set. Detect the toolchain so upstream Go builds do not carry a tag that has no effect there.
 
+Add the tag to `GOFLAGS` as `-tags=no_openssl`, not `-tags no_openssl`: the go command splits `GOFLAGS` on whitespace and rejects a value that is not part of a `-flag=value` pair, failing with `go: parsing $GOFLAGS: non-flag "no_openssl"`. This breaks every target that shells out to `go`, including tool builds such as `go tool`.
+
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
 
 <!-- markdownlint-disable MD010 -->
@@ -435,7 +437,7 @@ CGO_ENABLED ?= 1
 GOEXPERIMENT ?= noboringcrypto
 GOFIPS140 ?= v1.0.0
 ifneq (,$(findstring Red Hat,$(shell $(GO) version 2>/dev/null)))
-GOFLAGS += -tags no_openssl
+GOFLAGS += -tags=no_openssl
 endif
 
 build:
