@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-16
+Last Updated: 2026-11-18
 ---
 
 # Spike: Sweeper Orphan-Scan Design
@@ -10,7 +10,7 @@ Last Updated: 2026-11-16
 **Epic:** [HYPERFLEET-1518](https://redhat.atlassian.net/browse/HYPERFLEET-1518)  
 **Consumer:** [HYPERFLEET-1840: Centralized desire sweeper](https://redhat.atlassian.net/browse/HYPERFLEET-1840)
 
-**Decision state: proposed for architecture review; HYPERFLEET-1823 remains open.** `Status: Active` identifies a maintained document, not an approved decision. This PR delivers a proposal, not the completed spike decision. Merging it as written does not accept option 2, authorize its implementation, or satisfy the ticket's closure criteria. Close the [design gates](#review-and-implementation-gates), record approval, and integrate the accepted decision before closing HYPERFLEET-1823. Implementation and execution of the resulting tests belong to the separately tracked follow-ups.
+**Decision state: option 2 recorded in [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md).** This PR records partition enumeration from remaining desire rows, the API/Postgres metadata boundary, and the narrow authorization and v1 compatibility exceptions. The ADR, earlier ADR references, detailed design, HLD, glossary, and test plan are updated together. This is a design decision, not a claim that the endpoint is published or implemented. HYPERFLEET-1823 remains open for the separate deletion-safety decisions, remaining recommendations, and ticket/specification integration described in the [design gates](#review-and-implementation-gates) and [acceptance-criteria mapping](#acceptance-criteria-mapping).
 
 ## What and Why
 
@@ -24,7 +24,7 @@ A **partition** is the `managementCluster` dimension of desire identity. It grou
 
 ## Evidence and Scope
 
-The ticket description, its six acceptance criteria, and linked implementation stories were checked on 2026-11-16. Repository sources were inspected with `gh` at these revisions; code observations below refer to the pinned revisions:
+The ticket description and its six acceptance criteria were rechecked on 2026-11-18; linked implementation stories were checked on 2026-11-16. Repository sources were inspected with `gh` at these revisions; code observations below refer to the pinned revisions:
 
 | Source | Verified baseline and relevance |
 | --- | --- |
@@ -32,19 +32,23 @@ The ticket description, its six acceptance criteria, and linked implementation s
 | Applier | [`f15f3f8`](https://github.com/openshift-hyperfleet/hyperfleet-applier/tree/f15f3f8630e15fc6f446edc535ccef6f370907e2): delete execution, conditions, generation, and shared store behavior |
 | Adapter | [`0806e99`](https://github.com/openshift-hyperfleet/hyperfleet-adapter/tree/0806e994d7171e9cf76865dca1ce639b7b485dc8): the current [delete writer](https://github.com/openshift-hyperfleet/hyperfleet-adapter/blob/0806e994d7171e9cf76865dca1ce639b7b485dc8/internal/desireclient/delete.go) does not populate `OriginID`; the test plan tracks missing provenance as G7 |
 | Published wire contract | [Specification 0.2.0 at `6474ebc`](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/blob/6474ebc035ce005d53aed9dc91e82c50382cf9bc/schemas/desire-store/openapi.yaml), merged by [spec PR #2](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/pull/2) on 2026-11-12 for HYPERFLEET-1821: five desire-record operations, GET `generation`, version-checked Apply/Delete status writes, and atomic delete supersede. No `GET /partitions` operation |
-| Pending documentation corrections | [Architecture PR #273 / HYPERFLEET-1923](https://github.com/openshift-hyperfleet/architecture/pull/273), open at [`61b093c`](https://github.com/openshift-hyperfleet/architecture/commit/61b093c3501cdf18443ae203517438de8777b76c), documents the unimplemented store owner exemption and stale-status-after-recreation limit; it does not solve that limit. [Spec PR #3](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/pull/3), open at [`8fca572`](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/commit/8fca5723ce86df6ed33db89c56d2b190843693a1), proposes per-type CNF-001 recovery and qualifies the store exemption |
+| Contract alignment | [Architecture PR #273 / HYPERFLEET-1923](https://github.com/openshift-hyperfleet/architecture/pull/273), open at [`434a044`](https://github.com/openshift-hyperfleet/architecture/commit/434a0443e4d8754c0c080c90853a32808ea23386) when checked on 2026-11-18, owns the shared status-version, supersede, owner-collision, and GET-schema text; it documents but does not solve the stale-status-after-recreation limit. [Spec PR #3](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/pull/3) merged on 2026-11-16, correcting per-type CNF-001 recovery and qualifying the unimplemented store exemption |
 
-HYPERFLEET-1821 is closed. [HYPERFLEET-1937](https://redhat.atlassian.net/browse/HYPERFLEET-1937) now owns the shared-store sweeper exemption. [HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840) names `hyperfleet-sweeper` as the service repository and includes an on-demand test trigger; [HYPERFLEET-1938](https://redhat.atlassian.net/browse/HYPERFLEET-1938) owns its chart and deployment wiring. These allocations do not by themselves add the proposed metadata route to any implementation ticket.
+**Merge dependency:** PR #273 must merge first. Rebase this PR afterward and keep only metadata and sweeper-specific additions in the detailed design. PR #273 owns the baseline owner-collision, GET schema, status-version, and delete-supersede wording; this PR retains the sweeper ownership-delay clarification after that baseline lands. Gap G15 is introduced by PR #273 and is not on `main` yet. The C4/C5 rows do exist on `main` as open contract decisions; PR #273 resolves them, so this PR must not treat their current text as the final rule. Do not merge this PR against the older shared-contract text or treat those pending rows as approved decisions.
+
+HYPERFLEET-1821 is closed. [HYPERFLEET-1937](https://redhat.atlassian.net/browse/HYPERFLEET-1937) now owns the shared-store sweeper exemption. [HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840) names `hyperfleet-sweeper` as the service repository and includes an on-demand test trigger; [HYPERFLEET-1938](https://redhat.atlassian.net/browse/HYPERFLEET-1938) owns its chart and deployment wiring. These allocations do not by themselves add the recorded metadata route to any implementation ticket.
 
 In scope: discovery through the Desire Store API; safe interpretation of source existence and deletion status; record cleanup; scheduling; API and test obligations. Out of scope: implementing the sweeper, provisioning or destroying management clusters, granting direct database/Kubernetes access to the sweeper, and recovering objects after every ownership record has been lost.
 
-## Proposed Decisions
+## Recorded Decision and Remaining Recommendations
 
-| Topic | Recommendation |
+Only partition enumeration and its associated API, authorization, and compatibility choices are recorded by ADR-0039. The other rows remain recommendations subject to the design gates below.
+
+| Topic | Decision or recommendation |
 | --- | --- |
-| Partition discovery | Option 2: add a sweeper-only metadata operation listing partitions represented by remaining desire records, across all three desire types |
+| Partition discovery | **Recorded in ADR-0039.** Option 2: add a sweeper-only metadata operation listing partitions represented by remaining desire records, across all three desire types |
 | Orphan detection | Require an authoritative lookup establishing that the specific `resource_id` is absent. Lookup failures and missing provenance do not establish an orphan |
-| Remote deletion | Write a `DeleteDesire` for an orphaned managed target; let its partition's Applier perform Kubernetes deletion. Resolve the supersede race below before enabling this path |
+| Remote deletion | Write a `DeleteDesire` for an orphaned managed target; let its partition's Applier perform Kubernetes deletion. Resolve the supersede and origin-reappearance races below before enabling this path |
 | Confirmation | Read the current `DeleteDesire`; require `Successful=True`, `reason=Deleted`, and `observedGeneration` equal to that record's `generation`. Before relying on this for cleanup, prevent a status from a previous record incarnation from confirming a recreated delete |
 | Cleanup | After source absence and confirmation, remove the matching orphaned `ReadDesire` first and the confirmed `DeleteDesire` last, including Adapter-owned retained deletes |
 | Read-only orphan | Retain and report when neither an ApplyDesire nor a DeleteDesire establishes the target's managed lifecycle. Do not infer permission to delete a Kubernetes object from a read request |
@@ -55,13 +59,13 @@ In scope: discovery through the Desire Store API; safe interpretation of source 
 
 ### API and Authorization
 
-The proposed wire contract and scoped authorization exception are in [Sweeper Partition Enumeration](desire-store-dd.md#sweeper-partition-enumeration-proposed). The operation is `GET /api/hyperfleet/desire-store/v1/partitions` with opaque keyset pagination. It returns partition identifiers only, derived from records still present in the store. It includes partitions containing only retained deletes or reads and does not join to API registrations or AuthConfig.
+The wire contract and scoped authorization exception recorded by [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) are in [Sweeper Partition Enumeration](desire-store-dd.md#sweeper-partition-enumeration). The operation is `GET /api/hyperfleet/desire-store/v1/partitions` with opaque keyset pagination. It returns partition identifiers only, derived from records still present in the store. It includes partitions containing only retained deletes or reads and does not join to API registrations or AuthConfig.
 
-Only the authenticated sweeper identity receives this permission. Adapters and remote Appliers cannot list partitions. Every desire read, write, status update, and delete remains partition-addressed and partition-authorized. The listing permission must never mean a wildcard partition on a desire route. This is an explicit proposed exception to the universal partition-scope wording in [ADR-0022](../adrs/0022-api-mediated-desire-store-access.md) and [ADR-0029](../adrs/0029-desire-store-authorization.md).
+Only the authenticated sweeper identity receives this permission. Adapters and remote Appliers cannot list partitions. Every desire read, write, status update, and delete remains partition-addressed and partition-authorized. The listing permission must never mean a wildcard partition on a desire route. ADR-0039 records this narrow exception to the universal partition-scope wording in [ADR-0022](../adrs/0022-api-mediated-desire-store-access.md) and [ADR-0029](../adrs/0029-desire-store-authorization.md).
 
 No new partition registry or persisted lifecycle is introduced. Removing the final desire makes a partition cease to appear; it does not invoke a partition-delete API or decommission a management cluster.
 
-The proposed implementation boundary is an API/Postgres metadata query outside the shared `SpecStore`, plus an explicit metadata operation in the sweeper's HTTP client. Existing `List*Desires` calls remain partition-scoped. This avoids adding fleet enumeration to every store backend and Adapter/Applier client; it requires separate Postgres integration and metadata-authorization tests. See the [detailed store boundary and alternative](desire-store-dd.md#operation-and-response).
+The selected implementation boundary is an API/Postgres metadata query outside the shared `SpecStore`, plus an explicit metadata operation in the sweeper's HTTP client. Existing `List*Desires` calls remain partition-scoped. This avoids adding fleet enumeration to every store backend and Adapter/Applier client; it requires separate Postgres integration and metadata-authorization tests. See the [detailed store boundary and alternative](desire-store-dd.md#operation-and-response).
 
 ### Scanning and Concurrency
 
@@ -79,12 +83,14 @@ Interpret `resource_id` as provenance, not Kubernetes identity or the partition 
 
 | Lookup outcome | Sweeper action |
 | --- | --- |
-| Origin exists, including a resource pending deletion | Preserve the desires; normal deletion and Adapter reconciliation retain authority |
+| Origin exists, including a resource pending deletion | Preserve Adapter-owned desires and stop orphan cleanup. Attempt to cancel an unconfirmed sweeper-owned `DeleteDesire` as described below; retain and report a confirmed one because remote deletion may already have occurred |
 | Authoritative not-found for the exact supported origin | Candidate orphan; inspect current siblings and apply the cleanup rules |
 | Timeout, connection error, 429, 5xx, authentication/authorization failure, or ambiguous/not-authoritative 404 | Preserve records, record the failure, and retry as appropriate |
 | Missing, malformed, unsupported, or conflicting provenance | Preserve records and report the reference problem; do not guess an origin from target names or a partition |
 
-Revalidate origin absence before issuing a destructive action. Do not carry a negative lookup across runs or use an earlier absent result after observing changed provenance. A positive existence result may defer work until the next run. Define and test the supported reference forms and authoritative not-found response with the API/client integration; the example `clusters/cls-123` in the detailed design is not a complete resolver specification.
+**Origin reappearance:** If a fresh authoritative lookup finds an origin for which the sweeper previously created an unconfirmed `DeleteDesire`, the proposed recovery is to cancel that sweeper-owned delete with its current version, leaving any Adapter-owned `ReadDesire` intact. On a version conflict, uncertain timeout, or changed owner, re-read and report unresolved work rather than claiming cancellation. A different Adapter owner may still conflict with a retained read and needs its own ownership resolution. If the delete is already confirmed, retain it and report that the remote action may have occurred; a positive origin lookup does not prove that the target survived. This proposed recovery applies to sweeper-created orphan intent, not normal API resource deletion, which [does not support cancellation](../components/adapter/framework/lifecycle/adapter-lifecycle-delete-design.md#cancel-deletion-8). The coexistence row below governs absent origins and does not authorize retaining an actionable sweeper delete after an origin is found. Cancellation alone is not a safety guarantee because the Applier may already have fetched the delete; the [reappearance design gate](#review-and-implementation-gates) must close before sweeper-created deletes are enabled.
+
+Revalidate origin absence before issuing a destructive action. Do not carry a negative lookup across runs or use an earlier absent result after observing changed provenance. A positive existence result may defer ordinary records until the next run, but it must trigger the sweeper-owned-delete cancellation rule above. Define and test the supported reference forms and authoritative not-found response with the API/client integration; the example `clusters/cls-123` in the detailed design is not a complete resolver specification.
 
 ## Deletion Confirmation
 
@@ -100,7 +106,7 @@ The sweeper's proposed confirmation predicate starts with a fresh GET of the spe
 
 A missing `DeleteDesire`, a stale/nonexistent read mirror, an Adapter's `Finalized=True`, or the absence of an Applier is not this confirmation. A retained confirmed delete is historical evidence of that deletion; the current Applier can restamp an already-successful condition without re-reading the target object. It is not proof that no external actor ever recreated the same Kubernetes name afterward.
 
-The condition, reason, and generation checks are necessary but insufficient if the record was deleted and recreated. [PR #273 at `61b093c`](https://github.com/openshift-hyperfleet/architecture/blob/61b093c3501cdf18443ae203517438de8777b76c/hyperfleet/docs/desire-store-dd.md#cas--version-semantics) documents that an old Applier status write can match a recreated `DeleteDesire` at the same version, mark it `Deleted`, and cause the Applier to skip the new deletion. The recreated delete starts at generation 1, so matching `observedGeneration` does not distinguish the two records. PR #273 records this as a remaining v1 limitation, not a fix; neither its merge nor HYPERFLEET-1937 would close this gate. HYPERFLEET-1823 retains responsibility for the safety decision with the API/store and Applier owners: specify a verified incarnation-safe confirmation mechanism and its delivery owner, or obtain explicit acceptance of this risk for sweeper cleanup. This proposal recommends the former and does not accept the risk. Until that decision is recorded, confirmation-based cleanup is not ready for implementation.
+The condition, reason, and generation checks are necessary but insufficient if the record was deleted and recreated. [PR #273 at `434a044`](https://github.com/openshift-hyperfleet/architecture/blob/434a0443e4d8754c0c080c90853a32808ea23386/hyperfleet/docs/desire-store-dd.md#cas--version-semantics) documents that an old Applier status write can match a recreated `DeleteDesire` at the same version, mark it `Deleted`, and cause the Applier to skip the new deletion. The recreated delete starts at generation 1, so matching `observedGeneration` does not distinguish the two records. PR #273 records this as a remaining v1 limitation, not a fix; neither its merge nor HYPERFLEET-1937 would close this gate. HYPERFLEET-1823 retains responsibility for the safety decision with the API/store and Applier owners: specify a verified incarnation-safe confirmation mechanism and its delivery owner, or obtain explicit acceptance of this risk for sweeper cleanup. This proposal recommends the former and does not accept the risk. Until that decision is recorded, confirmation-based cleanup is not ready for implementation.
 
 ## Record Cleanup
 
@@ -110,7 +116,7 @@ The following table applies only after the exact origin is authoritatively absen
 
 | Current records for one target | Action |
 | --- | --- |
-| ApplyDesire, with or without a matching read | Propose creating a DeleteDesire with the same target identity and provenance. It supersedes the apply through the store, not a separate sweeper DELETE of the apply. This path is gated on the supersede race decision and working store-level owner exemption |
+| ApplyDesire, with or without a matching read | Propose creating a DeleteDesire with the same target identity and provenance. It supersedes the apply through the store, not a separate sweeper DELETE of the apply. This path is gated on the supersede and origin-reappearance decisions and a working store-level owner exemption |
 | Unconfirmed DeleteDesire, with or without a matching read | Retain it and the read. Do not replace it just to claim sweeper ownership. Revisit its status on a later run |
 | Previously confirmed DeleteDesire now reporting `PreCheckFailed` | Retain it and any read; report unresolved cleanup. A removed CRD or failed mapping is not confirmation under this predicate |
 | Confirmed DeleteDesire plus a matching orphaned read | Remove the read first, then the delete, using each record's current version and revalidation below |
@@ -142,6 +148,8 @@ The two removals are not one transaction. Re-reads reduce stale decisions but do
 
 This is a design gate owned by HYPERFLEET-1823, not an accepted extension of the record-removal trade-off or work already assigned by HYPERFLEET-1937. The recommendation is to require an atomic guard against replacement of the inspected target intent before enabling orphan-apply sweeping. HYPERFLEET-1823 must obtain the API/store owners' wire and store decision, including delete/recreate at the same version, and record the implementation owner and ticket before closing. An alternative is a documented and enforced target-identity invariant excluding this case. Re-reading or version equality alone is not that guarantee. Do not silently invent an `expected_*` field or assume target names are never reused. Partition discovery is independent; confirmed-delete cleanup also has the separate incarnation-safety gate above.
 
+**Origin reappears after deletion intent:** A sweeper-owned delete can remain pending while the Applier is offline. If an origin appears again, its Adapter cannot replace an unconfirmed sweeper-owned delete with an apply: the store checks the different `owner` first and returns `HYPERFLEET-CNF-004`, and the current Applier does not revalidate the HyperFleet origin before Kubernetes DELETE. The sweeper must attempt the cancellation described above, but that request cannot revoke an Applier operation already in flight. HYPERFLEET-1823 must establish an enforceable source/target identity invariant that excludes both reappearance of the same origin and reuse of the Kubernetes target by a different origin until deletion completes, or specify a coordinated cancellation/fencing mechanism that prevents the stale delete from executing even across the Applier read-to-DELETE race. The current API generates new IDs for clusters and node pools, but that observation alone does not establish the required invariant for every supported origin and target. Until the owners approve and assign a tested resolution, do not enable the sweeper-created `DeleteDesire` path.
+
 ## Cadence and Operations
 
 Keep the earlier **12-hour** starting interval, configurable, for a complete sweep. This is a scheduling decision, not a measured capacity result or a 12-hour deletion SLA. Start a fresh enumeration each run; expose an on-demand invocation using the same authorization and eligibility checks for tests and operations.
@@ -161,7 +169,7 @@ Capacity validation must include all three types, predominantly live origins, la
 | Alternative | Assessment |
 | --- | --- |
 | Option 1: complete cleanup before decommission removes registration | Can keep the Applier reachable during normal teardown, but cannot discover leftovers after a failed/bypassed teardown or lost registration. Requires coordination with the decommission workflow |
-| Option 2: enumerate partitions from remaining store rows | Recommended. Covers residual rows without a registry or dependency on live registrations. Adds a metadata route, a separate API/Postgres query and sweeper client operation, an authorization exception, and integration tests. Keeps the shared partition-scoped store interface unchanged; cannot restore an unavailable Applier |
+| Option 2: enumerate partitions from remaining store rows | Selected in ADR-0039. Covers residual rows without a registry or dependency on live registrations. Adds a metadata route, a separate API/Postgres query and sweeper client operation, an authorization exception, and integration tests. Keeps the shared partition-scoped store interface unchanged; cannot restore an unavailable Applier |
 | Options 1 and 2 together | Compatible, but not required to close the discovery gap. Adds two cleanup entry points and ordering/retry obligations. Reuse the same confirmation rules if decommission cleanup is added separately |
 | Accept the registration-list gap | Leaves exactly the fully-decommissioned partitions in the ticket undiscoverable; rejected |
 | Direct DB scan by sweeper | Avoids a new API operation but violates API-mediated access and distributes database access; rejected |
@@ -177,10 +185,11 @@ The spike owner retains these unresolved design and coordination actions under H
 
 | Gate | Required resolution before closing HYPERFLEET-1823 |
 | --- | --- |
-| Architecture acceptance | Obtain an explicit decision on option 2, the API/Postgres metadata boundary, its narrowly scoped v1 exception, standalone-read retention, confirmation limitations, and the 12-hour cadence including the ownership delay |
+| Remaining design decisions | Option 2, the API/Postgres metadata boundary, and its narrow authorization/v1 exceptions are recorded in ADR-0039. Settle the deletion-safety gates below and record the remaining cleanup/retention and 12-hour cadence decisions, including the ownership delay |
 | Confirmation after recreation | With API/store and Applier owners, select a mechanism and record its implementation/test ticket, or explicitly accept the documented risk. PR #273 only documents the limit; this proposal does not accept it |
 | Destructive supersede safety | With API/store owners, settle the atomic guard or enforced identity invariant, including same-version recreation; record the implementation/test owner and ticket. No verified follow-up currently owns this new requirement |
-| Architecture integration | Publish a new ADR partially superseding only the metadata-scope rules of ADR-0022 and ADR-0029, and link it from both. Update the HLD's partition-scoped cleanup description, the glossary's Fleet-Scoped Caller and Wristband entries, and the test plan. Resolve C3 against the accepted design; reconcile C8 with specification 0.2.0, G2 with HYPERFLEET-1840/1938, and G15 with HYPERFLEET-1937. These edits are follow-up acceptance work, not changes made by this two-file proposal |
+| Origin reappearance after delete creation | With API/store, Applier, and Adapter owners, decide the cancellation/fencing mechanism or prove a source/target identity invariant that makes reappearance impossible. Assign implementation and test ownership; a conditional store delete alone cannot stop an in-flight Applier |
+| Architecture integration | **Partition-enumeration integration is included in this PR:** ADR-0039, partial-supersession links from ADR-0022/0029, HLD, glossary, and metadata tests SWP-6 through SWP-9. C3 records enumeration as decided but retains the cleanup-safety questions. Complete that remaining C3 work; reconcile C8 with specification 0.2.0, G2 with HYPERFLEET-1840/1938, and PR #273's pending G15 with HYPERFLEET-1937 before closure |
 | Ticket and specification integration | HYPERFLEET-1821 is closed, so the original “before OpenAPI finalization” criterion can no longer be met in sequence. Agree on its replacement: an accepted amendment and a tracked subsequent minor specification release. Record follow-up IDs and scope acceptance for the metadata route, authorization, clients, provenance, and tests; narrow the one-partition wording in HYPERFLEET-1840 and affected API/gateway stories to desire-record operations. Link the accepted decision from HYPERFLEET-1840 |
 
 ### Delivery and Test Tracking
@@ -197,15 +206,16 @@ Existing tickets below provide confirmed ownership only for their current scope.
 | Sweeper client and execution | [HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840) owns `hyperfleet-sweeper`, on-demand invocation, retained Adapter-delete cleanup, and the timeout-owner guard. Its metadata client, shared scheduled/manual exclusion, unresolved-work reporting, and the additional tests below are **proposed scope extensions** |
 | Deployment and orphan E2E | [HYPERFLEET-1938](https://redhat.atlassian.net/browse/HYPERFLEET-1938) owns the sweeper chart, deployment wiring, and service-account allowlist integration with HYPERFLEET-1831. A dedicated orphan-journey E2E follow-up was requested in HYPERFLEET-1840's discussion, dependent on the sweeper and Adapter provenance; no accepted ticket ID was verified. HYPERFLEET-1823 must record that owner/ticket and update G2/SWP-4 before closure |
 
-The two safety decisions remain in the design table until resolved; they are not assigned to PR #273 or HYPERFLEET-1937 by inference. This proposal changes only this spike and the detailed design, and creates no Jira tickets or repository artifacts for those follow-ups.
+The three safety decisions remain in the design table until resolved; they are not assigned to PR #273 or HYPERFLEET-1937 by inference. This PR records the enumeration decision and its architecture integration; it creates no Jira tickets or implementation artifacts for those follow-ups.
 
 ## Validation Obligations
 
-The existing SWP-1 through SWP-5 and CAS-5 scenarios in the [Desire Store test plan](e2e-testing/desire-store-test-plan.md#sweeper-privileges) remain relevant. After the decision is accepted, extend that plan with the obligations below and confirm their implementation/test ownership. The test plan is unchanged in this draft; its C3 decision remains open. At minimum, tests must prove:
+The existing SWP-1 through SWP-5 and CAS-5 scenarios in the [Desire Store test plan](e2e-testing/desire-store-test-plan.md#sweeper-privileges) remain relevant. SWP-6 through SWP-9 now specify partition-enumeration and metadata-authorization tests for ADR-0039; their implementation/test ownership still requires assignment. C3 records that decision separately from unresolved cleanup safety. Extend the cleanup tests after their design gates are resolved. At minimum, tests must prove:
 
 - A partition absent from registrations is still enumerated when any desire type remains; empty partitions disappear. Pagination is bounded, deduplicated, and handles concurrent additions/removals without treating failure as an empty store.
 - Only the sweeper can list partition metadata. A metadata Wristband cannot read or mutate desires, and malformed or mixed scope claims fail before any data access.
 - An existing/pending-deletion origin, failed lookup, missing provenance, or conflicting siblings causes no destructive action.
+- After an absent origin produces an unconfirmed sweeper-owned delete, test that the origin reappears while the Applier is offline or has already read the delete. The accepted cancellation/fencing or identity-invariant rule must prevent stale Kubernetes deletion and clear the pending-delete conflict; a retained read owned by another Adapter remains a separate conflict. Cover version conflicts, uncertain cancellation, and a different origin targeting the same Kubernetes name.
 - Only `Successful=True` / `Deleted` with matching generation on the current delete record can confirm completion. A status written for a previous incarnation must not confirm a recreated record. Accepted Kubernetes DELETE, finalizers, stale generation, or read-mirror lag do not substitute for confirmation.
 - A failed resource pre-check after earlier confirmation, and a new delete for an unresolvable resource type, retain their records and report unresolved work. Do not fall back to remembered success or equate discovery failure with object absence.
 - Confirmed Adapter-owned deletes stay while the origin exists and are removed after it is absent; matching reads are removed first. Pending deletes survive an unavailable/revoked Applier.
@@ -219,19 +229,20 @@ These are tests to implement, not tests executed by this documentation change.
 
 ## Acceptance Criteria Mapping
 
-| Ticket criterion | Coverage and completion requirement |
-| --- | --- |
-| Decide enumeration, including fully-decommissioned clusters | [Partition Enumeration](#partition-enumeration) proposes option 2 and explicitly separates discovery from remote-deletion capability |
-| Define deletion confirmation | [Deletion Confirmation](#deletion-confirmation) names the condition, reason, generation check, and the unresolved incarnation-safety requirement that must be settled before cleanup relies on the status |
-| Define which delete/read records are removed | [Record Cleanup](#record-cleanup) covers sweeper-owned and Adapter-owned deletes, ordering, standalone reads, and retained failures |
-| Confirm or revise roughly 12-hour cadence | [Cadence and Operations](#cadence-and-operations) retains 12 hours and defines its limits |
-| Amend detailed design before OpenAPI finalization | **Original sequencing missed:** specification 0.2.0 already shipped. The companion [proposal](desire-store-dd.md#sweeper-partition-enumeration-proposed) is a subsequent amendment. Agree on the revised criterion and record the follow-up release; do not mark the original timing criterion fulfilled |
-| Record decision in architecture and link from sweeper story | This file records the proposal. After review/publication, link the accepted document from HYPERFLEET-1840; a local file or a link from this file to Jira does not complete that external step |
+| Ticket criterion | Status with this PR | Completion requirement |
+| --- | --- | --- |
+| Decide enumeration, including fully-decommissioned clusters | Decision recorded | [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) selects option 2, its metadata contract and authorization, and separates discovery from remote-deletion capability. This decision and its supporting documents are included for review and merge |
+| Define deletion confirmation | Recommendation; safety decision open | [Deletion Confirmation](#deletion-confirmation) names condition, reason, and generation checks; resolve incarnation safety before relying on them for cleanup |
+| Define which delete/read records are removed | Recommendation; safety decisions open | [Record Cleanup](#record-cleanup) proposes record ordering and retention; resolve supersede and origin-reappearance safety before enabling sweeper-created deletes |
+| Confirm or revise roughly 12-hour cadence | Recommendation awaiting decision | [Cadence and Operations](#cadence-and-operations) recommends 12 hours and describes its limits; record the cadence decision |
+| Amend detailed design before OpenAPI finalization | Amendment recorded; original sequence missed | Specification 0.2.0 already shipped. This PR records the [subsequent amendment](desire-store-dd.md#sweeper-partition-enumeration); agree on a revised criterion and track its follow-up specification release |
+| Record decision in architecture and link from sweeper story | Architecture record included; story link outstanding | ADR-0039 and the related architecture updates record enumeration. Link the decision from HYPERFLEET-1840 and record the remaining spike decisions; a Jira link from this file does not satisfy the reverse-link requirement |
 
 ## References
 
 - [HYPERFLEET-1823](https://redhat.atlassian.net/browse/HYPERFLEET-1823)
 - [HYPERFLEET-1840](https://redhat.atlassian.net/browse/HYPERFLEET-1840)
+- [ADR-0039: Sweeper Partition Enumeration](../adrs/0039-sweeper-partition-enumeration.md)
 - [Desire Store Detailed Design](desire-store-dd.md)
 - [Desire Store Architecture Overview](desire-store-hld.md)
 - [Desire Identity and Ownership](spike-desire-identity-ownership.md)
