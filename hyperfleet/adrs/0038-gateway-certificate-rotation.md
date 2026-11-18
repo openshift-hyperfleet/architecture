@@ -8,9 +8,9 @@ Last Updated: 2026-11-11
 
 ## Context
 
-[HYPERFLEET-1523](https://redhat.atlassian.net/browse/HYPERFLEET-1523) asks how certificate rotation should be handled. This record covers every certificate and key on the gateway request path and how the deployments handle the update of any of the secrets below.
+[HYPERFLEET-1523](https://redhat.atlassian.net/browse/HYPERFLEET-1523) asks how certificate rotation should be handled. This record covers certificates and keys on the gateway request path and how the deployments handle the update of any of the secrets below.
 
-Secrets that hold the certificates, root CA and signing key:
+Secrets that hold the certificates, root CA and signing key and are currently used in the hyperfleet-infra deployment:
 
 | Secret | Created by | Mounted by |
 |--------|-----------|-------------|
