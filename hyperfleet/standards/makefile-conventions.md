@@ -472,8 +472,7 @@ startup checks. Passing local tests does not establish FIPS image readiness.
 Compatibility with a developer's persisted legacy BoringCrypto experiment is
 not part of the production image contract; the clean builder selects native FIPS.
 
-Helpers that compile and run a service **SHOULD** reuse `make build`. Direct Go
-commands remain available for ordinary local compilation and tests:
+Direct Go commands remain available for ordinary local compilation and tests:
 
 ```bash
 # Compile check only; make build produces the service executable.

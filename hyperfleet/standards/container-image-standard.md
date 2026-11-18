@@ -185,9 +185,10 @@ Make. The deprecated BoringCrypto experiment is incompatible with native FIPS
 and **MUST NOT** be selected in the production builder.
 
 The main package **MUST** contain a `fips.go` file selected only by the `fips`
-build tag. Red Hat Go does not enable FIPS merely by selecting the module, so
-this file **MUST** enable it explicitly and reject startup if runtime overrides
-disable it:
+build tag. With the native crypto backend selected, Red Hat Go defaults to
+`fips140=auto` (FIPS only on FIPS hosts), so this file **MUST** set
+`fips140=on` explicitly to enable FIPS on every host and reject startup if
+runtime overrides disable it:
 
 ```go
 //go:build fips
