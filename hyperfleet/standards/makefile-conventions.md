@@ -433,6 +433,8 @@ The supported contract covers the default Make recipes and production image buil
 
 Do not export production `GOFLAGS` to make tests inherit the tag: that also adds `-trimpath` to test binaries, which rewrites the source paths recorded by `runtime.Caller` and breaks tests that locate the repository from them. Instead, default `GO_TEST_TAGS` to `no_openssl` and pass it explicitly. Test targets **MUST** select the native backend by default too. Targets with additional tags **MUST** combine them in one flag, for example `-tags="integration,$(GO_TEST_TAGS)"`. Integration scripts **MUST** receive and preserve this list as well.
 
+Repositories exposing generic `TESTFLAGS` alongside `GO_TEST_TAGS` **MUST** reject `-tags` in `TESTFLAGS` rather than silently overriding it with a later flag. Document `GO_TEST_TAGS` as the sole test-tag input, for example `make test GO_TEST_TAGS=netgo,no_openssl TESTFLAGS=-count=1`. This keeps one explicit tag list without reintroducing caller-tag merging. Repositories without `TESTFLAGS` do not need this guard.
+
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
 
 <!-- markdownlint-disable MD010 -->
