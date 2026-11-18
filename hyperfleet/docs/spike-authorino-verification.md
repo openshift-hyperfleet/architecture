@@ -141,13 +141,35 @@ Notes for the rendering story:
 
 ### 3.4 Post-auth local rate limiting keyed by dynamic metadata
 
-**Steps:**
+**Result: confirmed — the pair supports local rate limiting keyed by caller
+class from Authorino dynamic metadata, but not directly: Envoy's local rate
+limit filter cannot match on ext_authz dynamic metadata, so a small bridge is
+required.**
 
-1. Configure an Envoy local rate-limit filter keyed on Authorino dynamic
-   metadata (caller class, partition).
-2. Burst requests above the limit and observe 429s only for the limited key.
+Working mechanism verified end-to-end on the deployed gateway:
 
-**Result:** _pending_
+1. Authorino emits the caller class via
+   `response.success.dynamicMetadata.hf_caller_class.plain.value`
+   (verified reaching Envoy: a Lua filter copied it to an
+   `x-hf-caller-class` request header, confirmed at the upstream).
+2. Route-level `rate_limits.actions[].request_headers` (header name
+   `x-hf-caller-class`, `descriptor_key: caller_class`, `skip_if_absent`)
+   produces the descriptor.
+3. `envoy.filters.http.local_ratelimit` matches the descriptor
+   (`caller_class: remote-applier`) and applies its token bucket.
+
+Burst test (bucket of 2 per pod, 2 replicas, `--concurrency 1`): 4 requests
+passed, then **429**; requests without the header (no descriptor) stayed
+unlimited (default bucket). **Requirement for HYPERFLEET-1829:** the gateway's
+Lua filter (or equivalent) must copy the metadata-derived caller class and
+partition into headers before routing, and strip any client-supplied versions.
+
+**Environment caveats recorded:** the local rate limit bucket is
+**per Envoy worker** — with the default worker-per-CPU (8 here) a bucket of N
+is effectively N×workers×replicas. The Desire Store gateway must either pin
+`--concurrency` or size buckets for the worker count. Also note
+`RateLimit.Action` has no `header_value` action in Envoy v1.39 — use
+`request_headers`.
 
 ### 3.5 Example CRs from the design against the deployed Authorino
 
@@ -180,19 +202,64 @@ either emit the wristband in both places or adapt the Lua check to the
 
 ### 3.6 JWKS refresh behavior
 
-**Steps:**
+**Result: confirmed — no request-driven fan-out across unrelated issuers;
+resolution is reconcile-driven, request-driven fetches are bounded by HTTP
+client timeouts, and AuthConfig deletion stops the issuer's resolution.**
 
-1. Configure two AuthConfigs with distinct issuers.
-2. Send requests hitting only one; watch Authorino logs / metrics for JWKS
-   fetches — confirm no fetch for the unrelated issuer.
-3. Delete the unused issuer's AuthConfig mid-refresh; confirm cancellation.
+Verified with Authorino at debug log level and two mock issuers (`/default`,
+`/other`) on two AuthConfigs:
 
-**Result:** _pending_
+- Traffic against one issuer's host produced **no OIDC/JWKS resolution lines
+  for the other issuer** — a request triggers resolution only for its own
+  AuthConfig's issuer, as the design requires.
+- OIDC configuration re-resolution is **reconcile-driven**: it fired when the
+  AuthConfig was applied and when a shared dependency (the mock issuer's
+  rollout) reconciled the AuthConfigs — 15 `openid connect configuration
+  updated` lines, all at reconcile time, none at request time.
+- Deleting the second issuer's AuthConfig stopped its resolution (no further
+  `/other` lines).
+- Request-time fetches are bounded: earlier in the spike, an unreachable JWKS
+  endpoint produced `Client.Timeout exceeded while awaiting headers`
+  (UNAUTHENTICATED denial), not a hang.
+- Key rotation is picked up at request time on unknown `kid`: after the mock
+  issuer restarted with new keys, a freshly minted token was accepted
+  immediately (matches the `refresh JWKS on unknown kid` behavior in
+  hyperfleet-api#422).
 
 ## 4. Conclusions
 
-_pending_
+All six behaviors the Desire Store detailed design assumes were verified
+against the deployed Authorino v0.28.0 / Envoy v1.39.1 pair:
+
+| # | Design assumption | Verdict |
+|---|-------------------|---------|
+| 1 | Binding deletion denies within 60 s | ✅ **< 1 s** healthy; unbounded under silent partition (infra failure, per design); < 1 s recovery |
+| 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
+| 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for type errors and out-of-bounds |
+| 4 | Local rate limiting keyed by caller class/partition | ✅ via metadata→header bridge; per-worker buckets are a sizing caveat |
+| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ all fields accepted; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
+| 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
+
+No design rework is required; the findings are refinements for the rendering
+and gateway stories.
 
 ## 5. Impact on HYPERFLEET-1831 (AuthConfig rendering)
 
-_pending_
+1. **Rely on the `issuer` field** — enforced natively; no `iss` authorization
+   rule fallback needed.
+2. **CEL predicates belong in `patternMatching.patterns[].predicate`** — there
+   is no `cel` authorization rule type in `v1beta3`. Errors deny by
+   themselves; explicit presence/shape checks are optional, for clearer
+   errors only.
+3. **Expect 404 (not 401/403)** as the client-visible status when no
+   AuthConfig matches (binding removed or wrong host).
+4. **Wristband emission:** render `response.success.headers["x-wristband"]`
+   as the DD writes it, **plus** a `dynamicMetadata` wristband (or a gateway
+   Lua adaptation) so the deployed gateway's fail-closed wristband check
+   passes — coordinate with HYPERFLEET-1829.
+5. **Revocation monitoring** should alert on Authorino watch errors
+   (visible within ~20 s of a partition) rather than client status codes;
+   client-side denial is instant once the control plane is healthy but does
+   not happen at all during a silent partition.
+6. **Rate-limit descriptors** need the metadata→header bridge and a decision
+   on Envoy `--concurrency` for bucket sizing.
