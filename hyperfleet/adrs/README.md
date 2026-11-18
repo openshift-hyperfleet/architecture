@@ -113,3 +113,4 @@ What did we decide? State it plainly.
 | [0035](0035-e2e-mode-aware-authentication.md) | Mode-Aware E2E Authentication | Active | 2026-11-10 |
 | [0036](0036-management-cluster-ingress-tls-termination.md) | Management-Cluster Ingress and TLS Termination | Active | 2026-11-09 |
 | [0037](0037-e2e-human-and-machine-identities.md) | Human and Machine Identities in E2E Authentication | Active | 2026-11-10 |
+| [0038](0038-gateway-certificate-rotation.md) | Gateway Certificate and Key Rotation | Active | 2026-11-11 |
