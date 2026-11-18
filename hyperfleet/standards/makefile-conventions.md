@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-18
 ---
 
 # HyperFleet Makefile Conventions
@@ -318,7 +318,8 @@ All Makefiles **SHOULD** support these environment variables:
 | `IMAGE_NAME` | (repo-specific) | Container image name | `make image IMAGE_NAME=my-service` |
 | `GOOS` | (host OS) | Target operating system for build | `make build GOOS=linux` |
 | `GOARCH` | (host arch) | Target architecture for build | `make build GOARCH=amd64` |
-| `CGO_ENABLED` | `0` | Enable/disable CGO. Services requiring FIPS compliance (`GOEXPERIMENT=boringcrypto`) **MUST** set `CGO_ENABLED ?= 1` | `make build CGO_ENABLED=1` |
+| `CGO_ENABLED` | `0` | Enable/disable CGO. Existing production services keep `CGO_ENABLED ?= 1` for runtime compatibility; native Go FIPS does not depend on CGO. | `make build CGO_ENABLED=1` |
+| `GOFIPS140` | (toolchain default) | Production Dockerfiles **MUST** select `v1.0.0`; local Make builds and tests do not enable FIPS by default. See [FIPS-Compliant Builds](container-image-standard.md#fips-compliant-builds). | Set in the Dockerfile build step |
 | `PLATFORM` | `linux/amd64` | Target platform for container builds | `make image PLATFORM=linux/arm64` |
 | `CONTAINER_TOOL` | (auto-detected) | Container tool (`podman` or `docker`) | `make image CONTAINER_TOOL=docker` |
 | `GIT_SHA` | (auto-detected) | Short git commit hash | — |
@@ -422,6 +423,64 @@ LDFLAGS := -s -w \
 | `-X main.date=...` | Embed build date at compile time |
 
 ### Example build target
+
+FIPS **MUST** be enabled in the production container build, not by default in
+local Make builds, tests, or tooling. Keep `GOFLAGS ?= -trimpath` and retain
+`CGO_ENABLED ?= 1` for the existing services. Do not add FIPS-specific defaults
+for `GOEXPERIMENT`, `GOFIPS140`, `GO_TEST_TAGS`, or `GOWORK` to Make, and do not
+enable FIPS in `go.mod`.
+
+The Dockerfile selects `GOFIPS140=v1.0.0` and invokes
+`make build GOFLAGS="-trimpath -tags=fips,no_openssl"`. The `fips` tag includes
+a main-package file that enables FIPS with `//go:debug fips140=on` and rejects
+startup when `crypto/fips140.Enabled()` is false. `no_openssl` selects Go's
+native crypto backend on Red Hat Go. See the [container image standard](container-image-standard.md#fips-compliant-builds)
+for the file and the required image checks. When Make pins a local-development
+toolchain, the Dockerfile **MUST** override it with `GOTOOLCHAIN=local` to keep
+the Red Hat compiler.
+
+Build and run targets **MUST** name the main package directory, not an individual
+`main.go` file: building one file would silently omit the tagged `fips.go`.
+Test targets retain only their suite-selection tags, such as `integration`,
+`envtest`, or `upgrade_e2e`; no FIPS tag merging or separate FIPS test-tag
+variable is required. Do not export production `GOFLAGS` to tests: `-trimpath`
+can break tests that locate fixtures with `runtime.Caller`.
+
+The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
+
+<!-- markdownlint-disable MD010 -->
+```makefile
+GO ?= go
+CGO_ENABLED ?= 1
+export CGO_ENABLED
+GOFLAGS ?= -trimpath
+
+build:
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/my-service ./cmd/my-service
+
+test:
+	$(GO) test -race ./...
+
+test-integration:
+	$(GO) test -tags=integration -race ./test/integration/...
+```
+<!-- markdownlint-enable MD010 -->
+
+Validate ordinary local builds and unit/integration tests without FIPS settings,
+and validate the production artifact separately through the image build and
+startup checks. Passing local tests does not establish FIPS image readiness.
+Compatibility with a developer's persisted legacy BoringCrypto experiment is
+not part of the production image contract; the clean builder selects native FIPS.
+
+Direct Go commands remain available for ordinary local compilation and tests:
+
+```bash
+# Compile check only; make build produces the service executable.
+go build -trimpath ./...
+go test ./...
+```
+
+The same ordinary build target works for services with and without FIPS images:
 
 ```makefile
 BIN_DIR := bin
