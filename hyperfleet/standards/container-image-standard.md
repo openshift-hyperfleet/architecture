@@ -200,12 +200,12 @@ go version -m <binary> | grep -E 'CGO_ENABLED|GOEXPERIMENT|GOFIPS140|DefaultGODE
 # Current service images also check CGO_ENABLED=1.
 ```
 
-Container builds **MUST** reject binaries lacking the `GOFIPS140=v1.0.0` module, a compiled `DefaultGODEBUG=fips140=on`, or the exact `no_openssl` build-tag token. Substrings such as `not_no_openssl` and `no_openssl_disabled` do not select the backend and **MUST NOT** pass the gate. The examples use the comma-separated tag list from the [Makefile defaults](makefile-conventions.md#example-build-target); custom flag overrides remain the caller's responsibility and do not bypass these gates. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
+Container builds **MUST** reject binaries lacking the `GOFIPS140=v1.0.0` module, a compiled `DefaultGODEBUG=fips140=on`, or the exact `no_openssl` build-tag token. The backend check **MUST** match only the `build` record whose key is `-tags`, not tag-like text inside another setting such as `-ldflags`; a missing `-tags` record **MUST** fail. Substrings such as `not_no_openssl` and `no_openssl_disabled` do not select the backend and **MUST NOT** pass the gate. The examples use the comma-separated tag list from the [Makefile defaults](makefile-conventions.md#example-build-target); custom flag overrides remain the caller's responsibility and do not bypass these gates. The Go build info may include a resolved module hash suffix; check the full value rather than `GOFIPS140=off` or only the Go version:
 
 ```dockerfile
 RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'DefaultGODEBUG=([^,]*,)*fips140=on(,|$)' || { echo "FIPS check FAILED: FIPS mode is not enabled by default"; exit 1; }
-RUN go version -m /build/bin/<service-name> | grep -Eq -- '(^|[[:space:]])-tags=([^,[:space:]]+,)*no_openssl(,|[[:space:]]|$)' || { echo "FIPS check FAILED: missing exact no_openssl build tag"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq -- '^[[:space:]]*build[[:space:]]+-tags=([^,[:space:]]+,)*no_openssl(,[^,[:space:]]+)*[[:space:]]*$' || { echo "FIPS check FAILED: missing exact no_openssl build tag"; exit 1; }
 ```
 
 CI **SHOULD** also run a smoke check that starts the built binary with `GOLANG_FIPS=1`, which takes the same code path as a FIPS-enabled kernel: `GOLANG_FIPS=1 <binary> --help` must exit zero. A binary built without the native backend panics during initialization under that environment, which is how the failure reaches a cluster otherwise.
@@ -327,7 +327,7 @@ RUN --mount=type=cache,target=/opt/app-root/src/go/pkg/mod,uid=1001 \
 RUN go version -m /build/bin/<service-name> | grep -q 'CGO_ENABLED=1' || { echo "FIPS check FAILED: missing CGO_ENABLED=1"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'GOFIPS140=v1[.]0[.]0(-[[:xdigit:]]+)?$' || { echo "FIPS check FAILED: missing GOFIPS140=v1.0.0"; exit 1; }
 RUN go version -m /build/bin/<service-name> | grep -Eq 'DefaultGODEBUG=([^,]*,)*fips140=on(,|$)' || { echo "FIPS check FAILED: FIPS mode is not enabled by default"; exit 1; }
-RUN go version -m /build/bin/<service-name> | grep -Eq -- '(^|[[:space:]])-tags=([^,[:space:]]+,)*no_openssl(,|[[:space:]]|$)' || { echo "FIPS check FAILED: missing exact no_openssl build tag"; exit 1; }
+RUN go version -m /build/bin/<service-name> | grep -Eq -- '^[[:space:]]*build[[:space:]]+-tags=([^,[:space:]]+,)*no_openssl(,[^,[:space:]]+)*[[:space:]]*$' || { echo "FIPS check FAILED: missing exact no_openssl build tag"; exit 1; }
 
 FROM ${BASE_IMAGE}
 
