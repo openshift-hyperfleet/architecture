@@ -219,8 +219,10 @@ The image build **MUST** verify the `GOFIPS140` module selection, the compiled
 The startup check exercises the Red Hat backend path used on FIPS-enabled hosts
 instead of checking the backend tag only as build metadata. The compiled-default
 check **MUST** also reject `fips140ems=0`, including alongside `fips140=on`.
-The runtime guard rejects a disabled FIPS mode, but does not detect an EMS bypass;
-build and deployment review **MUST** still check for `fips140ems=0` overrides.
+The build check rejects compiled overrides only. Neither that check nor the
+runtime FIPS-mode guard detects a deployment-time `GODEBUG=fips140ems=0`
+override. Build and deployment review **MUST** still check environment,
+module/workspace defaults, and main-package directives for `fips140ems=0`.
 
 The default runtime image in [Production Runtime](#production-runtime) is `registry.access.redhat.com/ubi9/ubi-minimal:latest`, which ships the libraries and CA certificates the shipped services need. With the native backend selected, native FIPS does not load OpenSSL: do not require an OpenSSL FIPS provider solely for this build mode. If a service moves to `ubi9-micro`, check its CGO runtime dependencies and copy a CA bundle if the service needs TLS.
 
