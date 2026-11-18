@@ -151,13 +151,32 @@ Notes for the rendering story:
 
 ### 3.5 Example CRs from the design against the deployed Authorino
 
-**Steps:**
+**Result: confirmed — the DD's `v1beta3` example CR fields are accepted as
+written, and the Wristband reaches the upstream request as `x-wristband`.**
 
-1. Apply the design's example `v1beta3` AuthConfig CRs verbatim.
-2. Confirm `wristband` response injection reaches the upstream request as the
-   `x-wristband` header (not only Envoy metadata).
+A test AuthConfig modeled directly on the DD's binding CR (age predicate and
+partition predicate in `patternMatching.patterns[].predicate`;
+`response.success.headers["x-wristband"].wristband` with `customClaims`
+`value`/`expression`, `tokenDuration: 300`, `signingKeyRefs`
+name+`RS256`) was applied and served traffic. A TLS nginx echo server was
+deployed as the `hyperfleet-api` upstream; an authorized request's upstream
+body showed:
 
-**Result:** _pending_
+- **`x-wristband`: the full Wristband JWT** with `aud: desire-store-api`,
+  `hf_caller_class: remote-applier`, `hf_identity` (from
+  `expression: auth.identity.sub`), and `hf_partition: mc-01` (static value) —
+  the DD's header-injection contract works.
+- `authorization`: replaced with `Bearer <wristband>` by the gateway's Lua
+  filter reading ext_authz **dynamic metadata** (the general gateway's
+  mechanism).
+
+**Caveat for the gateway story (HYPERFLEET-1829):** the deployed gateway's
+Envoy Lua filter fails closed (403 "missing gateway wristband") when Authorino
+returns OK without a wristband in **dynamic metadata**. A Desire Store
+AuthConfig that emits the wristband only as a response header (as the DD CR
+writes it) is rejected by this Envoy config. The Desire Store gateway must
+either emit the wristband in both places or adapt the Lua check to the
+`x-wristband` header path.
 
 ### 3.6 JWKS refresh behavior
 
