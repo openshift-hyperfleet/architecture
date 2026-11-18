@@ -471,6 +471,7 @@ Helpers that compile and run a service **SHOULD** reuse `make build` so they do 
 
 ```bash
 export CGO_ENABLED=1 GOEXPERIMENT=noboringcrypto GOFIPS140=v1.0.0 GOWORK=off
+# Compile check only; make build produces the service executable.
 go build -trimpath -tags=no_openssl ./...
 go test -tags=no_openssl ./...
 ```
