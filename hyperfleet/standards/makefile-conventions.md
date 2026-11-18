@@ -319,8 +319,7 @@ All Makefiles **SHOULD** support these environment variables:
 | `GOOS` | (host OS) | Target operating system for build | `make build GOOS=linux` |
 | `GOARCH` | (host arch) | Target architecture for build | `make build GOARCH=amd64` |
 | `CGO_ENABLED` | `0` | Enable/disable CGO. Existing production services keep `CGO_ENABLED ?= 1` for runtime compatibility; native Go FIPS does not depend on CGO. | `make build CGO_ENABLED=1` |
-| `GOEXPERIMENT` | (toolchain default) | FIPS production services **MUST** set `GOEXPERIMENT ?= noboringcrypto` for build compatibility when the incompatible legacy experiment was saved with `go env -w`. Without the negation, Go rejects the combination with `GOFIPS140=v1.0.0`; there is no silent non-FIPS fallback. | `make build GOEXPERIMENT=noboringcrypto` |
-| `GOFIPS140` | `off` (upstream default) | FIPS production services **MUST** set `GOFIPS140 ?= v1.0.0` to select the validated Go Cryptographic Module, and `godebug fips140=on` in the main `go.mod` to enable FIPS mode by default on the Red Hat toolset. | `make build GOFIPS140=v1.0.0` |
+| `GOFIPS140` | (toolchain default) | Production Dockerfiles **MUST** select `v1.0.0`; local Make builds and tests do not enable FIPS by default. See [FIPS-Compliant Builds](container-image-standard.md#fips-compliant-builds). | Set in the Dockerfile build step |
 | `PLATFORM` | `linux/amd64` | Target platform for container builds | `make image PLATFORM=linux/arm64` |
 | `CONTAINER_TOOL` | (auto-detected) | Container tool (`podman` or `docker`) | `make image CONTAINER_TOOL=docker` |
 | `GIT_SHA` | (auto-detected) | Short git commit hash | — |
@@ -425,58 +424,64 @@ LDFLAGS := -s -w \
 
 ### Example build target
 
-For a shipped FIPS service, Make **MUST** default to `CGO_ENABLED=1`, `GOEXPERIMENT=noboringcrypto`, and `GOFIPS140=v1.0.0`, and export these settings so builds, tests, tools and recipe command substitutions use the same configuration. `noboringcrypto` is retained because the migration must work with the legacy experiment persisted by `go env -w`; without it Go fails before building. The main `go.mod` **MUST** declare `godebug fips140=on` because the Red Hat toolset does not enable FIPS mode merely by selecting the module.
+FIPS **MUST** be enabled in the production container build, not by default in
+local Make builds, tests, or tooling. Keep `GOFLAGS ?= -trimpath` and retain
+`CGO_ENABLED ?= 1` for the existing services. Do not add FIPS-specific defaults
+for `GOEXPERIMENT`, `GOFIPS140`, `GO_TEST_TAGS`, or `GOWORK` to Make, and do not
+enable FIPS in `go.mod`.
 
-Build flags **MUST** default to `-trimpath -tags=no_openssl`. A FIPS service **MUST** replace the general `GOFLAGS ?= -trimpath` example with this single combined definition, not keep both: the first `?=` assignment wins, so an earlier generic definition would omit the backend tag. Red Hat Go uses an OpenSSL backend by default on Linux with cgo, which aborts during initialization on FIPS-enabled hosts when `fips140` GODEBUG is set. `no_openssl` selects the native backend there and is harmless on upstream Go, so no vendor detection is needed. Use the `-tags=value` form because `GOFLAGS` requires a flag and its value to be one argument.
+The Dockerfile selects `GOFIPS140=v1.0.0` and invokes
+`make build GOFLAGS="-trimpath -tags=fips,no_openssl"`. The `fips` tag includes
+a main-package file that enables FIPS with `//go:debug fips140=on` and rejects
+startup when `crypto/fips140.Enabled()` is false. `no_openssl` selects Go's
+native crypto backend on Red Hat Go. See the [container image standard](container-image-standard.md#fips-compliant-builds)
+for the file and the required image checks. When Make pins a local-development
+toolchain, the Dockerfile **MUST** override it with `GOTOOLCHAIN=local` to keep
+the Red Hat compiler.
 
-The supported contract covers the default Make recipes and production image builds, not arbitrary caller overrides. Settings use ordinary `?=` defaults: no empty-value normalization or caller-tag parser is required. A caller overriding `GOFLAGS` or `GO_TEST_TAGS` owns the complete replacement, including `no_openssl`; callers overriding FIPS settings, including supplying empty values, own that configuration. Production images **MUST** still pass the [container build-info gates](container-image-standard.md#fips-compliant-builds), regardless of overrides.
-
-Do not export production `GOFLAGS` to make tests inherit the tag: that also adds `-trimpath` to test binaries, which rewrites the source paths recorded by `runtime.Caller` and breaks tests that locate the repository from them. Instead, default and export `GO_TEST_TAGS` as `no_openssl`, expanding it in the shell as `"$${GO_TEST_TAGS}"` rather than interpolating caller input into recipe source. Test targets **MUST** select the native backend by default too. Targets with additional tags **MUST** combine them in one flag. Normalize whitespace to commas before adding `integration` or `envtest`: Go treats tag lists containing spaces as whitespace-separated, so mixing a comma prefix with a space-separated override can lose the required tag. Integration scripts **MUST** receive and preserve this list as well.
-
-Repositories exposing generic `TESTFLAGS` alongside `GO_TEST_TAGS` **MUST** reject `-tags` in `TESTFLAGS` rather than silently overriding it with a later flag. Document `GO_TEST_TAGS` as the sole test-tag input, for example `make test GO_TEST_TAGS=netgo,no_openssl TESTFLAGS=-count=1`. This keeps one explicit tag list without reintroducing caller-tag merging. Repositories without `TESTFLAGS` do not need this guard.
+Build and run targets **MUST** name the main package directory, not an individual
+`main.go` file: building one file would silently omit the tagged `fips.go`.
+Test targets retain only their suite-selection tags, such as `integration`,
+`envtest`, or `upgrade_e2e`; no FIPS tag merging or separate FIPS test-tag
+variable is required. Do not export production `GOFLAGS` to tests: `-trimpath`
+can break tests that locate fixtures with `runtime.Caller`.
 
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
 
 <!-- markdownlint-disable MD010 -->
 ```makefile
 GO ?= go
-# Always honor the main module's godebug directive, including local builds/tests.
-override GOWORK := off
-export GOWORK
 CGO_ENABLED ?= 1
-GOEXPERIMENT ?= noboringcrypto
-GOFIPS140 ?= v1.0.0
-export CGO_ENABLED GOEXPERIMENT GOFIPS140
-GOFLAGS ?= -trimpath -tags=no_openssl
-GO_TEST_TAGS ?= no_openssl
-export GO_TEST_TAGS
+export CGO_ENABLED
+GOFLAGS ?= -trimpath
 
 build:
 	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/my-service ./cmd/my-service
 
 test:
-	$(GO) test -tags="$${GO_TEST_TAGS}" -race ./...
+	$(GO) test -race ./...
 
 test-integration:
-	@test_tags=$$(printf '%s' "$${GO_TEST_TAGS}" | tr '[:space:]' ','); \
-	$(GO) test -tags="integration,$$test_tags" -race ./test/integration/...
+	$(GO) test -tags=integration -race ./test/integration/...
 ```
 <!-- markdownlint-enable MD010 -->
 
-The test target **MUST** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. When a `go.work` file is active, Go ignores the `godebug` directive in `go.mod` ([go.dev/doc/godebug](https://go.dev/doc/godebug)). Build, install, run and test recipes **MUST** enforce `GOWORK=off` as shown, rather than requiring callers to remember it; this keeps the main module's FIPS default effective even inside an enclosing workspace. Direct Go invocations outside Make need `GOWORK=off` too, unless the workspace itself declares `godebug fips140=on`. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds), which requires the module selection, `DefaultGODEBUG=fips140=on`, and the native backend tag. FIPS production deployments **MUST NOT** disable that compiled default through runtime overrides, including `GODEBUG=fips140=off` or `GODEBUG=fips140=` (empty entry). The linked standard specifies the environment, `go.work`, and main-package directive forms that deployment review must check.
+Validate ordinary local builds and unit/integration tests without FIPS settings,
+and validate the production artifact separately through the image build and
+startup checks. Passing local tests does not establish FIPS image readiness.
+Compatibility with a developer's persisted legacy BoringCrypto experiment is
+not part of the production image contract; the clean builder selects native FIPS.
 
-Validate default build and test recipes, including a toolchain with persisted `GOEXPERIMENT=boringcrypto` and an enclosing workspace without `godebug fips140=on`. The build-info gate must accept the exact `no_openssl` token in any list position and reject near matches such as `not_no_openssl` and `no_openssl_disabled`.
-
-Helpers that compile and run a service **SHOULD** reuse `make build` so they do not bypass these settings. Direct Go invocations do not inherit Make's defaults; document the complete environment and the explicit native backend tag for both builds and tests:
+Helpers that compile and run a service **SHOULD** reuse `make build`. Direct Go
+commands remain available for ordinary local compilation and tests:
 
 ```bash
-export CGO_ENABLED=1 GOEXPERIMENT=noboringcrypto GOFIPS140=v1.0.0 GOWORK=off
 # Compile check only; make build produces the service executable.
-go build -trimpath -tags=no_openssl ./...
-go test -tags=no_openssl ./...
+go build -trimpath ./...
+go test ./...
 ```
 
-For services without FIPS requirements, use the ordinary build target:
+The same ordinary build target works for services with and without FIPS images:
 
 ```makefile
 BIN_DIR := bin
