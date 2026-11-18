@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Platform Team
-Last Updated: 2026-11-16
+Last Updated: 2026-11-18
 ---
 
 # HyperFleet Makefile Conventions
@@ -425,13 +425,13 @@ LDFLAGS := -s -w \
 
 ### Example build target
 
-For a shipped FIPS service, the build target **MUST** pass both FIPS settings into the Go command and not rely on the Go toolchain's environment defaults. Set them on the recipe as shown, or `export` them from Make when other Go commands (such as code generators and test setup) need the same settings. On a Red Hat Go toolset the build **MUST** also select Go's native crypto backend with the `no_openssl` tag: that toolset uses an OpenSSL backend by default on `linux` with cgo, and the backend aborts at startup on FIPS-enabled hosts once a `fips140` GODEBUG value is set. Detect the toolchain so upstream Go builds do not carry a tag that has no effect there.
+For a shipped FIPS service, Make **MUST** default to `CGO_ENABLED=1`, `GOEXPERIMENT=noboringcrypto`, and `GOFIPS140=v1.0.0`, and export these settings so builds, tests, tools and recipe command substitutions use the same configuration. `noboringcrypto` is retained because the migration must work with the legacy experiment persisted by `go env -w`; without it Go fails before building. The main `go.mod` **MUST** declare `godebug fips140=on` because the Red Hat toolset does not enable FIPS mode merely by selecting the module.
 
-Add the tag to `GOFLAGS` as `-tags=no_openssl`, not `-tags no_openssl`: `GOFLAGS` requires each flag and its value to be one argument. Merge the tag into a caller-supplied `-tags` list instead of emitting a second flag, because the go command replaces the earlier list rather than combining them, and use `override` so a `GOFLAGS` passed on the make command line keeps the tag. Make's word functions do not parse quoted arguments: recipes using the merger below **MUST** reject quoted or escaped tag lists and require unquoted comma-separated lists such as `-tags=netgo,osusergo`. Do not silently drop or rewrite unsupported forms. Repeated `-tags=` options retain Go's last-list-wins semantics.
+Build flags **MUST** default to `-trimpath -tags=no_openssl`. Red Hat Go uses an OpenSSL backend by default on Linux with cgo, which aborts during initialization on FIPS-enabled hosts when `fips140` GODEBUG is set. `no_openssl` selects the native backend there and is harmless on upstream Go, so no vendor detection is needed. Use the `-tags=value` form because `GOFLAGS` requires a flag and its value to be one argument.
 
-Normalize empty values for `CGO_ENABLED`, `GOEXPERIMENT` and `GOFIPS140`: an empty environment value falls back to the persisted `go env -w` setting, so a caller that passes `CGO_ENABLED=` or `GOFIPS140=` can silently build without cgo or with a different crypto module. Pin each one with `override` when it is empty.
+The supported contract covers the default Make recipes and production image builds, not arbitrary caller overrides. Settings use ordinary `?=` defaults: no empty-value normalization or caller-tag parser is required. A caller overriding `GOFLAGS` or `GO_TEST_TAGS` owns the complete replacement, including `no_openssl`; callers overriding FIPS settings, including supplying empty values, own that configuration. Production images **MUST** still pass the [container build-info gates](container-image-standard.md#fips-compliant-builds), regardless of overrides.
 
-Do not export production `GOFLAGS` to make tests inherit the tag: that also adds `-trimpath` to test binaries, which rewrites the source paths recorded by `runtime.Caller` and breaks tests that locate the repository from them. Instead, pass the effective tag list separately. On Red Hat Linux+cgo toolchains, test targets **MUST** preserve `no_openssl` too: the incompatible OpenSSL backend can abort test binaries during initialization on FIPS-enabled hosts. Targets with additional tags **MUST** combine them in one flag, for example `-tags="integration,$(GO_TEST_TAGS)"`, rather than replacing the backend tag. Integration scripts **MUST** receive and preserve this list as well.
+Do not export production `GOFLAGS` to make tests inherit the tag: that also adds `-trimpath` to test binaries, which rewrites the source paths recorded by `runtime.Caller` and breaks tests that locate the repository from them. Instead, default `GO_TEST_TAGS` to `no_openssl` and pass it explicitly. Test targets **MUST** select the native backend by default too. Targets with additional tags **MUST** combine them in one flag, for example `-tags="integration,$(GO_TEST_TAGS)"`. Integration scripts **MUST** receive and preserve this list as well.
 
 The recipe line below contains a literal tab required by GNU Make. The MD010 exception applies only to this example.
 
@@ -444,47 +444,24 @@ export GOWORK
 CGO_ENABLED ?= 1
 GOEXPERIMENT ?= noboringcrypto
 GOFIPS140 ?= v1.0.0
-ifeq ($(strip $(CGO_ENABLED)),)
-override CGO_ENABLED := 1
-endif
-ifeq ($(strip $(GOEXPERIMENT)),)
-override GOEXPERIMENT := noboringcrypto
-endif
-ifeq ($(strip $(GOFIPS140)),)
-override GOFIPS140 := v1.0.0
-endif
-GOFLAGS ?= -trimpath
-# Reject representations that Make cannot merge without changing their meaning.
-GOFLAGS_TAG_WORDS := $(foreach flag,$(GOFLAGS),$(if $(findstring -tags,$(flag)),$(flag)))
-ifneq (,$(findstring ',$(GOFLAGS_TAG_WORDS))$(findstring ",$(GOFLAGS_TAG_WORDS))$(findstring \,$(GOFLAGS_TAG_WORDS))$(filter -tags,$(GOFLAGS_TAG_WORDS)))
-$(error Use unquoted comma-separated tags in GOFLAGS: -tags=netgo,osusergo)
-endif
-ifneq (,$(findstring Red Hat,$(shell $(GO) version 2>/dev/null)))
-# Repeated -tags options keep the last list, so merge into that one.
-GOFLAGS_CALLER_TAGS := $(patsubst -tags=%,%,$(lastword $(filter -tags=%,$(GOFLAGS))))
-ifeq (,$(GOFLAGS_CALLER_TAGS))
-override GOFLAGS += -tags=no_openssl
-else
-override GOFLAGS := $(filter-out -tags=%,$(GOFLAGS)) -tags=$(GOFLAGS_CALLER_TAGS),no_openssl
-endif
-endif
-# Expand after the merge, without inheriting production-only flags.
-GO_TEST_TAGS = $(patsubst -tags=%,%,$(lastword $(filter -tags=%,$(GOFLAGS))))
+export CGO_ENABLED GOEXPERIMENT GOFIPS140
+GOFLAGS ?= -trimpath -tags=no_openssl
+GO_TEST_TAGS ?= no_openssl
 
 build:
-	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/my-service ./cmd/my-service
+	$(GO) build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o bin/my-service ./cmd/my-service
 
 test:
-	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) test -tags="$(GO_TEST_TAGS)" -race ./...
+	$(GO) test -tags="$(GO_TEST_TAGS)" -race ./...
 
 test-integration:
-	CGO_ENABLED=$(CGO_ENABLED) GOEXPERIMENT=$(GOEXPERIMENT) GOFIPS140=$(GOFIPS140) $(GO) test -tags="integration,$(GO_TEST_TAGS)" -race ./test/integration/...
+	$(GO) test -tags="integration,$(GO_TEST_TAGS)" -race ./test/integration/...
 ```
 <!-- markdownlint-enable MD010 -->
 
 The test target **MUST** pass `CGO_ENABLED`, `GOEXPERIMENT`, and `GOFIPS140` to `go test`, directly or through Make's exported environment, so tests exercise the selected module and `-race` works even if the toolchain saved a different CGO setting. When a `go.work` file is active, Go ignores the `godebug` directive in `go.mod` ([go.dev/doc/godebug](https://go.dev/doc/godebug)). Build, install, run and test recipes **MUST** enforce `GOWORK=off` as shown, rather than requiring callers to remember it; this keeps the main module's FIPS default effective even inside an enclosing workspace. Direct Go invocations outside Make need `GOWORK=off` too, unless the workspace itself declares `godebug fips140=on`. The binary's build info is verified by the [container image standard](container-image-standard.md#fips-compliant-builds), which requires the module selection, `DefaultGODEBUG=fips140=on`, and the native backend tag. FIPS production deployments **MUST NOT** disable that compiled default through runtime overrides, including `GODEBUG=fips140=off` or `GODEBUG=fips140=` (empty entry). The linked standard specifies the environment, `go.work`, and main-package directive forms that deployment review must check.
 
-Validate the merger with no caller tags, one comma-separated list, repeated `-tags=` options, and quoted space-separated lists (which must fail with the diagnostic above). Validate empty FIPS settings and an enclosing workspace without `godebug fips140=on`. The build-info gate must accept the exact `no_openssl` token in any list position and reject near matches such as `not_no_openssl` and `no_openssl_disabled`.
+Validate default build and test recipes, including a toolchain with persisted `GOEXPERIMENT=boringcrypto` and an enclosing workspace without `godebug fips140=on`. The build-info gate must accept the exact `no_openssl` token in any list position and reject near matches such as `not_no_openssl` and `no_openssl_disabled`.
 
 For services without FIPS requirements, use the ordinary build target:
 
