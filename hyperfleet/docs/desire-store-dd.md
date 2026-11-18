@@ -305,7 +305,7 @@ This section defines the resource operations and consistency guarantees exposed 
 
 ### API Operations
 
-The Desire Store API defines the five desire-record operations below; the separately authorized metadata operation is recorded in [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) and awaits specification and implementation:
+The table has five desire-record operations and one separately authorized partition-metadata operation. [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records the metadata decision; its specification and implementation are pending:
 
 | Operation | Callers | Purpose |
 |----------|---------|---------|
@@ -565,6 +565,8 @@ This operation intentionally has no target partition. Its permission is separate
 - Every lost record is rewritten by its owner. The Desire Store is rebuildable, so an Adapter writes a missing `ApplyDesire` again on its next reconcile, and it requests a missing unconfirmed `DeleteDesire` again instead of treating its absence as a completed delete ([Adapter Deletion Flow Design](../components/adapter/framework/lifecycle/adapter-lifecycle-delete-design.md#remote-transport-resources-9)).
 
 **Status-write limit after recreation:** An old ApplyDesire or DeleteDesire status write can match the version of a recreated record. For example, a status computed at version 1 can mark a recreated DeleteDesire as deleted without processing its deletion. The DeleteDesire controller treats this status as completed and skips the delete ([`deletedesire/controller.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/deletedesire/controller.go#L135-L149)). The next poll therefore does not guarantee recovery. The lost-record recovery above does not apply because the record still exists.
+
+**Sweeper read-cleanup limit:** The rebuildability argument does not authorize removal of a `ReadDesire` needed by a live `ApplyDesire`. The shared store permits a same-owner apply after a confirmed delete and lets its read sibling remain at the same version. A sweeper can read the old confirmed-delete/read pair, then delete the unchanged read after the Adapter's new apply retires the delete; the current read-delete preconditions check the read's version and owner, not the presence of an apply sibling. HYPERFLEET-1937's planned sweeper owner exemption would also let the sweeper remove an Adapter-owned read. Re-reading before deletion narrows the window but does not close it. A later Adapter reconcile may recreate the read, but its delay has no verified bound. [HYPERFLEET-1823](spike-sweeper-orphan-scan.md#races-that-re-reads-do-not-solve) therefore requires a tested, atomic handoff that prevents loss of a live target's read mirror before automatic cleanup of a confirmed-delete/read pair is enabled. Until then, retain and report that pair. No new wire precondition is assumed here.
 
 **Alternatives considered:**
 

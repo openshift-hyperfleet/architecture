@@ -28,7 +28,24 @@ Record a narrow additive exception to the Detailed Design's v1 compatibility rul
 
 ### Decision Boundary
 
-This records the partition-discovery, metadata-authorization, store-boundary, and compatibility decisions. It does not settle deletion confirmation after record recreation, destructive supersede of a replacement apply, or origin reappearance after a sweeper-created delete. Those [design gates](../docs/spike-sweeper-orphan-scan.md#review-and-implementation-gates) remain under HYPERFLEET-1823. Enumeration does not prove source absence or remote deletion and cannot restore an unavailable Applier. Recording this ADR alone does not complete all six spike criteria or claim that the endpoint is implemented.
+This records the partition-discovery, metadata-authorization, store-boundary, and compatibility decisions. It does not settle deletion confirmation after record recreation, destructive supersede of a replacement apply, or safe cleanup of a read beside a confirmed delete; those [design gates](../docs/spike-sweeper-orphan-scan.md#review-and-implementation-gates) remain under HYPERFLEET-1823. Origin reappearance or target reassignment while a sweeper-created delete is pending is treated as unsupported under assumption A1 below, with its validation recorded as an open question. Enumeration does not prove source absence or remote deletion and cannot restore an unavailable Applier. Recording this ADR alone does not complete all six spike criteria or claim that the endpoint is implemented.
+
+## Assumptions and Open Questions
+
+### A1: No Origin Reappearance or Target Reassignment During Pending Deletion
+
+**Working assumption:** After an authoritative lookup establishes that the originating API resource is absent and the sweeper creates a `DeleteDesire`, supported HyperFleet operations do not:
+
+- make that same canonical API resource reference live again while the delete is pending; or
+- reassign or reuse the Kubernetes target `(partition, group, resource, namespace, name)` for a live source while the delete is pending, whether handled by the same Adapter or a different Adapter.
+
+These are treated as unsupported edge cases for this design. This assumption does not prohibit later reuse after deletion and cleanup satisfy the existing ownership rules. It also does not resolve the separate race in which an apply is replaced **before** the sweeper creates its delete.
+
+**Evidence boundary:** A1 is an explicit planning assumption, not a verified guarantee of the existing architecture. [ADR-0009](0009-uuid-v7-resource-identifiers.md) selects UUID resource identifiers, and [ADR-0028](0028-apply-delete-ordering.md) serializes Applier apply/delete passes. Neither establishes a permanent source-to-target binding or a complete restore/reassignment policy. The [identity decision](../docs/spike-desire-identity-ownership.md#3-identity) stores `resource_id` as content outside the desire identity.
+
+**Open question Q1:** Do any supported API recovery/restore operations, Adapter target-naming rules, or ownership handovers violate A1? The HYPERFLEET-1823 spike owner tracks confirmation with the API, Adapter, and Applier owners. Record the supporting lifecycle rules and tests, or a concrete supported counterexample. This question does not reopen or block the partition-enumeration decision.
+
+**Design consequence:** No automatic cancellation mechanism is selected for this unsupported case. If a scan detects a reappeared origin or conflicting live provenance, stop initiating further cleanup for that target and report the assumption violation for investigation. This cannot revoke a Kubernetes delete already read by the Applier and is not a recovery guarantee. If Q1 identifies a supported counterexample, revise the deletion design and define safe coordination with in-flight Applier work before claiming support for that lifecycle. Removing a `DeleteDesire` alone is insufficient.
 
 ## Consequences
 
