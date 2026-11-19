@@ -187,8 +187,15 @@ Burst tests (bucket of 2 per Envoy process, 2 replicas):
 - **Partition key** (follow-up run, 2026-11-19): a 10-request burst against `mc-01` passed
   4 (bucket 2 × 2 replicas) then **429**; a 10-request burst against `mc-02`
   — same AuthConfig, same caller class, different partition descriptor —
-  passed all 10. The partition key produces **independent per-partition
-  buckets**, as the AC requires.
+  passed all 10, unaffected by `mc-01`'s exhausted bucket. **What this
+  shows:** the rate-limit state is isolated per descriptor value — a
+  partition's exhausted bucket does not affect requests keyed to another
+  partition. **What it does not show:** an independent *enforced* bucket for
+  a second partition — no descriptor was configured for `mc-02` in this test
+  (its requests fell into the default bucket), so a burst proving `mc-02`
+  gets its own 429s within a refill interval, with a second partition
+  descriptor configured, remains to be run before claiming per-partition
+  bucket enforcement.
 
 **Fail-open hazard:** the verified mechanism is fail-open. With
 `skip_if_absent`, any request that reaches routing without the descriptor —
@@ -336,7 +343,7 @@ criterion of HYPERFLEET-1822 is covered:
 | 1 | Binding deletion denies within 60 s | ✅ **< 1 s** healthy; unbounded under silent partition (infra failure, per design); < 1 s recovery |
 | 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for missing-claim ("no such key"), type ("no such overload") and out-of-bounds ("index out of bounds") errors |
-| 4 | Local rate limiting keyed by caller class/partition | ✅ both keys verified via the metadata→header bridge, with independent per-partition buckets; buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
+| 4 | Local rate limiting keyed by caller class/partition | ✅ both descriptor keys verified via the metadata→header bridge; rate-limit state is isolated per descriptor value (an exhausted `mc-01` bucket did not affect `mc-02`); a second enforced per-partition bucket remains unproven (see 3.4); buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
 | 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ signing verified with `RS256` (adopted) and `ES256` (evaluated, not adopted); `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
 | 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
 
@@ -376,17 +383,24 @@ algorithm is `RS256`; the `ES256` run is the evaluated alternative, see
    the Desire Store signing key matches it and the general gateway's
    existing key; ES256 would require an API change for no Hub-internal
    benefit (see 3.5).
-   **Rollout-ordering dependency:** the deployed gateway's Lua filter reads
-   the wristband from ext_authz dynamic metadata and fails closed (403
-   "missing gateway wristband") when it is absent (see 3.5). Rendering the
-   AuthConfig with header-only emission while that Lua check is unchanged
-   denies every Desire Store request. HYPERFLEET-1831 is therefore
-   **blocked on HYPERFLEET-1829** adapting the Lua fail-closed check to the
-   `x-wristband` path: 1829 must land first (or 1831 must gate behind it);
-   a transitional dual-emission (header + dynamic metadata) window is the
-   only safe alternative if the stories must deploy independently, and must
-   be removed once 1829 is live. The DD's signing algorithm is `RS256`
-   (see 3.5).
+   **Rollout-ordering dependency:** header-only emission requires **both**
+   the gateway change and the API change before it can serve traffic. The
+   gateway side: the deployed Lua filter reads the wristband from ext_authz
+   dynamic metadata and fails closed (403 "missing gateway wristband") when
+   it is absent — HYPERFLEET-1829 must adapt that check to the `x-wristband`
+   path. The API side: the existing JWT handler rejects the raw,
+   unprefixed `x-wristband` value with 401 ("does not use Bearer scheme") —
+   the API story must accept raw JWTs from non-`Authorization` source
+   headers and allow `x-wristband` as a source header first. HYPERFLEET-1831
+   is therefore blocked on **both** 1829 and the API change landing first
+   (or 1831 gating behind them). **Compatible transition for staged
+   deployment:** emit the wristband in both places (header + dynamic
+   metadata) *and keep the Lua `Authorization: Bearer <wristband>` rewrite*
+   — the existing API already accepts that path, so traffic flows while the
+   pieces land. Once the API accepts the raw `x-wristband` value, 1829
+   flips the fail-closed check to `x-wristband`, the Authorization rewrite
+   and the dynamic-metadata emission are removed, and the single transport
+   is in place. The DD's signing algorithm is `RS256` (see 3.5).
 5. **Revocation monitoring** should alert on Authorino watch errors
    (visible within ~20 s of a partition) rather than client status codes;
    client-side denial is instant once the control plane is healthy but does
