@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-18
 ---
 
 # Architecture Decision Records (ADRs)
@@ -114,3 +114,4 @@ What did we decide? State it plainly.
 | [0036](0036-management-cluster-ingress-tls-termination.md) | Management-Cluster Ingress and TLS Termination | Active | 2026-11-09 |
 | [0037](0037-e2e-human-and-machine-identities.md) | Human and Machine Identities in E2E Authentication | Active | 2026-11-10 |
 | [0038](0038-gateway-certificate-rotation.md) | Gateway Certificate and Key Rotation | Active | 2026-11-11 |
+| [0039](0039-sweeper-partition-enumeration.md) | Sweeper Partition Enumeration from Remaining Desires | Active | 2026-11-18 |

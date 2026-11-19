@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet QE Team
-Last Updated: 2026-11-11
+Last Updated: 2026-11-19
 ---
 
 # Desire Store Test Plan
@@ -38,7 +38,7 @@ Last Updated: 2026-11-11
 
 This document is the test plan for the API-mediated Postgres Desire Store ([HYPERFLEET-1518]). It maps each behavior to the test that proves it, the place where the test runs, and the ticket that owns it. After you read it, you can list the test obligations of your ticket and the gaps that touch them.
 
-The behavior comes from the [Desire Store Detailed Design](../desire-store-dd.md) on `main`. When the detailed design does not decide a behavior yet, the row names an [open contract decision](#open-contract-decisions). [References](#references) lists the other inputs.
+The behavior comes from the [Desire Store Detailed Design](../desire-store-dd.md), including the partition-enumeration decision in [ADR-0039](../../adrs/0039-sweeper-partition-enumeration.md). When the detailed design does not decide a behavior yet, the row names an [open contract decision](#open-contract-decisions). [References](#references) lists the other inputs.
 
 ## How to Read
 
@@ -137,13 +137,13 @@ The API also enforces the partition and caller rules. So an E2E row that expects
 
 ## Open Contract Decisions
 
-The detailed design on `main` does not decide these behaviors. A row that depends on a decision names its ID in the Status column. File references are to `hyperfleet-applier` commit `f15f3f8`, unless the row says otherwise.
+The table distinguishes unresolved behaviors from the partition-enumeration decision recorded by ADR-0039. A row that depends on a decision names its ID in the Status column. File references are to `hyperfleet-applier` commit `f15f3f8`, unless the row says otherwise.
 
 [HYPERFLEET-1871] decided the former C1 (timed-out delete recovery) and C2 (owner binding and the owner-conflict code) in the detailed design. The rows state those rules.
 
 | ID | Open decision | Facts | Decided by | Rows |
 | --- | --- | --- | --- | --- |
-| C3 | Sweeper partition enumeration, deletion confirmation, and record cleanup | A partition-listing route would change the REST v1 contract ([HYPERFLEET-1823]) | [HYPERFLEET-1823] | SWP-4, SWP-5 |
+| C3 | Partially resolved: enumeration decided; deletion confirmation and record-cleanup safety remain open | [ADR-0039](../../adrs/0039-sweeper-partition-enumeration.md) records option 2 and the narrow additive v1 authorization exception. SWP-6 through SWP-9 specify its tests. Confirmation after recreation, destructive supersede, and the confirmed-delete/read cleanup race in SWP-10 remain [design gates](../spike-sweeper-orphan-scan.md#review-and-implementation-gates). Origin restoration or target reassignment from the final absence check through pending deletion remains an [unverified A1 assumption and Q1 gate in the spike](../spike-sweeper-orphan-scan.md#working-assumption-and-open-question), tested by SWP-11 after a contract is selected; ADR-0039 does not select cancellation or accept that risk | [HYPERFLEET-1823] | SWP-4, SWP-5, SWP-10, SWP-11; SWP-6 through SWP-9 (enumeration decided) |
 | C4 | The version rule for ApplyDesire and DeleteDesire status writes | The detailed design says that status writes "do not require or change the desired-state version" ([CAS / Version Semantics](../desire-store-dd.md#cas--version-semantics)). The store requires the exact version on these two writes ([`store.go:144-157`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store.go#L144-L157)), and the Applier sends it ([`applydesire/controller.go:137`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/applydesire/controller.go#L137)). [HYPERFLEET-1511] removed the version check from ReadDesire status writes and kept it for the other two. The suite case `StaleStatusWriteAfterSpecUpdateIsRejected` asserts the check | [HYPERFLEET-1923] | CAS-3 |
 | C5 | Whether `generation` is on the wire, in GET responses and in lists | The wire schemas have no `generation` field. The Applier writes `ObservedGeneration` in the status it reports ([`applydesire/status.go:17`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/applydesire/status.go#L17)). Many suite cases assert `Generation` ([Store Conformance over REST](#store-conformance-over-rest)) | [HYPERFLEET-1923] | CAS-3 |
 | C6 | Authorino behavior that the gateway rules depend on: issuer enforcement, denial on CEL evaluation errors, and revocation timing | The detailed design lists these under "Verify at implementation" ([Operator and Gateway Changes](../desire-store-dd.md#operator-and-gateway-changes)) | [HYPERFLEET-1822] | ISO-2, REV-1, REV-2, REV-4, REV-5 |
@@ -259,8 +259,16 @@ Each table covers one area of the [HYPERFLEET-1861] criteria. [How to Read](#how
 | SWP-3 | The fleet-scoped allowlist admits the sweeper and denies a service account that is not on the list | Unit, E2E | `go test`; Prow GKE | `hyperfleet-operator` `make test`; `tier1-nightly` | [HYPERFLEET-1831], [HYPERFLEET-1833] | new, G1 | Allow any service account that has the audience |
 | SWP-4 | Orphan journey: the `resource_id` target is gone, the sweeper writes a `DeleteDesire`, the Applier confirms it, and the sweeper removes the record | E2E | Prow GKE | `tier1-nightly` | [HYPERFLEET-1840] | new, C3, G2, G7 | Skip the record removal |
 | SWP-5 | The sweeper removes the confirmed `DeleteDesire` records that adapters keep after a delete. [HYPERFLEET-1905] must not ship before this works | Unit | `go test` | `make test` in the sweeper's repository | [HYPERFLEET-1840] | new, C3, G2, G7 | Skip the records that the sweeper does not own |
+| SWP-6 | List distinct identifiers across apply, delete, and read rows, including partitions with only reads or deletes and no registration/AuthConfig. Duplicate rows yield one identifier; removing a partition's final row removes it from subsequent scans. A failed query is an error, never an empty successful list | Service integration | testcontainers | `make test-integration` | TBD; assignment tracked by [HYPERFLEET-1823] | new, ownership pending | Derive partitions from live registrations or apply rows only |
+| SWP-7 | Metadata pages use bytewise lexicographic order and operation-bound opaque cursors. Default limit is 100; 1 and 1000 are accepted; invalid limits and malformed or cross-operation cursors return 400. Concurrent removal is tolerated and a fresh scan finds an insertion behind the previous cursor; the client reports page failures as incomplete scans | Service integration, Client | testcontainers | `make test-integration`; sweeper client integration target to be assigned | TBD; assignment tracked by [HYPERFLEET-1823] | new, ownership pending | Accept a desire-list cursor on the metadata route or resume every run at the previous cursor |
+| SWP-8 | With a test-signed Wristband, only the exact sweeper identity, fleet-scoped class, `hf_operation=partition-list`, and matching method/path authorize enumeration. Reject missing/wrong operation claims, mixed `hf_partition`, wrong identity/class, and ordinary partition tokens. Every desire-record route rejects metadata scope and still requires a non-empty matching partition, before data access | Service integration | testcontainers | `make test-integration` | TBD; assignment tracked by [HYPERFLEET-1823] | new, ownership pending, G4 | Treat metadata scope as a wildcard partition or authorize by caller class alone |
+| SWP-9 | Through the fleet base host, only the exact sweeper Hub identity receives metadata permission. Adapters, unlisted Hub service accounts, and remote Appliers on either hostname class are denied. Forged scope headers, wrong methods, malformed paths, and gateway/API normalization differences cannot bypass the exact method/path rule or partition enforcement. Verify the gateway denies before API access | Gateway, Unit | local kind; `go test` | gateway checks; `hyperfleet-operator` `make test` | TBD; assignment tracked by [HYPERFLEET-1823] | new, ownership pending | Reuse the fleet allowlist for enumeration or select metadata scope when partition extraction fails |
+| SWP-10 | After the sweeper reads a confirmed delete and version-1 read, the Adapter creates a same-target apply that retires the delete while the read remains. The sweeper must not remove the live apply's read mirror, including when the apply is created between the sweeper's final read and delete request. The accepted atomic handoff must make this test pass before automatic paired-read cleanup is enabled | Backend conformance, Service integration | `go test`; testcontainers | store suite and `make test-integration`, after the contract is defined | TBD; assignment tracked by [HYPERFLEET-1823] | new, C3, ownership pending | Delete the read by its unchanged version without checking the live apply sibling |
+| SWP-11 | After the final authoritative absent-origin lookup, attempt to restore that origin or assign its target to a live source before `CreateDeleteDesire`, while no replacement apply is in the store. If the accepted lifecycle contract forbids this transition, prove supported API/Adapter actions cannot make it; otherwise prove coordinated creation rejects the delete. Also test the pending-delete interval. Do not enable orphan remote deletion until the selected rule and its enforcement pass | Unit, E2E | `go test`; Prow GKE | owner-assigned `make test` and E2E target after the contract is defined | TBD; assignment tracked by [HYPERFLEET-1823] | new, C3, A1/Q1, ownership pending | Treat a final GET or store-only apply guard as proof that the source stayed absent |
 
 SWP-3 needs the sweeper's service account ([HYPERFLEET-1840]) in the rendered allowlist.
+
+SWP-6 through SWP-9 specify the recorded metadata decision; they are not implemented tests. Enumeration uses a separate API/Postgres query outside `SpecStore`, so shared backend conformance does not cover it. The [spike delivery table](../spike-sweeper-orphan-scan.md#delivery-and-test-tracking) identifies proposed API, Postgres, gateway/operator, and sweeper-client scope extensions; HYPERFLEET-1823 must record owner acceptance and follow-up tickets. Existing ticket ownership is not extended by these rows. The unresolved C3 safety gates still block enabling the affected cleanup paths.
 
 ### Deployment
 
@@ -400,6 +408,7 @@ Each row lists the scenarios that name the ticket in the Owner column. A note in
 - [ADR-0022: API-mediated Desire Store access](../../adrs/0022-api-mediated-desire-store-access.md)
 - [ADR-0026: Co-located service databases](../../adrs/0026-co-located-service-databases-shared-postgres-isolation.md)
 - [ADR-0029: Desire Store authorization](../../adrs/0029-desire-store-authorization.md)
+- [ADR-0039: Sweeper partition enumeration](../../adrs/0039-sweeper-partition-enumeration.md)
 - [Desires Lost Mid-Deletion spike](../spike-desires-lost-mid-deletion.md) ([HYPERFLEET-1841]): delete confirmation and the sweeper's role in record cleanup
 - [API on Postgres spike](../desire-store-api-postgres-spike.md)
 - [Error Model](../../standards/error-model.md)
