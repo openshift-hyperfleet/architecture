@@ -28,7 +28,7 @@ Record a narrow additive exception to the Detailed Design's v1 compatibility rul
 
 ### Decision Boundary
 
-This records the partition-discovery, metadata-authorization, store-boundary, and compatibility decisions. Deletion confirmation after record recreation, destructive supersede of a replacement apply, safe cleanup of a read beside a confirmed delete, and origin reappearance or target reassignment during pending deletion remain [open safety gates in the spike](../docs/spike-sweeper-orphan-scan.md#review-and-implementation-gates). This ADR does not accept their destructive risks or select cancellation behavior. Enumeration does not prove source absence or remote deletion and cannot restore an unavailable Applier. Recording this ADR alone does not complete all six spike criteria or claim that the endpoint is implemented.
+This records the partition-discovery, metadata-authorization, store-boundary, and compatibility decisions. Deletion confirmation after record recreation, destructive supersede of a replacement apply, and safe cleanup of a read beside a confirmed delete remain [open safety gates in the spike](../docs/spike-sweeper-orphan-scan.md#review-and-implementation-gates). The spike also tracks source restoration or target reassignment under [A1 (pending validation)](../docs/spike-sweeper-orphan-scan.md#working-assumption-and-open-question). This ADR does not accept their destructive risks or select cancellation behavior. Enumeration does not prove source absence or remote deletion and cannot restore an unavailable Applier. Recording this ADR alone does not complete all six spike criteria or claim that the endpoint is implemented.
 
 ## Consequences
 
