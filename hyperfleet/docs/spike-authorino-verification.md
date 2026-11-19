@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: Leonardo Dorneles
-Last Updated: 2026-11-18
+Last Updated: 2026-11-19
 ---
 
 # Spike: Verify Authorino Revocation Delay and Issuer Enforcement for the Desire Store Gateway
@@ -47,9 +47,11 @@ gateway stack (`HELMFILE_ENV=kind`, `AUTH_MODE=EDGE+API`), mock OIDC issuer
 | Envoy | v1.39.1 |
 | Kubernetes (kind) | v1.33+ |
 
-Traffic was generated with `curl` loops (~1–2 rps) from in-cluster pods against
-`http://hyperfleet-gateway.hyperfleet-local.svc:8000`, carrying mock-issuer
-human JWTs. Because the API upstream was not deployed in this environment, an
+Traffic was generated with sequential `curl` loops from in-cluster pods
+against `http://hyperfleet-gateway.hyperfleet-local.svc:8000`, carrying
+mock-issuer human JWTs. Nominal loop rates were 0.5–2 rps; effective rates
+were lower because each iteration pays its own connection setup (~0.7 rps
+effective on the nominal 1 rps partition-run loop). Because the API upstream was not deployed in this environment, an
 **authorized request returns 503** (upstream unreachable) and a **denied
 request returns 401/403/404** — the upstream never receives denied traffic, so
 the status transition alone identifies revocation. Timing is captured with
@@ -68,7 +70,7 @@ connectivity; recovery after connectivity returns is sub-second.**
 | Scenario | Measured delay | Detail |
 |----------|----------------|--------|
 | Healthy control plane | **< 1 s** | The first request after `kubectl delete authconfig` (~0.5 s later at 2 rps) was denied. |
-| API-server partitioned (watch dead) | **≥ 25 min, unbounded** | Stale policy kept authorizing traffic for the entire partition (589 requests over 25 min). The watch errored within ~19 s of the partition (`http2: client connection lost`), but re-list was blocked, so Authorino kept serving its last-known state. Denial never happened during the partition. |
+| API-server partitioned (watch dead) | **~15 min observed, unbounded** | Stale policy kept authorizing traffic for the entire partition (~15 min; ~610 requests — 589 authorized plus 23 token-expiry 401s — at ~0.7 rps effective from a nominal 1 rps sequential curl loop). The watch errored within ~19 s of the partition (`http2: client connection lost`), but re-list was blocked, so Authorino kept serving its last-known state. Denial never happened during the partition. |
 | Recovery after partition lifted | **< 1 s** | The reflector was already retrying; on unblock the re-list completed and the next request (~0.5 s later) was denied. |
 
 **Notes for the rendering story (HYPERFLEET-1831):**
@@ -130,8 +132,9 @@ Tested with a dedicated `v1beta3` AuthConfig (`spike-cel-test`, host
 | Missing claim used numerically (`auth.identity.custom_age - auth.identity.iat`, `custom_age` is absent from the token) | missing-key error | **`PERMISSION_DENIED` — "no such key: custom_age"** |
 | Wrong partition (`…/mc-02/…`) | predicate is false | `PERMISSION_DENIED` — "Unauthorized" |
 
-The missing-claim case was tested with a predicate referencing a claim the
-token does not carry (`custom_age`): the mock issuer cannot mint a token with
+The missing-claim case was tested in a follow-up run (2026-11-19) with a
+predicate referencing a claim the token does not carry (`custom_age`): the
+mock issuer cannot mint a token with
 `exp` removed (its library hard-fails), and an absent claim referenced
 numerically produces the same CEL error class ("no such key") that a missing
 age claim would — the AC's "missing or malformed JWT age claims" case.
@@ -181,7 +184,7 @@ Burst tests (bucket of 2 per Envoy process, 2 replicas):
 - **Caller-class key** (first run, `--concurrency 1`): 4 requests passed,
   then **429**; requests without the header (no descriptor) stayed unlimited
   (default bucket).
-- **Partition key** (second run): a 10-request burst against `mc-01` passed
+- **Partition key** (follow-up run, 2026-11-19): a 10-request burst against `mc-01` passed
   4 (bucket 2 × 2 replicas) then **429**; a 10-request burst against `mc-02`
   — same AuthConfig, same caller class, different partition descriptor —
   passed all 10. The partition key produces **independent per-partition
@@ -201,22 +204,22 @@ metadata→header bridge itself (the Lua filter or equivalent) must copy the
 metadata-derived caller class and partition into headers before routing,
 and strip any client-supplied versions.
 
-**Environment caveat (corrected):** an earlier revision of this spike
-recorded the bucket as per Envoy worker — that is wrong for the deployed
-version. In Envoy v1.39.1's default local rate-limit configuration the
-token bucket is **shared across all workers**, so the limit applies **per
-Envoy process**: a bucket of N is effectively N×replicas. Size buckets for
-the replica count and do not divide the intended capacity by the worker
-count. The non-default `local_rate_limit_per_downstream_connection: true`
-configuration switches the bucket to per-downstream-connection and must be
-sized separately if ever used. Also note `RateLimit.Action` has no
-`header_value` action in Envoy v1.39 — use `request_headers`.
+**Environment caveat:** in Envoy v1.39.1's default local rate-limit
+configuration the token bucket is **shared across all workers**, so the
+limit applies **per Envoy process**: a bucket of N is effectively
+N×replicas. Size buckets for the replica count and do not divide the
+intended capacity by the worker count. The non-default
+`local_rate_limit_per_downstream_connection: true` configuration switches
+the bucket to per-downstream-connection and must be sized separately if
+ever used. Also note `RateLimit.Action` has no `header_value` action in
+Envoy v1.39 — use `request_headers`.
 
 ### 3.5 Example CRs from the design against the deployed Authorino
 
 **Result: confirmed — the `v1beta3` response-config fields are accepted,
-the Wristband reaches the upstream request as `x-wristband`, and both the
-DD's `ES256` and the gateway's existing `RS256` signing algorithms work.**
+the Wristband reaches the upstream request as `x-wristband`, and the
+signing algorithms `RS256` (adopted for the Desire Store) and `ES256`
+(verified, not adopted) both work on the Authorino side.**
 
 A test AuthConfig modeled on the DD's binding CR (age predicate and
 partition predicate in `patternMatching.patterns[].predicate`;
@@ -226,16 +229,26 @@ algorithm) was applied and served traffic. A TLS nginx echo server was
 deployed as the `hyperfleet-api` upstream; an authorized request's upstream
 body showed:
 
-- **`x-wristband`: the full Wristband JWT** with `aud: desire-store-api`,
-  `hf_caller_class: remote-applier`, `hf_identity` (from
-  `expression: auth.identity.sub`), and `hf_partition` (static value or
-  path-derived expression both verified) — the DD's header-injection
-  contract works.
+- **`x-wristband`: the full Wristband JWT, raw and unprefixed** with
+  `aud: desire-store-api`, `hf_caller_class: remote-applier`, `hf_identity`
+  (from `expression: auth.identity.sub`), and `hf_partition` (static value
+  or path-derived expression both verified) — the DD's header-injection
+  contract works. **Format note:** the value is the bare token — Authorino's
+  `response.success.headers` cannot emit a scheme prefix. The deployed
+  hyperfleet-api JWT handler requires a `Bearer`-prefixed value on every
+  configured source header (`pkg/auth/jwt_handler.go`, rejects a raw token
+  with 401 "does not use Bearer scheme"), so pointing the API at
+  `x-wristband` as-is would reject every request on format. The
+  established format is the **raw JWT, no prefix**: the API story must
+  accept the raw value on non-`Authorization` source headers (a
+  Bearer-prefixed `x-wristband` would need a gateway Lua bridge, which
+  reintroduces the dynamic-metadata transport this design rejects).
 - `authorization`: replaced with `Bearer <wristband>` by the gateway's Lua
   filter reading ext_authz **dynamic metadata** (the general gateway's
   mechanism).
 
-**ES256 (the DD example's algorithm) verified in a dedicated run:** an EC
+**ES256 (verified in a dedicated follow-up run on 2026-11-19, not adopted —
+see the decision below):** an EC
 P-256 key was generated, stored as the `desire-store-wristband-key` Secret
 (`key.pem`, same format as the gateway's existing signing-key Secret), and
 referenced with `algorithm: ES256`. The emitted Wristband carried header
@@ -244,6 +257,23 @@ upstream as `x-wristband`; its signature verified against the EC public key
 (openssl, after converting the JWT's raw R||S signature to DER). The first
 run of the spike used `RS256` (the gateway's existing key) — both
 algorithms work as the DD's `signingKeyRefs` specify them.
+
+**Consumer-side gap (same class as the format gap above, on the signing
+algorithm) — resolved by adopting `RS256`:** the ES256 run verifies the
+Authorino side only. The API's JWT validation accepts **RS256-signed tokens
+only** — every issuer parser is built with `jwt.WithValidMethods([]string{"RS256"})`
+(`pkg/auth/jwt_handler.go`, `defaultSigningAlgorithm`) and `JWTIssuerConfig`
+has no per-issuer algorithm override — so an ES256 Wristband would be
+rejected by the API with 401 regardless of the `x-wristband` format.
+**Decision:** the Desire Store signing key is `RS256`, matching the general
+gateway's existing key and the API's validation as deployed — this removes
+the need for the per-issuer-algorithms API change and keeps one algorithm
+across the Hub. The measured trade-off: RS256 signatures are ~200 bytes
+larger per Wristband and slower to sign (~1 ms vs ~0.1 ms on the minting
+Authorino), both negligible at Hub-internal request rates; ES256 remains the
+preferred direction only if the general gateway migrates to EC as well, at
+which point per-issuer accepted algorithms should be added to the API's JWT
+issuer configuration for both.
 
 **Caveat for the gateway story (HYPERFLEET-1829):** the deployed gateway's
 Envoy Lua filter currently reads the wristband from ext_authz **dynamic
@@ -307,15 +337,15 @@ criterion of HYPERFLEET-1822 is covered:
 | 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for missing-claim ("no such key"), type ("no such overload") and out-of-bounds ("index out of bounds") errors |
 | 4 | Local rate limiting keyed by caller class/partition | ✅ both keys verified via the metadata→header bridge, with independent per-partition buckets; buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
-| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ `RS256` and `ES256` both verified; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
+| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ signing verified with `RS256` (adopted) and `ES256` (evaluated, not adopted); `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
 | 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
 
 No design rework is required for the verified mechanisms; the findings are
-refinements for the rendering and gateway stories. All acceptance criteria
-of HYPERFLEET-1822 are covered (missing-claim CEL denial, partition-keyed
-rate limiting, and `ES256` were verified in follow-up runs recorded in
-3.3–3.5). One follow-up remains open beyond the ticket's acceptance
-criteria:
+refinements for the rendering and gateway stories. The missing-claim CEL
+denial, partition-keyed rate limiting, and signing-algorithm runs that
+completed the acceptance criteria are recorded in 3.3–3.5 (the adopted
+algorithm is `RS256`; the `ES256` run is the evaluated alternative, see
+3.5). One follow-up remains open beyond the ticket's acceptance criteria:
 
 - **Key-rotation pickup at request time** (3.6): not established by this
   spike; a controlled rotation test is still required. This goes beyond the
@@ -337,7 +367,15 @@ criteria:
 4. **Wristband emission:** render `response.success.headers["x-wristband"]`
    as the DD writes it — the single end-to-end transport, with the API's
    issuer reading `x-wristband` as its token header and the gateway's Lua
-   fail-closed check validating that same path (see 3.5).
+   fail-closed check validating that same path (see 3.5). **The header value
+   is the raw Wristband JWT, no `Bearer` prefix** — the API story must adapt
+   the JWT handler to accept the raw value on non-`Authorization` source
+   headers and allow `x-wristband` as a JWT source header (see 3.5).
+   **Signing algorithm: use `RS256`** — the API's JWT handler accepts RS256
+   only on every issuer (`jwt.WithValidMethods`, no per-issuer override), so
+   the Desire Store signing key matches it and the general gateway's
+   existing key; ES256 would require an API change for no Hub-internal
+   benefit (see 3.5).
    **Rollout-ordering dependency:** the deployed gateway's Lua filter reads
    the wristband from ext_authz dynamic metadata and fails closed (403
    "missing gateway wristband") when it is absent (see 3.5). Rendering the
@@ -347,8 +385,8 @@ criteria:
    `x-wristband` path: 1829 must land first (or 1831 must gate behind it);
    a transitional dual-emission (header + dynamic metadata) window is the
    only safe alternative if the stories must deploy independently, and must
-   be removed once 1829 is live. Both of the DD's signing algorithms are
-   verified (`ES256` and `RS256`, see 3.5).
+   be removed once 1829 is live. The DD's signing algorithm is `RS256`
+   (see 3.5).
 5. **Revocation monitoring** should alert on Authorino watch errors
    (visible within ~20 s of a partition) rather than client status codes;
    client-side denial is instant once the control plane is healthy but does
