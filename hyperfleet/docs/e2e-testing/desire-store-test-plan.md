@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet QE Team
-Last Updated: 2026-11-18
+Last Updated: 2026-11-19
 ---
 
 # Desire Store Test Plan
@@ -143,7 +143,7 @@ The table distinguishes unresolved behaviors from the partition-enumeration deci
 
 | ID | Open decision | Facts | Decided by | Rows |
 | --- | --- | --- | --- | --- |
-| C3 | Partially resolved: enumeration decided; deletion confirmation and record-cleanup safety remain open | [ADR-0039](../../adrs/0039-sweeper-partition-enumeration.md) records option 2 and the narrow additive v1 authorization exception. SWP-6 through SWP-9 specify its tests. Confirmation after recreation, destructive supersede, and the confirmed-delete/read cleanup race in SWP-10 remain [design gates](../spike-sweeper-orphan-scan.md#review-and-implementation-gates). Origin reappearance or target reassignment during pending deletion is unsupported under [A1, with validation tracked by Q1](../../adrs/0039-sweeper-partition-enumeration.md#assumptions-and-open-questions); no cancellation mechanism is selected | [HYPERFLEET-1823] | SWP-4, SWP-5, SWP-10; SWP-6 through SWP-9 (enumeration decided) |
+| C3 | Partially resolved: enumeration decided; deletion confirmation and record-cleanup safety remain open | [ADR-0039](../../adrs/0039-sweeper-partition-enumeration.md) records option 2 and the narrow additive v1 authorization exception. SWP-6 through SWP-9 specify its tests. Confirmation after recreation, destructive supersede, and the confirmed-delete/read cleanup race in SWP-10 remain [design gates](../spike-sweeper-orphan-scan.md#review-and-implementation-gates). Origin reappearance or target reassignment during pending deletion remains an [unverified A1 assumption and Q1 gate in the spike](../spike-sweeper-orphan-scan.md#working-assumption-a1-and-open-question-q1); ADR-0039 does not select cancellation or accept that risk | [HYPERFLEET-1823] | SWP-4, SWP-5, SWP-10; SWP-6 through SWP-9 (enumeration decided) |
 | C6 | Authorino behavior that the gateway rules depend on: issuer enforcement, denial on CEL evaluation errors, and revocation timing | The [Authorino verification spike](../spike-authorino-verification.md) (HYPERFLEET-1822) verified these behaviors on a kind deployment (Authorino v0.28.0, Envoy v1.39.1) — see [Operator and Gateway Changes](../desire-store-dd.md#operator-and-gateway-changes); this case exercises them end-to-end on the deployed stack | [HYPERFLEET-1822] | ISO-2, REV-1, REV-2, REV-4, REV-5 |
 | C7 | Private connectivity and TLS trust from management clusters | [HYPERFLEET-1866] owns this design | [HYPERFLEET-1866] | DEP-5 |
 | C8 | `limit` above the maximum: clamp it or return 400 | The detailed design leaves the choice to the OpenAPI specification ([REST API (v1)](../desire-store-dd.md#rest-api-v1)) | [HYPERFLEET-1821] | PAG-1 |
