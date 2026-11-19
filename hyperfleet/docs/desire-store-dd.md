@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-11
+Last Updated: 2026-11-18
 ---
 
 # Desire Store Detailed Design
@@ -197,7 +197,7 @@ Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR 
 
 - Each binding has an independent lifecycle.
 - Cross-caller protection is fail-closed by credential type — a management-cluster JWT cannot authenticate on the base host (TokenReview only), and a Hub service-account token cannot authenticate on a partition host (issuer check only).
-- All Desire Store `AuthConfig` resources share one Wristband issuer value and signing-key set, so the API validates a single issuer and key set regardless of which CR issued the Wristband. The shared value is the fleet-scoped CR's Authorino discovery URL, so the API validates with its standard discovery-based JWT configuration, matching the main gateway.
+- All Desire Store `AuthConfig` resources share one Wristband issuer value and signing-key set, so the API validates a single issuer and key set regardless of which CR issued the Wristband. The shared value is the fleet-scoped CR's Authorino discovery URL, so the API validates with its standard discovery-based JWT configuration, matching the main gateway — with one transport difference: the API's JWT configuration MUST extract the token from the `x-wristband` request header, not the `Authorization` header. Per [Wristband Claims and Validation](#wristband-claims-and-validation), `x-wristband` is the API's only authentication credential and Desire Store routes carry no Bearer-token middleware, so the standard `Authorization`-header extraction would never receive the Wristband (the gateway's Lua filter does not rewrite `Authorization` on Desire Store routes; emitting the Wristband into ext_authz dynamic metadata is not a transport for this design — see the [Authorino verification spike](spike-authorino-verification.md#35-example-crs-from-the-design-against-the-deployed-authorino)).
 
 #### Remote-Applier Binding AuthConfig
 

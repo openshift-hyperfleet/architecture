@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: Leonardo Dorneles
-Last Updated: 2026-11-17
+Last Updated: 2026-11-18
 ---
 
 # Spike: Verify Authorino Revocation Delay and Issuer Enforcement for the Desire Store Gateway
@@ -134,10 +134,19 @@ Notes for the rendering story:
 - The design's placement of CEL predicates inside
   `authorization.<rule>.patternMatching.patterns[].predicate` is valid
   `v1beta3` syntax; there is no standalone `cel` rule type in `v1beta3`
-  ( CEL expressions exist in `when` predicates and `expression` selectors).
-- Errors deny with the failing rule's message in the Authorino log, so no
-  extra presence/shape checks are strictly required for fail-closed behavior;
-  explicit checks remain an option for clearer client-facing errors.
+  (CEL expressions exist in `when` predicates and `expression` selectors).
+- CEL errors deny with the failing rule's message in the Authorino log, so
+  they are fail-closed on their own. This does **not** remove the DD's
+  mandatory path-shape checks for fleet-scoped partition extraction: the
+  extraction must anchor on the `/partitions/` marker and reject malformed
+  paths, including paths where the partition appears at the expected index
+  without the marker. The spike's positional predicate
+  (`request.path.split('/')[6]`) accepted `/a/b/c/d/e/mc-01/desires` — an
+  arbitrary prefix with no `/partitions/` marker — which is exactly the
+  wrong-partition-injection case the DD's shape checks exist to reject. The
+  positional form was used here only to provoke evaluation errors; the
+  rendering story must implement the marker-anchored, shape-rejecting
+  extraction as the DD requires.
 
 ### 3.4 Post-auth local rate limiting keyed by dynamic metadata
 
@@ -160,9 +169,21 @@ Working mechanism verified end-to-end on the deployed gateway:
 
 Burst test (bucket of 2 per pod, 2 replicas, `--concurrency 1`): 4 requests
 passed, then **429**; requests without the header (no descriptor) stayed
-unlimited (default bucket). **Requirement for HYPERFLEET-1829:** the gateway's
-Lua filter (or equivalent) must copy the metadata-derived caller class and
-partition into headers before routing, and strip any client-supplied versions.
+unlimited (default bucket).
+
+**Fail-open hazard:** the verified mechanism is fail-open. With
+`skip_if_absent`, any request that reaches routing without the descriptor —
+because the metadata→header bridge failed, the AuthConfig omitted
+`dynamicMetadata`, or the Lua filter errored — falls into the default
+bucket, which the burst test showed to be **unlimited**. A regression in
+any of those components silently disables all Desire Store rate limiting
+with no signal. **Additional requirement for HYPERFLEET-1829:** the gateway
+must detect or bound the no-descriptor case — either a default catch-all
+bucket with a tight, alerted-on limit, or an alert (metric/log) on requests
+reaching routing without the expected `x-hf-caller-class` header. The
+metadata→header bridge itself (the Lua filter or equivalent) must copy the
+metadata-derived caller class and partition into headers before routing,
+and strip any client-supplied versions.
 
 **Environment caveats recorded:** the local rate limit bucket is
 **per Envoy worker** — with the default worker-per-CPU (8 here) a bucket of N
@@ -173,14 +194,17 @@ is effectively N×workers×replicas. The Desire Store gateway must either pin
 
 ### 3.5 Example CRs from the design against the deployed Authorino
 
-**Result: confirmed — the DD's `v1beta3` example CR fields are accepted as
-written, and the Wristband reaches the upstream request as `x-wristband`.**
+**Result: confirmed for the tested RS256 configuration — the `v1beta3`
+response-config fields are accepted, and the Wristband reaches the upstream
+request as `x-wristband`. The DD example's `ES256` signing algorithm was
+NOT tested.**
 
-A test AuthConfig modeled directly on the DD's binding CR (age predicate and
+A test AuthConfig modeled on the DD's binding CR (age predicate and
 partition predicate in `patternMatching.patterns[].predicate`;
 `response.success.headers["x-wristband"].wristband` with `customClaims`
-`value`/`expression`, `tokenDuration: 300`, `signingKeyRefs`
-name+`RS256`) was applied and served traffic. A TLS nginx echo server was
+`value`/`expression`, `tokenDuration: 300`, `signingKeyRefs` name+
+`RS256` — the algorithm of the gateway's existing key, not the DD's
+`ES256`) was applied and served traffic. A TLS nginx echo server was
 deployed as the `hyperfleet-api` upstream; an authorized request's upstream
 body showed:
 
@@ -193,12 +217,19 @@ body showed:
   mechanism).
 
 **Caveat for the gateway story (HYPERFLEET-1829):** the deployed gateway's
-Envoy Lua filter fails closed (403 "missing gateway wristband") when Authorino
-returns OK without a wristband in **dynamic metadata**. A Desire Store
-AuthConfig that emits the wristband only as a response header (as the DD CR
-writes it) is rejected by this Envoy config. The Desire Store gateway must
-either emit the wristband in both places or adapt the Lua check to the
-`x-wristband` header path.
+Envoy Lua filter currently reads the wristband from ext_authz **dynamic
+metadata** and fails closed (403 "missing gateway wristband") when it is
+absent — then rewrites `Authorization: Bearer <wristband>`, the general
+gateway's transport. The Desire Store transport is different and singular:
+per the DD, `x-wristband` is the API's only authentication credential, and
+Desire Store routes carry no Bearer-token middleware. The Desire Store
+gateway must therefore be configured for **one end-to-end wristband
+transport**: the `x-wristband` response header, with the API's issuer
+configured to read `x-wristband` as its token header — and its Lua
+fail-closed check must validate that same path (deny when `x-wristband` is
+missing), so the API receives the token through the selected path and
+nothing else. Emitting the wristband into dynamic metadata as well is
+unnecessary for this design and must not become a second transport.
 
 ### 3.6 JWKS refresh behavior
 
@@ -221,45 +252,86 @@ Verified with Authorino at debug log level and two mock issuers (`/default`,
 - Request-time fetches are bounded: earlier in the spike, an unreachable JWKS
   endpoint produced `Client.Timeout exceeded while awaiting headers`
   (UNAUTHENTICATED denial), not a hang.
-- Key rotation is picked up at request time on unknown `kid`: after the mock
-  issuer restarted with new keys, a freshly minted token was accepted
-  immediately (matches the `refresh JWKS on unknown kid` behavior in
-  hyperfleet-api#422).
+- Key-rotation pickup at request time is **not established by this spike**.
+  After the mock issuer restarted with new keys, a freshly minted token was
+  accepted — but the restart is the same event that triggered the
+  reconcile-driven OIDC re-resolution above (the `openid connect
+  configuration updated` lines preceded the traffic), so the acceptance is
+  fully explained by reconcile-time re-resolution and cannot be attributed to
+  a request-time JWKS fetch on unknown `kid`. Establishing that mechanism
+  requires a controlled rotation test: rotate the issuer's keys without
+  changing or reapplying any AuthConfig or mounted secret, send a request
+  with a token carrying the new `kid`, and confirm a request-time JWKS fetch
+  in the Authorino debug log. (The `refresh JWKS on unknown kid` behavior in
+  hyperfleet-api#422 is the API's own verifier, not evidence about
+  Authorino.)
 
 ## 4. Conclusions
 
-All six behaviors the Desire Store detailed design assumes were verified
-against the deployed Authorino v0.28.0 / Envoy v1.39.1 pair:
+The behaviors the Desire Store detailed design assumes were tested against
+the deployed Authorino v0.28.0 / Envoy v1.39.1 pair. The mechanism behind
+each assumption was verified, but three gaps remain open and must not be
+read as verified:
 
 | # | Design assumption | Verdict |
 |---|-------------------|---------|
 | 1 | Binding deletion denies within 60 s | ✅ **< 1 s** healthy; unbounded under silent partition (infra failure, per design); < 1 s recovery |
 | 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for type errors and out-of-bounds |
-| 4 | Local rate limiting keyed by caller class/partition | ✅ via metadata→header bridge; per-worker buckets are a sizing caveat |
-| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ all fields accepted; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
+| 4 | Local rate limiting keyed by caller class/partition | ⚠️ **caller class only**, via metadata→header bridge; the partition-keyed descriptor was **not exercised** (only `caller_class: remote-applier` was tested); per-worker buckets are a sizing caveat |
+| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ tested with `RS256`; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too; **`ES256` untested** |
 | 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
 
-No design rework is required; the findings are refinements for the rendering
-and gateway stories.
+No design rework is required for the verified mechanisms; the findings are
+refinements for the rendering and gateway stories. However, three
+verification gaps remain open and must be closed before the corresponding
+assumptions are treated as verified:
+
+- **ES256 signing** (row 5): the spike tested `RS256` only; the DD's example
+  CR specifies `ES256`. The rendering or gateway story must test the deployed
+  Authorino with `ES256` first (see 3.5).
+- **Key-rotation pickup at request time** (3.6): not established by this
+  spike; a controlled rotation test is still required.
+- **Partition-keyed rate limiting** (row 4): only the caller-class descriptor
+  was exercised; the gateway story (1829) must verify the partition
+  descriptor (header naming, descriptor key collisions, per-partition bucket
+  sizing) before relying on it.
 
 ## 5. Impact on HYPERFLEET-1831 (AuthConfig rendering)
 
 1. **Rely on the `issuer` field** — enforced natively; no `iss` authorization
    rule fallback needed.
 2. **CEL predicates belong in `patternMatching.patterns[].predicate`** — there
-   is no `cel` authorization rule type in `v1beta3`. Errors deny by
-   themselves; explicit presence/shape checks are optional, for clearer
-   errors only.
+   is no `cel` authorization rule type in `v1beta3`. CEL errors deny by
+   themselves, but the DD's mandatory path-shape checks for partition
+   extraction (anchor on the `/partitions/` marker, reject malformed paths)
+   are still required — positional-index extraction accepts paths it must
+   reject (see 3.3).
 3. **Expect 404 (not 401/403)** as the client-visible status when no
    AuthConfig matches (binding removed or wrong host).
 4. **Wristband emission:** render `response.success.headers["x-wristband"]`
-   as the DD writes it, **plus** a `dynamicMetadata` wristband (or a gateway
-   Lua adaptation) so the deployed gateway's fail-closed wristband check
-   passes — coordinate with HYPERFLEET-1829.
+   as the DD writes it — the single end-to-end transport, with the API's
+   issuer reading `x-wristband` as its token header and the gateway's Lua
+   fail-closed check validating that same path (see 3.5).
+   **Rollout-ordering dependency:** the deployed gateway's Lua filter reads
+   the wristband from ext_authz dynamic metadata and fails closed (403
+   "missing gateway wristband") when it is absent (see 3.5). Rendering the
+   AuthConfig with header-only emission while that Lua check is unchanged
+   denies every Desire Store request. HYPERFLEET-1831 is therefore
+   **blocked on HYPERFLEET-1829** adapting the Lua fail-closed check to the
+   `x-wristband` path: 1829 must land first (or 1831 must gate behind it);
+   a transitional dual-emission (header + dynamic metadata) window is the
+   only safe alternative if the stories must deploy independently, and must
+   be removed once 1829 is live. The DD's `ES256` signing algorithm is
+   **not covered by this spike** (tested with `RS256` only); the rendering
+   or gateway story must test the deployed Authorino with `ES256` and
+   record the result before treating it as verified.
 5. **Revocation monitoring** should alert on Authorino watch errors
    (visible within ~20 s of a partition) rather than client status codes;
    client-side denial is instant once the control plane is healthy but does
    not happen at all during a silent partition.
 6. **Rate-limit descriptors** need the metadata→header bridge and a decision
-   on Envoy `--concurrency` for bucket sizing.
+   on Envoy `--concurrency` for bucket sizing. The mechanism is fail-open:
+   1829 must also detect or bound the no-descriptor case (catch-all bucket
+   or alert on missing `x-hf-caller-class`), since the default bucket is
+   unlimited (see 3.4).
