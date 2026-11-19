@@ -185,12 +185,16 @@ metadata→header bridge itself (the Lua filter or equivalent) must copy the
 metadata-derived caller class and partition into headers before routing,
 and strip any client-supplied versions.
 
-**Environment caveats recorded:** the local rate limit bucket is
-**per Envoy worker** — with the default worker-per-CPU (8 here) a bucket of N
-is effectively N×workers×replicas. The Desire Store gateway must either pin
-`--concurrency` or size buckets for the worker count. Also note
-`RateLimit.Action` has no `header_value` action in Envoy v1.39 — use
-`request_headers`.
+**Environment caveat (corrected):** an earlier revision of this spike
+recorded the bucket as per Envoy worker — that is wrong for the deployed
+version. In Envoy v1.39.1's default local rate-limit configuration the
+token bucket is **shared across all workers**, so the limit applies **per
+Envoy process**: a bucket of N is effectively N×replicas. Size buckets for
+the replica count and do not divide the intended capacity by the worker
+count. The non-default `local_rate_limit_per_downstream_connection: true`
+configuration switches the bucket to per-downstream-connection and must be
+sized separately if ever used. Also note `RateLimit.Action` has no
+`header_value` action in Envoy v1.39 — use `request_headers`.
 
 ### 3.5 Example CRs from the design against the deployed Authorino
 
@@ -278,7 +282,7 @@ read as verified:
 | 1 | Binding deletion denies within 60 s | ✅ **< 1 s** healthy; unbounded under silent partition (infra failure, per design); < 1 s recovery |
 | 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for type errors and out-of-bounds |
-| 4 | Local rate limiting keyed by caller class/partition | ⚠️ **caller class only**, via metadata→header bridge; the partition-keyed descriptor was **not exercised** (only `caller_class: remote-applier` was tested); per-worker buckets are a sizing caveat |
+| 4 | Local rate limiting keyed by caller class/partition | ⚠️ **caller class only**, via metadata→header bridge; the partition-keyed descriptor was **not exercised** (only `caller_class: remote-applier` was tested); buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
 | 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ tested with `RS256`; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too; **`ES256` untested** |
 | 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
 
@@ -329,9 +333,18 @@ assumptions are treated as verified:
 5. **Revocation monitoring** should alert on Authorino watch errors
    (visible within ~20 s of a partition) rather than client status codes;
    client-side denial is instant once the control plane is healthy but does
-   not happen at all during a silent partition.
-6. **Rate-limit descriptors** need the metadata→header bridge and a decision
-   on Envoy `--concurrency` for bucket sizing. The mechanism is fail-open:
+   not happen at all during a silent partition. Watch-error log lines alone
+   are not sufficient: a watch can stall without erroring (or have its
+   errors suppressed or rate-limited), so the monitoring must also include
+   a **liveness signal on watch progress** — an alert on excessive sync age
+   (time since the last successful re-list/reconcile) or absence of watch
+   progress — so a silently stalled watch triggers an alert even when no
+   watch-error line is logged.
+6. **Rate-limit descriptors** need the metadata→header bridge. In Envoy
+   v1.39.1's default configuration the local rate-limit bucket is shared
+   across workers (per Envoy process), so size buckets for the replica
+   count — not N×workers×replicas, and do not divide the intended capacity
+   by the worker count (see 3.4). The mechanism is fail-open:
    1829 must also detect or bound the no-descriptor case (catch-all bucket
    or alert on missing `x-hf-caller-class`), since the default bucket is
    unlimited (see 3.4).
