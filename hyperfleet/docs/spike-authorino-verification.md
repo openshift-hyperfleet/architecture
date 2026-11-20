@@ -225,8 +225,8 @@ Envoy v1.39 — use `request_headers`.
 
 **Result: confirmed — the `v1beta3` response-config fields are accepted,
 the Wristband reaches the upstream request as `x-wristband`, and the
-signing algorithms `RS256` (adopted for the Desire Store) and `ES256`
-(verified, not adopted) both work on the Authorino side.**
+signing algorithm `ES256` (the DD's choice and the Desire Store validator's
+default) works end-to-end; `RS256` also works on the Authorino side.**
 
 A test AuthConfig modeled on the DD's binding CR (age predicate and
 partition predicate in `patternMatching.patterns[].predicate`;
@@ -241,21 +241,19 @@ body showed:
   (from `expression: auth.identity.sub`), and `hf_partition` (static value
   or path-derived expression both verified) — the DD's header-injection
   contract works. **Format note:** the value is the bare token — Authorino's
-  `response.success.headers` cannot emit a scheme prefix. The deployed
-  hyperfleet-api JWT handler requires a `Bearer`-prefixed value on every
-  configured source header (`pkg/auth/jwt_handler.go`, rejects a raw token
-  with 401 "does not use Bearer scheme"), so pointing the API at
-  `x-wristband` as-is would reject every request on format. The
-  established format is the **raw JWT, no prefix**: the API story must
-  accept the raw value on non-`Authorization` source headers (a
-  Bearer-prefixed `x-wristband` would need a gateway Lua bridge, which
-  reintroduces the dynamic-metadata transport this design rejects).
+  `response.success.headers` cannot emit a scheme prefix — and the Desire
+  Store's own validator reads exactly that: `Authenticate` in
+  `hyperfleet-desire-store` (`internal/auth/wristband.go`) takes the raw
+  `X-Wristband` header value with no scheme check. (An earlier revision of
+  this note cited the general hyperfleet-api JWT handler's `Bearer`-prefix
+  requirement as a consumer-side gap — that was the wrong service; see the
+  correction below.)
 - `authorization`: replaced with `Bearer <wristband>` by the gateway's Lua
   filter reading ext_authz **dynamic metadata** (the general gateway's
   mechanism).
 
-**ES256 (verified in a dedicated follow-up run on 2026-11-19, not adopted —
-see the decision below):** an EC
+**ES256 (verified in a dedicated follow-up run on 2026-11-19, then
+confirmed end-to-end by the reviewer against the real validator):** an EC
 P-256 key was generated, stored as the `desire-store-wristband-key` Secret
 (`key.pem`, same format as the gateway's existing signing-key Secret), and
 referenced with `algorithm: ES256`. The emitted Wristband carried header
@@ -265,22 +263,30 @@ upstream as `x-wristband`; its signature verified against the EC public key
 run of the spike used `RS256` (the gateway's existing key) — both
 algorithms work as the DD's `signingKeyRefs` specify them.
 
-**Consumer-side gap (same class as the format gap above, on the signing
-algorithm) — resolved by adopting `RS256`:** the ES256 run verifies the
-Authorino side only. The API's JWT validation accepts **RS256-signed tokens
-only** — every issuer parser is built with `jwt.WithValidMethods([]string{"RS256"})`
-(`pkg/auth/jwt_handler.go`, `defaultSigningAlgorithm`) and `JWTIssuerConfig`
-has no per-issuer algorithm override — so an ES256 Wristband would be
-rejected by the API with 401 regardless of the `x-wristband` format.
-**Decision:** the Desire Store signing key is `RS256`, matching the general
-gateway's existing key and the API's validation as deployed — this removes
-the need for the per-issuer-algorithms API change and keeps one algorithm
-across the Hub. The measured trade-off: RS256 signatures are ~200 bytes
-larger per Wristband and slower to sign (~1 ms vs ~0.1 ms on the minting
-Authorino), both negligible at Hub-internal request rates; ES256 remains the
-preferred direction only if the general gateway migrates to EC as well, at
-which point per-issuer accepted algorithms should be added to the API's JWT
-issuer configuration for both.
+**Correction — the consumer is the Desire Store service, not the general
+API:** an earlier revision of this section recorded two consumer-side gaps
+(`Bearer`-prefix requirement and RS256-only validation) from
+hyperfleet-api's general JWT handler (`pkg/auth/jwt_handler.go`). That was
+the **wrong service**: the Desire Store is a dedicated Hub service with its
+own validator (`hyperfleet-desire-store`, `internal/auth/wristband.go`),
+which:
+
+- reads the **bare JWT from `X-Wristband`** (`Authenticate`,
+  `strings.TrimSpace(r.Header.Get(...))`) — no scheme prefix, no gap;
+- takes an **explicit JWKS URL** (`HYPERFLEET_WRISTBAND_JWKS_URL`), not OIDC
+  discovery;
+- accepts a **configurable algorithm list**
+  (`HYPERFLEET_WRISTBAND_ALGORITHMS`, default `ES256`,
+  `internal/config/config.go`) — no RS256-only constraint.
+
+The real validator was exercised locally on the same stack (Authorino
+v0.28.0, Envoy v1.39.1, kind) and accepted the raw `ES256` `x-wristband` for
+both binding and fleet-scoped callers. **Decision reverted accordingly: the
+Desire Store signing algorithm is `ES256`** — the service's own default and
+the DD's original choice, on its merits (compact per-request signatures,
+fast minting). The earlier `RS256` adoption was based on the wrong
+consumer's constraints and is withdrawn; `RS256` would also work as a
+deployment setting, but nothing forces it.
 
 **Caveat for the gateway story (HYPERFLEET-1829):** the deployed gateway's
 Envoy Lua filter currently reads the wristband from ext_authz **dynamic
@@ -344,15 +350,17 @@ criterion of HYPERFLEET-1822 is covered:
 | 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for missing-claim ("no such key"), type ("no such overload") and out-of-bounds ("index out of bounds") errors |
 | 4 | Local rate limiting keyed by caller class/partition | ✅ both descriptor keys verified via the metadata→header bridge; rate-limit state is isolated per descriptor value (an exhausted `mc-01` bucket did not affect `mc-02`); a second enforced per-partition bucket remains unproven (see 3.4); buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
-| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ signing verified with `RS256` (adopted) and `ES256` (evaluated, not adopted); `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
+| 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ `ES256` verified end-to-end (Authorino side in this spike; the Desire Store validator's acceptance confirmed against the real service); `RS256` also works on the Authorino side; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
 | 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
 
 No design rework is required for the verified mechanisms; the findings are
 refinements for the rendering and gateway stories. The missing-claim CEL
 denial, partition-keyed rate limiting, and signing-algorithm runs that
-completed the acceptance criteria are recorded in 3.3–3.5 (the adopted
-algorithm is `RS256`; the `ES256` run is the evaluated alternative, see
-3.5). One follow-up remains open beyond the ticket's acceptance criteria:
+completed the acceptance criteria are recorded in 3.3–3.5 (the algorithm is
+`ES256`, the Desire Store validator's default; an earlier `RS256` adoption
+was based on the wrong consumer's constraints and is withdrawn — see the
+correction in 3.5). One follow-up remains open beyond the ticket's
+acceptance criteria:
 
 - **Key-rotation pickup at request time** (3.6): not established by this
   spike; a controlled rotation test is still required. This goes beyond the
@@ -372,35 +380,30 @@ algorithm is `RS256`; the `ES256` run is the evaluated alternative, see
 3. **Expect 404 (not 401/403)** as the client-visible status when no
    AuthConfig matches (binding removed or wrong host).
 4. **Wristband emission:** render `response.success.headers["x-wristband"]`
-   as the DD writes it — the single end-to-end transport, with the API's
-   issuer reading `x-wristband` as its token header and the gateway's Lua
-   fail-closed check validating that same path (see 3.5). **The header value
-   is the raw Wristband JWT, no `Bearer` prefix** — the API story must adapt
-   the JWT handler to accept the raw value on non-`Authorization` source
-   headers and allow `x-wristband` as a JWT source header (see 3.5).
-   **Signing algorithm: use `RS256`** — the API's JWT handler accepts RS256
-   only on every issuer (`jwt.WithValidMethods`, no per-issuer override), so
-   the Desire Store signing key matches it and the general gateway's
-   existing key; ES256 would require an API change for no Hub-internal
-   benefit (see 3.5).
-   **Rollout-ordering dependency:** header-only emission requires **both**
-   the gateway change and the API change before it can serve traffic. The
-   gateway side: the deployed Lua filter reads the wristband from ext_authz
-   dynamic metadata and fails closed (403 "missing gateway wristband") when
-   it is absent — HYPERFLEET-1829 must adapt that check to the `x-wristband`
-   path. The API side: the existing JWT handler rejects the raw,
-   unprefixed `x-wristband` value with 401 ("does not use Bearer scheme") —
-   the API story must accept raw JWTs from non-`Authorization` source
-   headers and allow `x-wristband` as a source header first. HYPERFLEET-1831
-   is therefore blocked on **both** 1829 and the API change landing first
-   (or 1831 gating behind them). **Compatible transition for staged
-   deployment:** emit the wristband in both places (header + dynamic
-   metadata) *and keep the Lua `Authorization: Bearer <wristband>` rewrite*
-   — the existing API already accepts that path, so traffic flows while the
-   pieces land. Once the API accepts the raw `x-wristband` value, 1829
-   flips the fail-closed check to `x-wristband`, the Authorization rewrite
-   and the dynamic-metadata emission are removed, and the single transport
-   is in place. The DD's signing algorithm is `RS256` (see 3.5).
+   as the DD writes it — the single end-to-end transport. The Desire Store
+   validator already reads the raw, unprefixed `x-wristband` value
+   (`hyperfleet-desire-store`, `internal/auth/wristband.go`) — no API-side
+   change is needed for the transport or the format (see the correction in
+   3.5). **Signing algorithm: `ES256`** — the validator's own default
+   (`HYPERFLEET_WRISTBAND_ALGORITHMS`), verified end-to-end.
+   **Rollout-ordering dependency:** the deployed gateway's Lua filter reads
+   the wristband from ext_authz dynamic metadata and fails closed (403
+   "missing gateway wristband") when it is absent (see 3.5). Rendering the
+   AuthConfig with header-only emission while that Lua check is unchanged
+   denies every Desire Store request. HYPERFLEET-1831 is therefore
+   **blocked on HYPERFLEET-1829** adapting the Lua fail-closed check to the
+   `x-wristband` path: 1829 must land first (or 1831 must gate behind it);
+   a transitional dual-emission (header + dynamic metadata) window
+   satisfies the unchanged Lua check while the pieces land and must be
+   removed once 1829 is live. **Authorization stripping:** once the Lua
+   filter stops rewriting `Authorization`, nothing removes the caller's
+   original credential (the management-cluster JWT or Hub service-account
+   token) — it reaches the Desire Store next to `x-wristband`, violating
+   the DD's trust contract ("Envoy forwards only the Authorino-issued
+   `x-wristband` to the API"). The strip cannot happen before ext_authz
+   (Authorino authenticates the caller from that header); the same gateway
+   change (1829) must therefore also **strip `Authorization` after ext_authz
+   on Desire Store routes**, so the upstream receives only the Wristband.
 5. **Revocation monitoring** should alert on Authorino watch errors
    (visible within ~20 s of a partition) rather than client status codes;
    client-side denial is instant once the control plane is healthy but does
