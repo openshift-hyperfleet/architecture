@@ -189,17 +189,15 @@ Burst tests (bucket of 2 per Envoy process, 2 replicas):
   then **429**; requests without the header (no descriptor) stayed unlimited
   (default bucket).
 - **Partition key** (follow-up run, 2026-11-19): a 10-request burst against `mc-01` passed
-  4 (bucket 2 × 2 replicas) then **429**; a 10-request burst against `mc-02`
-  — same AuthConfig, same caller class, different partition descriptor —
-  passed all 10, unaffected by `mc-01`'s exhausted bucket. **What this
-  shows:** the rate-limit state is isolated per descriptor value — a
-  partition's exhausted bucket does not affect requests keyed to another
-  partition. **What it does not show:** an independent *enforced* bucket for
-  a second partition — no descriptor was configured for `mc-02` in this test
-  (its requests fell into the default bucket), so a burst proving `mc-02`
-  gets its own 429s within a refill interval, with a second partition
-  descriptor configured, remains to be run before claiming per-partition
-  bucket enforcement.
+  4 (bucket 2 × 2 replicas) then **429** — the partition-keyed descriptor
+  enforces its bucket. A 10-request burst against `mc-02` passed all 10:
+  **no descriptor was configured for `mc-02`**, so its requests carried a
+  descriptor that matched no configured bucket and fell into the default
+  bucket — the same fail-open no-descriptor path as above, not evidence of
+  per-partition isolation. **Not shown by this run:** anything about
+  per-partition bucket isolation; proving it requires a second partition
+  descriptor and a burst that draws `mc-02` 429s of its own within a refill
+  interval.
 
 **Fail-open hazard:** the verified mechanism is fail-open. With
 `skip_if_absent`, any request that reaches routing without the descriptor —
@@ -353,7 +351,7 @@ criterion of HYPERFLEET-1822 is covered:
 | 1 | Binding deletion denies within 60 s | ✅ **< 1 s** healthy; unbounded under silent partition (infra failure, per design); < 1 s recovery |
 | 2 | `issuer` enforced at authentication | ✅ 401 "issued by a different provider" |
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for missing-claim ("no such key"), type ("no such overload") and out-of-bounds ("index out of bounds") errors |
-| 4 | Local rate limiting keyed by caller class/partition | ✅ both descriptor keys verified via the metadata→header bridge; rate-limit state is isolated per descriptor value (an exhausted `mc-01` bucket did not affect `mc-02`); a second enforced per-partition bucket remains unproven (see 3.4); buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
+| 4 | Local rate limiting keyed by caller class/partition | ✅ both descriptor keys enforce their buckets via the metadata→header bridge (`mc-01` partition key drew 429s); per-partition bucket isolation **untested** — the `mc-02` burst hit the fail-open default bucket, not a second descriptor (see 3.4); buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
 | 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ `ES256` verified end-to-end (Authorino side in this spike; the Desire Store validator's acceptance confirmed against the real service); `RS256` also works on the Authorino side; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
 | 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
 
