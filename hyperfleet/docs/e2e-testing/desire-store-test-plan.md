@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet QE Team
-Last Updated: 2026-11-12
+Last Updated: 2026-11-23
 ---
 
 # Desire Store Test Plan
@@ -164,7 +164,7 @@ Each table covers one area of the [HYPERFLEET-1861] criteria. [How to Read](#how
 | ISO-6 | The Desire Store Authorino and the general Authorino do not serve each other's AuthConfigs | Deployment | helm render | `make ci-dry-run` | [HYPERFLEET-1863] | new | Remove the shard label selector |
 | ISO-7 | A registration with a duplicate issuer, overlapping signing keys, or a duplicate partition is rejected | Unit | `go test` | `hyperfleet-operator` `make test` | [HYPERFLEET-1832] | new | Skip the uniqueness check |
 | ISO-8 | Startup fails when the partition enforcement configuration is missing | Unit | `go test` | `hyperfleet-desire-store` `make test` | [HYPERFLEET-1825] | new | Start with enforcement off when the configuration is missing |
-| ISO-9 | Only the Desire Store API receives the `desire_store` database credentials | Deployment | helm render | `make ci-dry-run` | [HYPERFLEET-1828] | new | Mount the credentials Secret in a second workload |
+| ISO-9 | Only the Desire Store API workload receives the `desire_store_app` credential, and only the migration executor receives `desire_store_migrate`, so a separate migration Job is allowed | Deployment | helm render | `make ci-dry-run` | [HYPERFLEET-1828] | new | Mount the `desire_store_app` Secret in a second workload, or the `desire_store_migrate` Secret outside the migration executor |
 | ISO-10 | Only the Desire Store roles have `CONNECT` on the `desire_store` database, so the other services on the shared instance cannot connect to it | Deployment | deployed hub | Manual, recorded on [HYPERFLEET-1828] | [HYPERFLEET-1828] | manual | Grant `CONNECT` on `desire_store` to the API role |
 | ISO-11 | The operator replaces a binding when its identity or partition changes | Unit | `go test` | `hyperfleet-operator` `make test` | [HYPERFLEET-1831] | new | Keep the old binding when the partition changes |
 | ISO-12 | A partial match of issuer, audience, and subject is denied. Example: the right issuer and subject with the wrong audience | E2E | Prow GKE | `tier1-nightly` | [HYPERFLEET-1833] | new, G1 | Remove the audience check from the binding AuthConfig |
