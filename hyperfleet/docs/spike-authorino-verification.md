@@ -54,7 +54,11 @@ were lower because each iteration pays its own connection setup (~0.7 rps
 effective on the nominal 1 rps partition-run loop). Because the API upstream was not deployed in this environment, an
 **authorized request returns 503** (upstream unreachable) and a **denied
 request returns 401/403/404** — the upstream never receives denied traffic, so
-the status transition alone identifies revocation. Timing is captured with
+the authorized→denied status transition identifies when revocation takes
+effect. Status alone does not classify *why* a request was denied (a
+token-expiry 401 is indistinguishable from other denials by code), so denial
+reasons were classified from the Authorino `outgoing authorization response`
+log lines. Timing is captured with
 `date +%s.%N` per request plus Authorino log timestamps. The API-server
 partition was enforced with an `iptables` DROP rule on the kind node blocking
 the Authorino pod IP → :6443.
@@ -70,7 +74,7 @@ connectivity; recovery after connectivity returns is sub-second.**
 | Scenario | Measured delay | Detail |
 |----------|----------------|--------|
 | Healthy control plane | **< 1 s** | The first request after `kubectl delete authconfig` (~0.5 s later at 2 rps) was denied. |
-| API-server partitioned (watch dead) | **~15 min observed, unbounded** | Stale policy kept authorizing traffic for the entire partition (~15 min; ~610 requests — 589 authorized plus 23 token-expiry 401s — at ~0.7 rps effective from a nominal 1 rps sequential curl loop). The watch errored within ~19 s of the partition (`http2: client connection lost`), but re-list was blocked, so Authorino kept serving its last-known state. Denial never happened during the partition. |
+| API-server partitioned (watch dead) | **~15 min observed, unbounded** | Stale policy kept authorizing traffic for the entire partition (~15 min; ~610 requests — 589 authorized plus 23 token-expiry 401s — at ~0.7 rps effective from a nominal 1 rps sequential curl loop). The watch errored within ~19 s of the partition (`http2: client connection lost`), but re-list was blocked, so Authorino kept serving its last-known state. No revocation denial occurred during the partition: the 23 401s were classified as token expiry by the Authorino log line (`oidc: token is expired (Token Expiry: …)` in the outgoing authorization response), whereas a revocation denial — the binding AuthConfig removed — surfaces as the no-match **404**, as measured on the healthy path; none appeared until the partition lifted. |
 | Recovery after partition lifted | **< 1 s** | The reflector was already retrying; on unblock the re-list completed and the next request (~0.5 s later) was denied. |
 
 **Notes for the rendering story (HYPERFLEET-1831):**
