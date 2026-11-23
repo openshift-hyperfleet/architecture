@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-05
+Last Updated: 2026-11-23
 ---
 
 # Architecture Decision Records (ADRs)
@@ -111,6 +111,7 @@ What did we decide? State it plainly.
 | [0033](0033-postgres-transport-security.md) | PostgreSQL Transport Security: Server Identity Verification for Direct Connections | Active | 2026-11-03 |
 | [0034](0034-gateway-authentication-modes.md) | Gateway Authentication Modes and Wristband Trust | Active | 2026-11-02 |
 | [0035](0035-e2e-mode-aware-authentication.md) | Mode-Aware E2E Authentication | Active | 2026-11-10 |
-| [0036](0036-management-cluster-ingress-tls-termination.md) | Management-Cluster Ingress and TLS Termination | Active | 2026-11-09 |
+| [0036](0036-management-cluster-ingress-tls-termination.md) | Management-Cluster Ingress and TLS Termination | Active | 2026-11-20 |
 | [0037](0037-e2e-human-and-machine-identities.md) | Human and Machine Identities in E2E Authentication | Active | 2026-11-10 |
 | [0038](0038-gateway-certificate-rotation.md) | Gateway Certificate and Key Rotation | Active | 2026-11-11 |
+| [0039](0039-desire-store-gateway-reachability-tls-trust.md) | Desire Store Gateway Reachability and TLS Trust | Active | 2026-11-23 |

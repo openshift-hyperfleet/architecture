@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-20
+Last Updated: 2026-11-23
 ---
 
 # Desire Store Architecture Overview
@@ -47,13 +47,15 @@ flowchart LR
         MCISS -.->|"short-lived projected token"| AP
     end
 
+    PUB["Published issuer endpoints (HYPERFLEET-1834)"]
+
     subgraph HUB["Hub trust boundary"]
         HISS["Hub Kubernetes service-account JWT issuer"]
         AD["Adapter"]
         GC["Centralized sweeper"]
         OP["Hub HyperFleet operator"]
         AC["Operator-managed AuthConfig"]
-        GW["Dedicated private Envoy + Authorino gateway"]
+        GW["Dedicated Envoy + Authorino gateway"]
         DS["Desire Store API service"]
         PG[("Private Postgres")]
 
@@ -63,12 +65,14 @@ flowchart LR
         AD -->|"API request"| GW
         GC -->|"partition-scoped cleanup"| GW
         OP -->|"reconcile caller and partition policy"| AC
-        AP -->|"HTTPS over approved private network path; no DB credentials"| GW
+        AP -->|"HTTPS via the hub public entry; TLS verified against the distributed CA bundle; no DB credentials"| GW
         GW -->|"signed Wristband with trusted identity and partition"| DS
         GW -.->|"read AuthConfig policy"| AC
-        GW -.->|"resolve issuer JWKS (cached or refresh)"| MCISS
         DS -->|"service database role"| PG
     end
+
+    MCISS -.->|"publish discovery and JWKS"| PUB
+    GW -.->|"resolve issuer JWKS (cached or refresh)"| PUB
 ```
 
 ### Request Flow
@@ -78,7 +82,7 @@ sequenceDiagram
     participant AP as Remote Applier
     participant ENV as Envoy
     participant AUTH as Authorino
-    participant MCISS as Management-cluster JWT issuer
+    participant ISS as Published issuer endpoints
     participant API as Desire Store API
     participant PG as Postgres
 
@@ -86,9 +90,9 @@ sequenceDiagram
     ENV->>ENV: Strip client identity, caller-class, partition, and x-wristband headers
     ENV->>AUTH: Authorize request
     AUTH->>AUTH: Select per-partition AuthConfig by hostname
-    Note over AUTH, MCISS: JWKS may be served from cache - refresh requires issuer reachability
-    AUTH->>MCISS: Resolve issuer JWKS (cached or refresh)
-    MCISS-->>AUTH: Return JWKS or unavailable
+    Note over AUTH, ISS: JWKS may be served from cache - refresh requires the published endpoints to be reachable
+    AUTH->>ISS: Resolve issuer JWKS (cached or refresh)
+    ISS-->>AUTH: Return JWKS or unavailable
     AUTH->>AUTH: Validate issuer, signature, audience, subject, and token age
     alt Invalid credential
         AUTH-->>ENV: Deny request
@@ -124,7 +128,7 @@ The gateway authenticates each Desire Store data caller and provides its caller 
 
 ## Trust Boundaries and Partition Isolation
 
-The Hub and each management cluster are separate trust boundaries. Remote management clusters reach the private Hub gateway through an approved private network path; the gateway is not publicly exposed.
+The Hub and each management cluster are separate trust boundaries. Remote management clusters reach the Desire Store gateway through the hub's public entry, with privacy enforced by trust rather than network topology: the gateway serves an internal-CA certificate that clients verify against the bundle distributed at onboarding, and the gateway authenticates every request ([ADR-0039](../adrs/0039-desire-store-gateway-reachability-tls-trust.md)). Deployments that require network privacy pin the same hostnames and certificate to a private path.
 
 ## Remote Applier Authentication
 
@@ -147,7 +151,7 @@ Use projected Kubernetes service-account JWTs issued by the management cluster. 
 
 Use OIDC discovery/JWKS for registered management-cluster issuers. The Hub retrieves public keys, supports key rotation, and requires issuer reachability.
 
-The management-cluster operator must publish the registered issuer's discovery/JWKS endpoint and keep it reachable over the approved private path. An initial discovery failure denies that issuer's requests without invalidating unrelated AuthConfig entries. A later refresh failure continues with already trusted keys; only requests that need unavailable keys are denied, as defined in the Detailed Design.
+The management-cluster operator must publish the registered issuer's discovery/JWKS endpoint and keep it reachable for key refresh through the issuer-publication mechanism ([HYPERFLEET-1834](https://redhat.atlassian.net/browse/HYPERFLEET-1834)); hub-initiated reachability into management clusters is not assumed. An initial discovery failure denies that issuer's requests without invalidating unrelated AuthConfig entries. A later refresh failure continues with already trusted keys; only requests that need unavailable keys are denied, as defined in the Detailed Design.
 
 Issuer selection must avoid trying unrelated AuthConfig entries for each request. JWKS refresh must be bounded and cancellation-aware to prevent request fan-out across management-cluster issuers.
 
@@ -169,7 +173,7 @@ The Hub operator manages AuthConfig entries that map each remote Applier identit
 
 ## Desire Store API Hosting
 
-The Desire Store API is a dedicated Hub service behind its own private Envoy and Authorino gateway. This separates Desire Store traffic, scaling, rollout, and service-level failure behavior from the general API. It uses a dedicated `desire_store` database on the shared Postgres instance, as defined by [ADR-0026](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md). A separate Postgres instance is a future option, not the default.
+The Desire Store API is a dedicated Hub service behind its own Envoy and Authorino gateway. This separates Desire Store traffic, scaling, rollout, and service-level failure behavior from the general API. It uses a dedicated `desire_store` database on the shared Postgres instance, as defined by [ADR-0026](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md). A separate Postgres instance is a future option, not the default.
 
 **Alternative:** Host the endpoints in the existing API, but this would couple Desire Store traffic and failures to the general API's resources and releases.
 
