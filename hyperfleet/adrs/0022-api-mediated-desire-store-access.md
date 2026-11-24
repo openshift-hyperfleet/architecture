@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-09-11
+Last Updated: 2026-11-18
 ---
 
 # 0022 - API-Mediated Desire Store Access
@@ -13,6 +13,8 @@ The Postgres desire store is hosted on the hub cluster, while each Applier runs 
 Direct Postgres access would require separate decisions for cross-cluster network exposure, client credential lifecycle, and partition enforcement. It would also expose the database beyond the hub cluster. HyperFleet already uses the Envoy and Authorino gateway to authenticate internal callers and inject trusted identity headers.
 
 ## Decision
+
+**Partial supersession:** [ADR-0039](0039-sweeper-partition-enumeration.md) replaces the universal partition-scope requirement below only for sweeper-only partition metadata enumeration. That operation uses an operation-scoped Wristband without a partition. All desire-record operations retain their existing partition and caller rules; API-mediated access and signed Wristband trust remain mandatory.
 
 Adapters and Appliers access the desire store through an authenticated, hub-hosted API service. Postgres is not exposed directly to clients outside the hub cluster.
 

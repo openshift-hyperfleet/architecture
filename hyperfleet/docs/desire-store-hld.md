@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-20
+Last Updated: 2026-11-19
 ---
 
 # Desire Store Architecture Overview
@@ -31,6 +31,7 @@ Last Updated: 2026-10-20
 - [Remote Applier Connectivity and Partition-Scoped Access to Postgres](spike-remote-applier-postgres-access.md)
 - [SPIKE: Evaluate Desire Store Transport Overhead](spike-desire-store-transport.md)
 - [ADR-0029: Desire Store Authorization](../adrs/0029-desire-store-authorization.md)
+- [ADR-0039: Sweeper Partition Enumeration](../adrs/0039-sweeper-partition-enumeration.md)
 - [Desire Store Detailed Design](desire-store-dd.md)
 
 ## Purpose and Scope
@@ -61,10 +62,10 @@ flowchart LR
         HISS -.->|"projected token"| GC
         HISS -.->|"projected token"| OP
         AD -->|"API request"| GW
-        GC -->|"partition-scoped cleanup"| GW
+        GC -->|"partition metadata listing; partition-scoped cleanup"| GW
         OP -->|"reconcile caller and partition policy"| AC
         AP -->|"HTTPS over approved private network path; no DB credentials"| GW
-        GW -->|"signed Wristband with trusted identity and partition"| DS
+        GW -->|"signed Wristband with identity and operation-specific scope"| DS
         GW -.->|"read AuthConfig policy"| AC
         GW -.->|"resolve issuer JWKS (cached or refresh)"| MCISS
         DS -->|"service database role"| PG
@@ -117,10 +118,12 @@ sequenceDiagram
 |--------|----------|---------------------|
 | Adapter | Hub | Writes desired state and cleanup records. |
 | Remote Applier | Management cluster | Reads desires and writes status. |
-| Centralized sweeper | Hub | Finds and cleans up orphaned desires. |
+| Centralized sweeper | Hub | Lists partitions with remaining desires, then inspects and cleans up records through partition-scoped routes. |
 | HyperFleet operator | Hub | Reconciles remote caller identities and partition mappings. It is not a Desire Store data caller. |
 
 The gateway authenticates each Desire Store data caller and provides its caller class in the signed Wristband. [ADR-0029](../adrs/0029-desire-store-authorization.md) defines caller authorization and partition-selection rules; the [Detailed Design](desire-store-dd.md#authconfig-structure-and-reconciliation) defines the concrete AuthConfig, gateway, and API configuration used to enforce them.
+
+[ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records option 2 for partition discovery: the sweeper lists distinct partition identifiers from remaining apply, delete, and read records, including fully decommissioned partitions absent from registrations. This API/Postgres metadata query is separate from the shared partition-scoped store interface. Only the exact sweeper identity can use `GET /api/hyperfleet/desire-store/v1/partitions`, with `hf_operation=partition-list` and no `hf_partition` in its Wristband. Metadata scope grants no desire-record access; each subsequent record request requires its own partition scope. The endpoint still requires a specification release and implementation. Discovery does not establish that an origin is absent or a remote object is deleted, and it does not remove rows left after an Applier is decommissioned; the [orphan-scan spike](spike-sweeper-orphan-scan.md#review-and-implementation-gates) tracks the remaining cleanup-safety and row-retention decisions.
 
 ## Trust Boundaries and Partition Isolation
 
@@ -194,7 +197,7 @@ Versioned REST/JSON over HTTPS, confirmed by the [transport evaluation](spike-de
 
 ## Database Protection and Partition Isolation
 
-The API service enforces a trusted, non-empty partition scope before data-layer access and uses a dedicated database role restricted to the `desire_store` database. Direct database access from Appliers is not permitted.
+The API service enforces a trusted, non-empty partition scope before every desire-record data-layer operation. Only the separately authorized [partition metadata query](../adrs/0039-sweeper-partition-enumeration.md) has no target partition; it returns identifiers and cannot access desire content. The service uses a dedicated database role restricted to the `desire_store` database. Direct database access from Appliers or the sweeper is not permitted.
 
 **Alternatives:**
 
@@ -222,4 +225,4 @@ End-to-end transport and gateway capacity validation, including shared-Postgres 
 
 ## AuthConfig Impact
 
-[ADR-0022](../adrs/0022-api-mediated-desire-store-access.md) governs API-mediated Desire Store access and mandatory partition enforcement. [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)'s Envoy/Authorino security model applies to the dedicated Desire Store gateway, while [ADR-0029](../adrs/0029-desire-store-authorization.md) defines caller classes, partition scope, and signed Wristband authorization. For every Desire Store data caller, the API authorizes from signed Wristband claims; injected partition headers are not authoritative. The [Detailed Design](desire-store-dd.md#authconfig-structure-and-reconciliation) defines the AuthConfig structure and required operator/gateway changes.
+[ADR-0022](../adrs/0022-api-mediated-desire-store-access.md) governs API-mediated Desire Store access and mandatory partition enforcement. [ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)'s Envoy/Authorino security model applies to the dedicated Desire Store gateway, while [ADR-0029](../adrs/0029-desire-store-authorization.md) defines caller classes, partition scope, and signed Wristband authorization. [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) narrows their universal partition requirement only for sweeper metadata enumeration. For every Desire Store data caller, the API authorizes from signed Wristband claims; injected partition headers are not authoritative. The [Detailed Design](desire-store-dd.md#authconfig-structure-and-reconciliation) defines the AuthConfig structure and required operator/gateway changes.

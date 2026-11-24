@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-10-08
+Last Updated: 2026-11-18
 ---
 
 # 0029 - Desire Store Authorization
@@ -11,6 +11,8 @@ Last Updated: 2026-10-08
 [ADR-0022](0022-api-mediated-desire-store-access.md) requires Desire Store clients to use the Hub API rather than connect directly to Postgres or receive Hub/database credentials. The three data-caller classes have different partition scopes: remote Appliers use one management-cluster partition, while Adapters and the centralized sweeper target a partition per request. The caller, trust, and partition-source rules must be consistent across the gateway and API.
 
 ## Decision
+
+**Partial supersession:** [ADR-0039](0039-sweeper-partition-enumeration.md) replaces the universal partition-scope requirement below only for sweeper-only partition metadata enumeration. That operation uses an operation-scoped Wristband without a partition. All desire-record operations retain their existing partition and caller rules; API-mediated access and signed Wristband trust remain mandatory.
 
 The Desire Store has three caller classes:
 

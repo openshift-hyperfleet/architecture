@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-19
+Last Updated: 2026-11-24
 ---
 
 # Desire Store Detailed Design
@@ -36,6 +36,7 @@ Last Updated: 2026-11-19
     - [Wire Schemas](#wire-schemas)
     - [Status Codes](#status-codes)
     - [Error Responses](#error-responses)
+  - [Sweeper Partition Enumeration](#sweeper-partition-enumeration)
   - [Compatibility](#compatibility)
   - [CAS / Version Semantics](#cas--version-semantics)
   - [Pagination and Consistency](#pagination-and-consistency)
@@ -54,6 +55,7 @@ Last Updated: 2026-11-19
 - [Desire Identity and Ownership Spike](spike-desire-identity-ownership.md) — defines the desire identity tuple and content fields used by the wire schemas.
 - [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) — describes the related tenant and gateway identity model.
 - [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md) — selects a centralized Hub sweeper and resource-reference correlation for orphan cleanup.
+- [Sweeper Orphan-Scan spike](spike-sweeper-orphan-scan.md) — records option 2 for partition enumeration in [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md), and distinguishes the remaining confirmation, cleanup, and cadence recommendations and design gates.
 
 ## Overview
 
@@ -75,7 +77,7 @@ This matrix specifies the operation-level permissions enforced by the gateway an
 |--------|--------------------|
 | Adapter | Read desires; write desired state; delete desires |
 | Remote Applier | Read its own partition; write status only |
-| Centralized sweeper | List and get desires; write `DeleteDesire` records only (orphan cleanup); delete desires — scoped to one partition per request; see the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md) |
+| Centralized sweeper | List and get desires; write `DeleteDesire` records only (orphan cleanup); delete desires — scoped to one partition per request. Separately, [partition metadata listing](#sweeper-partition-enumeration) has no target partition; it grants no desire-record access |
 
 ### Cross-Cluster Applier Identity
 
@@ -118,7 +120,7 @@ The concrete `AuthConfig` CR rendered for each binding is defined in [AuthConfig
 
 ### Partition Selection
 
-Every Desire Store route addresses the target partition in its path, as the segment following the fixed `/partitions` prefix — `/partitions/{partition}/desires/...` — and the route paths are uniform for all callers. The authorization rules and the gateway hostnames differ by caller class — the hostname selection is defined in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation):
+Every desire-record route addresses the target partition in its path, as the segment following the fixed `/partitions` prefix — `/partitions/{partition}/desires/...` — and the route paths are uniform for all callers. The [partition enumeration operation](#sweeper-partition-enumeration) is a separate, sweeper-only metadata exception; it does not relax these rules for desire records. The authorization rules and the gateway hostnames differ by caller class — the hostname selection is defined in [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation):
 
 - **Remote Applier:** the path partition must equal the partition in its AuthConfig binding; a mismatch is rejected ([ADR-0022](../adrs/0022-api-mediated-desire-store-access.md)).
 - **Adapter and sweeper:** may target any partition per request; the path partition is the requested target, Authorino stamps it into the Wristband, and the API authorizes from that claim (see [Fleet-Scoped Caller AuthConfig](#fleet-scoped-caller-authconfig)).
@@ -154,7 +156,7 @@ Envoy strips client-supplied identity, caller-class, partition, and `x-wristband
 
 #### Wristband Claims and Validation
 
-The Wristband carries the validated caller identity, caller class, authorized partition, issuer, audience, expiry, and signing-key identifier. The service validates the signature and required claims before authorizing an operation. The `x-wristband` header is the service's only authentication credential: Desire Store routes carry no Bearer-token middleware, so a request is never rejected for a missing Authorization header, only for a missing or invalid Wristband. **The `x-wristband` value is the raw Wristband JWT with no scheme prefix** — Authorino injects the bare token into the response header (verified in the [Authorino verification spike](spike-authorino-verification.md#35-example-crs-from-the-design-against-the-deployed-authorino)), and the Desire Store validator (`internal/auth/wristband.go`, `Authenticate`) reads exactly that bare value. The Wristband is minted per request and has its own lifetime, 300 seconds as the starting value, matching the general gateway; it is independent of the management-cluster token's one-hour lifetime. The caller identity (`hf_identity`) distinguishes the Adapter from the sweeper within the fleet-scoped class, so the API can enforce the sweeper's `DeleteDesire`-only restriction in the [Caller-to-Operation Matrix](#caller-to-operation-matrix).
+The Wristband carries the validated caller identity, caller class, issuer, audience, expiry, and signing-key identifier. Desire-record operations also require the authorized partition. The [metadata operation](#sweeper-partition-enumeration) instead requires `hf_operation=partition-list` and forbids `hf_partition`; [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records this exception for a follow-up specification release. The API validates the signature and the claims required for the matched operation before authorizing it. The `x-wristband` header is the API's only authentication credential: Desire Store routes carry no Bearer-token middleware, so a request is never rejected for a missing Authorization header, only for a missing or invalid Wristband. **The `x-wristband` value is the raw Wristband JWT with no scheme prefix** — Authorino injects the bare token into the response header (verified in the [Authorino verification spike](spike-authorino-verification.md#35-example-crs-from-the-design-against-the-deployed-authorino)), and the Desire Store validator (`internal/auth/wristband.go`, `Authenticate`) reads exactly that bare value. The Wristband is minted per request and has its own lifetime, 300 seconds as the starting value, matching the general gateway; it is independent of the management-cluster token's one-hour lifetime. The caller identity (`hf_identity`) distinguishes the Adapter from the sweeper within the fleet-scoped class, so the API can enforce the sweeper's `DeleteDesire`-only restriction in the [Caller-to-Operation Matrix](#caller-to-operation-matrix).
 
 #### Signing-Key Rotation and Failure Handling
 
@@ -163,7 +165,7 @@ Authorino signs Wristbands with the Hub private key, and the API verifies them w
 - **Key publication:** Publish the new public key before Authorino starts signing Wristbands with its key identifier.
 - **Key retention:** Keep the previous public key for at least the maximum Wristband lifetime plus the allowed clock skew.
 - **Trust source:** Configure the API with the Hub public-key or JWKS source before serving requests. The API loads trusted keys from that source and refreshes them according to the key-rotation policy.
-- **Validation:** Reject an unknown key identifier, invalid signature, expired Wristband, missing claim, or inconsistent claim set before data access.
+- **Validation:** Reject an unknown key identifier, invalid signature, expired Wristband, missing operation-required claim, or inconsistent claim set before data access. A missing partition always fails on desire-record routes; only the separately matched [metadata operation](#sweeper-partition-enumeration) uses the metadata claim set.
 - **Refresh failure:** If the key set cannot be refreshed, continue only with already trusted keys; do not accept an unverified Wristband.
 
 #### Network Boundary and Bypass Defense
@@ -180,7 +182,7 @@ The Desire Store gateway uses two kinds of Authorino `AuthConfig` custom resourc
 - **One CR per remote-Applier binding**, selected by per-partition hostname.
 - **One fleet-scoped CR on the base host**, for the Adapter and sweeper.
 
-Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR selection key. The API routes stay path-addressed and the path partition must still match the caller's authorization ([ADR-0022](../adrs/0022-api-mediated-desire-store-access.md)). These CRs are served by the Desire Store's dedicated Authorino instance, not the general gateway's. The `hyperfleet.io/desire-store` label on every Desire Store CR is the shard selector:
+Authorino indexes `AuthConfig` resources by hostname, so the hostname is the CR selection key. Desire-record routes stay path-addressed and the path partition must still match the caller's authorization ([ADR-0022](../adrs/0022-api-mediated-desire-store-access.md)); the [metadata exception](#sweeper-partition-enumeration) requires a separate method/path rule on the fleet base host. These CRs are served by the Desire Store's dedicated Authorino instance, not the general gateway's. The `hyperfleet.io/desire-store` label on every Desire Store CR is the shard selector:
 
 - The dedicated instance watches only CRs carrying the label.
 - The general gateway's Authorino excludes them, so the two instances never overlap.
@@ -264,16 +266,16 @@ spec:
 
 #### Fleet-Scoped Caller AuthConfig
 
-The Adapter and sweeper run on the Hub and authenticate using Hub service accounts. Unlike a remote Applier, which is restricted to one partition, they can access different partitions, one per request.
+The Adapter and sweeper run on the Hub and authenticate using Hub service accounts. Unlike a remote Applier, which is restricted to one partition, their desire-record requests can access different partitions, one per request. Only the sweeper receives the separate [metadata permission](#sweeper-partition-enumeration).
 
-For each request, Authorino reads the target partition from the URL path (`request.path.split('/')[6]`) and includes it in the Wristband. The index form is illustrative: the implementation must anchor the extraction to the `/partitions/` marker rather than a position and reject paths that do not match the expected shape, so route changes fail closed instead of injecting a wrong partition.
+For each desire-record request, Authorino reads the target partition from the URL path (`request.path.split('/')[6]`) and includes it in the Wristband. The index form is illustrative: the implementation must anchor the extraction to the `/partitions/` marker rather than a position and reject paths that do not match the expected shape, so route changes fail closed instead of injecting a wrong partition. The metadata operation has a separate exact method/path rule, defined in [Sweeper Partition Enumeration](#sweeper-partition-enumeration); extraction failure must never select that rule.
 
 Their AuthConfig differs from a remote-Applier binding's in four ways:
 
 - **Host:** uses the shared hostname `desire-store.hub.example.com`.
 - **Authentication:** validates Hub service-account tokens using Kubernetes TokenReview with the `hyperfleet-desire-store` audience.
 - **Authorization:** allows the deployed adapters' and the sweeper's service-account subjects.
-- **Wristband claims:** sets `hf_caller_class` to `fleet-scoped`, `hf_identity` to the caller's service-account subject, and `hf_partition` to the partition from the request path. The `hf_identity` selector is `auth.identity.user.username`. TokenReview returns the caller's name in this field and has no `sub` field. The general gateway's AuthConfig uses the same selector. The value is `system:serviceaccount:<namespace>:<name>`, the same as the token's `sub` claim.
+- **Wristband claims:** for desire-record requests, sets `hf_caller_class` to `fleet-scoped`, `hf_identity` to the caller's service-account subject, and `hf_partition` to the partition from the request path. The metadata rule substitutes the operation claim described below; it cannot reuse this partition rule. The `hf_identity` selector is `auth.identity.user.username`. TokenReview returns the caller's name in this field and has no `sub` field. The general gateway's AuthConfig uses the same selector. The value is `system:serviceaccount:<namespace>:<name>`, the same as the token's `sub` claim.
 
 The Adapter and sweeper have different permissions, enforced from `hf_identity` ([Wristband Claims and Validation](#wristband-claims-and-validation)). Being fleet-scoped grants different partitions, not unrestricted access to every operation.
 
@@ -303,17 +305,18 @@ This section defines the resource operations and consistency guarantees exposed 
 
 ### API Operations
 
-The Desire Store API exposes these transport-neutral operations:
+The table has five desire-record operations and one separately authorized partition-metadata operation. [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records the metadata decision; its specification and implementation are pending:
 
 | Operation | Callers | Purpose |
 |----------|---------|---------|
+| List partitions (decision recorded; not yet implemented) | Sweeper only | Lists partition identifiers through the separate [metadata authorization exception](#sweeper-partition-enumeration); grants no desire-record access. |
 | List desires | Adapter, remote Applier, sweeper | Lists desires in the caller's authorized partition. Supports type filtering and pagination. |
 | Get desire | Adapter, remote Applier, sweeper | Gets one desire in the caller's authorized partition. |
 | Write desire | Adapter, sweeper | Adapter writes desired state; the sweeper may create `DeleteDesire` records only for orphan cleanup. |
 | Write status | Remote Applier | Writes status only. |
 | Delete desire | Adapter, sweeper | Deletes a desire. To remove an applied resource, the Adapter creates a `DeleteDesire`. |
 
-The API derives the partition from the Wristband's trusted partition claim, never from a normal client request. All callers address the target partition in the route path; [Partition Selection](#partition-selection) defines the addressing and per-caller rules.
+For these desire-record operations, the API derives the partition from the Wristband's trusted partition claim, never from a normal client request. All callers address the target partition in the route path; [Partition Selection](#partition-selection) defines the addressing and per-caller rules. The partition metadata operation is specified separately below.
 
 ### Owner Binding
 
@@ -321,12 +324,12 @@ A desire's `owner` is the exact `hf_identity` of the caller that writes it. That
 
 - **Writes:** The API stores the caller's `hf_identity` as the record's `owner`. Write bodies carry no `owner` field, and a body that includes one returns 400.
 - **Deletes:** The API uses `hf_identity` as the caller's owner, as it does on writes.
-- **Owner collision:** All desires for one Kubernetes object in one partition have the same `owner`: the caller that created the first of them. The one exception is a sweeper `DeleteDesire`, which is not in effect yet (see the open limit in [CAS / Version Semantics](#cas--version-semantics)). It lasts until the sweeper removes that `DeleteDesire`. While one of these desires exists, a different caller gets 409 owner conflict ([Conflict Responses](#conflict-responses)) when it creates, writes, or deletes a desire for that object. The shared store applies this rule.
+- **Owner collision:** All desires for one Kubernetes object in one partition have the same `owner`: the caller that created the first of them. The one exception is a sweeper `DeleteDesire`, which requires API and Postgres integration (see the open limit in [CAS / Version Semantics](#cas--version-semantics)). It lasts until the sweeper removes that `DeleteDesire`. While one of these desires exists, a different caller gets 409 owner conflict ([Conflict Responses](#conflict-responses)) when it creates, writes, or deletes a desire for that object. The shared store applies this rule.
 - **Status writes:** Write status does not check the `owner`. The remote Applier writes status on desires that adapters own. The shared store's status operations also do not check the `owner`.
-- **Sweeper exemption:** A request is exempt only when `hf_identity` is the sweeper's service-account subject.
+- **Sweeper exemption:** Only a request whose `hf_identity` is the sweeper's service-account subject is eligible; the service must select the `SweeperStore` operations described below.
 - **Caller's own identity:** Callers still compare a record's `owner` with their own identity before they act on a record they read, as the sweeper guard in [CAS / Version Semantics](#cas--version-semantics) does. They take that identity from the `sub` claim of their service-account token, not from configuration. This value is the same as the `hf_identity` that the API gets ([Fleet-Scoped Caller AuthConfig](#fleet-scoped-caller-authconfig)).
 
-The sweeper is exempt from the owner-collision check on its writes and deletes, per the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md). The exemption lets it remove `DeleteDesire` records that adapters own, including the confirmed records adapters keep after a delete ([HYPERFLEET-1841](spike-desires-lost-mid-deletion.md)). Until [HYPERFLEET-1937](https://redhat.atlassian.net/browse/HYPERFLEET-1937) changes the store interface, the shared store still checks the `owner` on these calls, so the exemption does not take effect yet (see the open limit in [CAS / Version Semantics](#cas--version-semantics)). The `DeleteDesire` records it creates carry the sweeper's `hf_identity` as `owner`, like any other caller's writes. On an `ApplyDesire` create, the store checks the owner before it retires a confirmed `DeleteDesire` ([memory](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store/memory/store.go#L70-L81), [Redis](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store/redis/redis.go#L293-L303)). A sweeper-owned `DeleteDesire`, even a confirmed one, therefore blocks a different caller with `HYPERFLEET-CNF-004` until the sweeper removes it. The exemption covers this confirmed cleanup, not blind version-only retries: its deletes carry `version` like any other delete, and after a timed-out delete it follows the sweeper guard in [CAS / Version Semantics](#cas--version-semantics).
+The sweeper is exempt from the owner-collision check on its writes and deletes, per the [Desire Garbage Collection Strategy spike](spike-desire-garbage-collection.md). The exemption lets it remove `DeleteDesire` records that adapters own, including the confirmed records adapters keep after a delete ([HYPERFLEET-1841](spike-desires-lost-mid-deletion.md)). [HYPERFLEET-1937](https://redhat.atlassian.net/browse/HYPERFLEET-1937) added the separate `SweeperStore` interface to memory and Redis in [Applier PR #86](https://github.com/openshift-hyperfleet/hyperfleet-applier/pull/86). The API and Postgres integration remain open (see the open limit in [CAS / Version Semantics](#cas--version-semantics)). The `DeleteDesire` records it creates carry the sweeper's `hf_identity` as `owner`, like any other caller's writes. On an `ApplyDesire` create, the store checks the owner before it retires a confirmed `DeleteDesire` ([memory](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store/memory/store.go#L70-L81), [Redis](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store/redis/redis.go#L293-L303)). A sweeper-owned `DeleteDesire`, even a confirmed one, therefore blocks a different caller with `HYPERFLEET-CNF-004` until the sweeper removes it. The exemption covers this confirmed cleanup, not blind version-only retries: its deletes carry `version` like any other delete, and after a timed-out delete it follows the sweeper guard in [CAS / Version Semantics](#cas--version-semantics).
 
 **Alternatives considered:**
 
@@ -345,19 +348,20 @@ The sweeper is exempt from the owner-collision check on its writes and deletes, 
 
 REST/JSON over HTTPS is the selected transport, confirmed by the [transport evaluation](spike-desire-store-transport.md) ([HYPERFLEET-1743](https://redhat.atlassian.net/browse/HYPERFLEET-1743)).
 
-The OpenAPI specification for this API is in [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec). The specification does not contain the routes and wire schemas from this section yet. [HYPERFLEET-1821](https://redhat.atlassian.net/browse/HYPERFLEET-1821) adds them.
+The OpenAPI specification for this API is in [hyperfleet-desire-store-spec](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec). [PR #2](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/pull/2) published 0.2.0 for HYPERFLEET-1821. [Spec PR #3](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/pull/3) corrected per-type create-conflict recovery and clarified the store exemption. The current [specification 0.2.2](https://github.com/openshift-hyperfleet/hyperfleet-desire-store-spec/blob/v0.2.2/schemas/desire-store/openapi.yaml) covers all five desire-record operations, GET `generation`, and version-checked Apply/Delete status writes. [Architecture PR #273](https://github.com/openshift-hyperfleet/architecture/pull/273) brought this baseline into the detailed design. The partition-listing operation recorded in [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) requires a follow-up specification release and implementation.
 
-The base path is `/api/hyperfleet/desire-store/v1`, and the routes follow the partition addressing defined in [Partition Selection](#partition-selection):
+The base path is `/api/hyperfleet/desire-store/v1`. The desire-record routes follow the partition addressing defined in [Partition Selection](#partition-selection). The partition-listing route has separate [authorization rules](#sweeper-partition-enumeration):
 
 | REST route | Operation |
 |------------|-----------|
+| `GET /partitions?cursor={cursor}&limit={limit}` | List partitions (sweeper only; [decision recorded, specification pending](#sweeper-partition-enumeration)) |
 | `GET /partitions/{partition}/desires?type={type}&cursor={cursor}&limit={limit}` | List desires |
 | `GET /partitions/{partition}/desires/{desire-id}` | Get desire |
 | `PUT /partitions/{partition}/desires/{desire-id}` | Write desire |
 | `PUT /partitions/{partition}/desires/{desire-id}/status` | Write status |
 | `DELETE /partitions/{partition}/desires/{desire-id}?version={version}` | Delete desire |
 
-Query parameters: `type` filters by desire type (`apply`, `delete`, `read`); omitted returns all types. `limit` caps the page size, with a default and maximum defined in the OpenAPI specification — values above the maximum are clamped or rejected with 400, as that specification defines. `version` is required on delete and carries the desire's current version ([CAS / Version Semantics](#cas--version-semantics)).
+Query parameters: `type` filters by desire type (`apply`, `delete`, `read`); omitted returns all types. The published specification defines `limit` with default 100, minimum 1, and maximum 1000; values above the maximum return 400 and are not clamped. `version` is required on delete and carries the desire's current version ([CAS / Version Semantics](#cas--version-semantics)).
 
 #### Desire Identifier
 
@@ -382,7 +386,7 @@ The desire resource returned by Get. Write desire returns the same full record, 
   "namespace": "kube-system",
   "name": "coredns",
   "owner": "system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter",
-  "resource_id": "clusters/cls-123",
+  "resource_id": "019a6f5e-3c2a-7b4d-8e1f-2a5c9d0b7f31",
   "kubeContent": { "...": "rendered Kubernetes manifest" },
   "status": { "...": "applier-written status" },
   "generation": 2,
@@ -403,7 +407,7 @@ A ReadDesire has no `kubeContent` at the top level. It carries its `target_versi
   "namespace": "kube-system",
   "name": "coredns",
   "owner": "system:serviceaccount:hyperfleet:cluster-adapter-hyperfleet-adapter",
-  "resource_id": "clusters/cls-123",
+  "resource_id": "019a6f5e-3c2a-7b4d-8e1f-2a5c9d0b7f31",
   "target_version": "v1",
   "status": { "kubeContent": { "...": "mirrored live object" } },
   "generation": 1,
@@ -420,13 +424,15 @@ A ReadDesire has no `kubeContent` at the top level. It carries its `target_versi
   - Carry `resource_id` and `version`. ApplyDesire writes also carry `kubeContent`; ReadDesire writes also carry `target_version`. ReadDesire and DeleteDesire write requests have no `kubeContent` field. Write bodies carry no identity or ownership fields, and the path is the sole identity source.
   - `owner` is set by the API from the caller's `hf_identity` and appears only in responses ([Owner Binding](#owner-binding)). `generation` is set by the API.
   - `target_version` is the Kubernetes API version to read the object as, for example `v1`. A ReadDesire write requires it, and an empty value returns 400 on any write ([`types.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/types.go#L137), [`validate.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/validate.go#L136-L138)).
-  - `resource_id` identifies the HyperFleet API resource that the desire comes from, for example `clusters/cls-123`. An empty value returns 400. The shared store keeps it as `OriginID` ([`types.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/types.go#L89-L90)).
+  - `resource_id` is opaque provenance. For resources created by the HyperFleet API, use the resource UUID from `event.id`. An empty value returns 400. The shared store keeps it as [`OriginID`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/types.go#L89-L90).
   - An omitted or zero `version` means create. A non-zero `version` updates an ApplyDesire ([CAS / Version Semantics](#cas--version-semantics)). A ReadDesire and a DeleteDesire have no update, so a non-zero `version` on either returns 400.
 - **Write-status requests:**
   - An ApplyDesire or DeleteDesire status write carries the `status` object and a required `version`. The API checks the version and increments it ([CAS / Version Semantics](#cas--version-semantics)).
   - A ReadDesire status write carries `status` only, and `status.kubeContent` holds the mirrored object.
   - All status writes return 204 with no body.
   - The `status` object holds Kubernetes conditions in `conditions`, and a ReadDesire status also holds `kubeContent` ([`types.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/types.go#L73-L76), [`ReadStatus`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/types.go#L148-L153)).
+
+The sweeper resolves the UUID through `GET /api/hyperfleet/v1/resources/{id}` with a system-scoped identity. See [Orphan Detection](spike-sweeper-orphan-scan.md#orphan-detection). The published specification still shows a resource path as its example. Update those examples in the follow-up release. [Adapter PR #366](https://github.com/openshift-hyperfleet/hyperfleet-adapter/pull/366) carries the event ID into newly created desires.
 
 The implementation story specifies these schemas in an OpenAPI document first, following [ADR-0003](../adrs/0003-openapi-first-contract.md). New v1 wire fields use snake_case (`next_cursor`), matching the Error Model extension fields; inherited desire fields keep their established spellings (`kubeContent`, `resource_id`).
 
@@ -482,22 +488,64 @@ On a create, the store checks the `owner` before a pending `DeleteDesire`, so a 
 
 The API tests must cover each row. The `HYPERFLEET-CNF-002` test must include a stale status write. The `HYPERFLEET-CNF-004` test must use a second caller identity.
 
+### Sweeper Partition Enumeration
+
+**Decision state:** [ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records option 2, including this metadata contract, its API/Postgres boundary, and its narrow authorization and v1 compatibility exceptions. The published OpenAPI specification has no such endpoint. Publish the amendment in a subsequent minor specification release under `/v1` before implementing it. Recording partition enumeration does not complete [HYPERFLEET-1823](spike-sweeper-orphan-scan.md): deletion confirmation after record recreation, destructive supersede of replacement intent, decommissioned-partition row cleanup, and publication/enforcement of the [A1 target-identity invariant](spike-sweeper-orphan-scan.md#working-assumption-and-open-question) remain separate [design gates](spike-sweeper-orphan-scan.md#review-and-implementation-gates). A1 is supported by the reviewed API and adapter configurations but is not yet enforced. ADR-0039 does not accept their destructive risks or select cancellation behavior; removing a store record cannot stop an in-flight Applier.
+
+#### Operation and Response
+
+Add `GET /partitions?cursor={cursor}&limit={limit}` under the existing `/api/hyperfleet/desire-store/v1` base path. It lists distinct partitions represented by at least one stored desire of any type (`apply`, `delete`, or `read`). It must not filter by registration, AuthConfig, active Applier, owner, or originating API-resource existence. It returns identifiers only, without desire content, credentials, or registration metadata.
+
+Example response (illustrative identifiers and opaque cursor):
+
+```json
+{
+  "items": [
+    { "partition": "mc-01" },
+    { "partition": "mc-02" }
+  ],
+  "next_cursor": "opaque-continuation-token"
+}
+```
+
+- `items` is required, including an empty array when no partitions remain. Each `partition` has the existing `managementCluster` identifier format. Omit `next_cursor` on the final page; return no total count.
+- Use ascending bytewise lexicographic order of the partition identifiers and an opaque keyset cursor, independent of database locale. A cursor belongs to this operation and cannot be used on a desire-list route or vice versa; malformed or incompatible cursors return 400.
+- Use the published desire-list policy: default `limit` 100, minimum 1, maximum 1000, and 400 above the maximum. Record these values for the metadata operation in the follow-up specification release. Validate capacity independently of those page-size limits.
+- The response is 200 on success, including an empty list. Use existing 400, 401, 403, 429, 500, and 503 error contracts. Do not turn a database/query failure into an empty 200 response.
+- Pagination is not a snapshot. A partition inserted behind the cursor may be found on the next traversal, and disappearing rows may make a returned partition empty when read. Resume interrupted scheduled enumeration and start the next traversal from the beginning as described in [Cadence and Operations](spike-sweeper-orphan-scan.md#cadence-and-operations). Do not use the list as evidence of source-resource or Kubernetes-object absence.
+- The API/backend performs enumeration through its data layer; the sweeper receives no database access. Partition identifiers are derived from remaining records, not a new registry. Select and validate a bounded query/index strategy against the actual schema, including partitions containing only deletes or reads. Enumeration does not remove rows. If a decommissioned partition has no Applier to confirm deletion, the design currently retains unconfirmed deletes and standalone reads; who cleans those rows remains an [open gate](spike-sweeper-orphan-scan.md#review-and-implementation-gates).
+
+**Store boundary:** Implement enumeration as a separately authorized API/Postgres metadata query in `hyperfleet-desire-store`, outside the shared [`SpecStore`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store.go) interface. Its existing `List*Desires` methods require a partition and expose no `ListPartitions` operation. Do not overload an empty partition as a wildcard. The sweeper's HTTP client gets an explicit metadata-list operation; ordinary Adapter/Applier store clients retain their partition-scoped interface. Verify enumeration and authorization with service integration tests against Postgres; the existing shared conformance suite does not cover this new query. Extending `SpecStore` is the alternative, but would require coordinated memory, Redis, Postgres, HTTP-client, and conformance changes for a Hub-only operation. ADR-0039 does not select that broader change. The separate HYPERFLEET-1937 owner exemption has memory/Redis conformance coverage and must be tested through the API and Postgres.
+
+#### Metadata Authorization Exception
+
+This operation intentionally has no target partition. Its permission is separate from every desire-record permission:
+
+1. On the existing fleet base host, authenticate the Hub token through TokenReview and require the exact deployed sweeper service-account identity. Other allowlisted Hub identities, including Adapters, cannot use this route. Remote Appliers cannot use it through either hostname class.
+2. Match only `GET` on the canonical partition-collection path. Authorino issues a signed Wristband with `hf_caller_class=fleet-scoped`, the sweeper's `hf_identity`, and a new `hf_operation=partition-list` claim. Omit `hf_partition` for this operation; never use an empty or wildcard partition to query desire records. Keep the existing signature, issuer, audience, expiry, and key-validation requirements.
+3. The API admits the metadata query only when method/path, identity, caller class, and `hf_operation` all match. A metadata request carrying `hf_partition` is inconsistent and must be rejected. A valid partition-scoped Wristband does not grant metadata permission.
+4. On every desire-record route, reject a metadata `hf_operation` claim and continue requiring the existing non-empty partition claim and route equality. The metadata scope is not a fallback when partition extraction fails. Normal partition-scoped Wristbands need no new operation claim.
+5. Strip client-supplied identity, scope, partition, and Wristband headers at the gateway as before. Client input must never populate `hf_operation`. Grant the exception only to the enumeration handler/data-layer method, never by disabling shared partition enforcement.
+
+[ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) partially supersedes only the universal partition-scope rules in ADR-0022 and ADR-0029 for this metadata operation. Both earlier ADRs link to that exception; their desire-record rules remain in force. The HLD, glossary, and [test plan](e2e-testing/desire-store-test-plan.md#sweeper-privileges) reflect this decision. Affected story wording and follow-up ownership remain [integration actions](spike-sweeper-orphan-scan.md#review-and-implementation-gates). Review the AuthConfig generation, gateway route matching, API claim validation, and data-layer interface together. Required negative tests include forged scope, Adapter/Applier access, mixed claims, metadata-token replay on desire routes, malformed paths, and missing partition on ordinary routes. Gateway expression syntax and normalization behavior must be verified in implementation, not inferred from this conceptual claim contract.
+
 ### Compatibility
 
 - Supported v1 Appliers must continue working when the API is deployed independently.
 - Operation behavior and authorization rules remain stable in v1.
 - Optional additive request and response fields are compatible within v1.
 - Changes to required fields, operation behavior, authorization, CAS, or idempotency require a new API version.
+- **Recorded additive exception ([ADR-0039](../adrs/0039-sweeper-partition-enumeration.md)):** Add only the [sweeper partition-listing operation](#sweeper-partition-enumeration) in a subsequent minor specification release under `/v1`. Its metadata permission is limited to the exact sweeper service identity, rejected on every desire-record route, and changes no existing caller's behavior. The follow-up release must publish this explicit amendment. This decision grants no general exception for other new operations or authorization changes.
 - CAS and idempotency details are defined in [CAS / Version Semantics](#cas--version-semantics).
 
 ### CAS / Version Semantics
 
 - **Desired-state updates (Write desire, ApplyDesire):** The Adapter sends the current version. The API updates only when it matches, then increases it. A mismatch returns a version-conflict error; the Adapter reads the current record and retries.
 - **Status writes (Write status):** An `ApplyDesire` or `DeleteDesire` status write carries the `version` that the Applier read with the desire. The API writes only when it matches the stored version, then increments it. A stale `version` returns a version-conflict error (`HYPERFLEET-CNF-002`), and a missing or non-integer `version` returns 400. A status write does not change `generation`. A spec update and a status write use the same version, so a status write computed for an older spec is rejected, and an Adapter update that loses to a status write gets `HYPERFLEET-CNF-002`, reads the record again, and retries. The Applier writes status only when it changed, and it drops a rejected status write and computes the status again on its next poll ([`applydesire/controller.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/applydesire/controller.go#L133-L143), [`deletedesire/controller.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/deletedesire/controller.go#L157-L166)). A `ReadDesire` status write carries no `version` and does not change it. [HYPERFLEET-1511](https://redhat.atlassian.net/browse/HYPERFLEET-1511) removed the version check for `ReadDesire` status writes only, and the shared store keeps the exact-version check on the other two ([`pkg/desire/store.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/pkg/desire/store.go#L144-L165)).
-- **Deletes (Delete desire):** The caller sends the desire's current version as the required `version` query parameter. The API deletes only when it matches and returns 204. A mismatch returns a 409 version-conflict error, the same problem type as on writes. An absent desire returns 404. The shared store's single-desire deletes (`DeleteApplyDesire`, `DeleteDeleteDesire`, `DeleteReadDesire`) also require the exact version and the `owner`. The sweeper's exemption from the `owner` check is not in effect yet; see the open limit below.
+- **Deletes (Delete desire):** The caller sends the desire's current version as the required `version` query parameter. The API deletes only when it matches and returns 204. A mismatch returns a 409 version-conflict error, the same problem type as on writes. An absent desire returns 404. The shared store's single-desire deletes (`DeleteApplyDesire`, `DeleteDeleteDesire`, `DeleteReadDesire`) also require the exact version and the `owner`. Authorized sweeper deletes use the carve-out described in the open limit below once the service integrates it.
 - **Delete supersedes apply (Write desire, DeleteDesire):** Creating a `DeleteDesire` removes the `ApplyDesire` for the same object, at any version, in the same transaction, and returns 201. The `ApplyDesire`'s version is not checked, so an Adapter update to it that is in flight gets 404, and so does an Applier status write to it. The `ReadDesire` is not changed and keeps its `owner`. A caller that does not own the object gets 409 `HYPERFLEET-CNF-004` and nothing changes ([Owner Binding](#owner-binding)). When a `DeleteDesire` for the object exists, the create gets 409 `HYPERFLEET-CNF-001` and nothing changes.
-  - **Open limit:** The sweeper is exempt from the owner check ([Owner Binding](#owner-binding)), but the shared store runs the owner check inside the `DeleteDesire` create and inside every single-desire delete. A sweeper `DeleteDesire` for an object that an adapter owns therefore gets `HYPERFLEET-CNF-004`, the supersede does not run for it, and the sweeper's delete of an adapter-owned `DeleteDesire` or `ReadDesire` gets `HYPERFLEET-CNF-004` too. Until this limit is closed, the API cannot skip the owner check for the sweeper, so the cross-owner window in the sweeper guard and the trade-off below does not exist yet. Making the exemption reach these calls needs a store-interface change that [HYPERFLEET-1937](https://redhat.atlassian.net/browse/HYPERFLEET-1937) owns ([gap G15](e2e-testing/desire-store-test-plan.md#gaps-and-deferred-work)).
-  - **Owners after a supersede:** The `ReadDesire` keeps its own `owner`. A sweeper `DeleteDesire` for an adapter-owned object leaves the object with an adapter-owned `ReadDesire` and a sweeper-owned `DeleteDesire`. This is the only exception to the one-owner rule ([Owner Binding](#owner-binding)). The applier's confirmation does not end it. It lasts until the sweeper removes the `DeleteDesire`. The sweeper also removes the orphaned `ReadDesire`.
+  - **Open limit:** [Applier PR #86](https://github.com/openshift-hyperfleet/hyperfleet-applier/pull/86) added `SweeperStore` for `CreateDeleteDesire`, `DeleteDeleteDesire`, and `DeleteReadDesire` in memory and Redis. These operations skip owner validation, and the two deletes still require the exact version. Postgres must implement the same contract under [HYPERFLEET-1671](https://redhat.atlassian.net/browse/HYPERFLEET-1671), and the API must dispatch to it only for the authenticated sweeper. Until integrated, those calls through the ordinary store still return `HYPERFLEET-CNF-004` on owner mismatch. See [gap G15](e2e-testing/desire-store-test-plan.md#gaps-and-deferred-work).
+  - **Owners after a supersede:** The `ReadDesire` keeps its own `owner`. A sweeper `DeleteDesire` for an adapter-owned object leaves the object with an adapter-owned `ReadDesire` and a sweeper-owned `DeleteDesire`. This is the only exception to the one-owner rule ([Owner Binding](#owner-binding)). The applier's confirmation does not end it. It lasts until the sweeper removes the `DeleteDesire`. The sweeper removes the orphaned `ReadDesire` only after the paired-read checks below are available.
 - **Timed-out writes:** If a write times out, the client reads the desire to check whether the requested change was applied. If it matches, the client treats the write as successful. Otherwise, it re-evaluates and retries. A retried `ApplyDesire` or `DeleteDesire` status write whose first attempt succeeded gets `HYPERFLEET-CNF-002` while the same record exists. The first attempt incremented the version. If the desire was deleted and recreated, the old version can match again. The Applier drops a rejected status write and computes the status again on its next poll. ReadDesire status writes have no version precondition. A late write or a retry of an older payload can overwrite a newer status.
 - **Timed-out deletes:** If a delete times out, the client reads the desire:
   - Absent: the delete succeeded.
@@ -519,6 +567,8 @@ The API tests must cover each row. The `HYPERFLEET-CNF-002` test must include a 
 - Every lost record is rewritten by its owner. The Desire Store is rebuildable, so an Adapter writes a missing `ApplyDesire` again on its next reconcile, and it requests a missing unconfirmed `DeleteDesire` again instead of treating its absence as a completed delete ([Adapter Deletion Flow Design](../components/adapter/framework/lifecycle/adapter-lifecycle-delete-design.md#remote-transport-resources-9)).
 
 **Status-write limit after recreation:** An old ApplyDesire or DeleteDesire status write can match the version of a recreated record. For example, a status computed at version 1 can mark a recreated DeleteDesire as deleted without processing its deletion. The DeleteDesire controller treats this status as completed and skips the delete ([`deletedesire/controller.go`](https://github.com/openshift-hyperfleet/hyperfleet-applier/blob/f15f3f8630e15fc6f446edc535ccef6f370907e2/internal/controllers/deletedesire/controller.go#L135-L149)). The next poll therefore does not guarantee recovery. The lost-record recovery above does not apply because the record still exists.
+
+**Sweeper read-cleanup limit:** A replacement `ApplyDesire` can retire the confirmed delete and leave its read at the same version. A status write can also revoke the delete's confirmation while leaving the read version unchanged. The existing single-record read delete checks the read version and has no sibling precondition. An authorized owner exemption alone cannot make either case safe. Keep automatic paired-read removal disabled until [the spike's atomic checks](spike-sweeper-orphan-scan.md#races-that-re-reads-do-not-solve) can verify the same confirmed delete at its checked version, the same matching read at its checked version, and absence of a replacement apply in the operation that removes the read. On a failed check, retain the read and re-evaluate before removing either record.
 
 **Alternatives considered:**
 
