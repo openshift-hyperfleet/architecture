@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-23
+Last Updated: 2026-11-24
 ---
 
 # Desire Store Detailed Design
@@ -169,7 +169,7 @@ Authorino signs Wristbands with the Hub private key, and the API verifies them w
 #### Network Boundary and Bypass Defense
 
 - **NetworkPolicy:** Allow Desire Store API ingress only from its dedicated Envoy gateway.
-- **Database:** Keep Postgres private to the Hub. [ADR-0026](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md) places the API, Desire Store, and Broker databases on one shared instance, so the instance's ingress admits the Desire Store API alongside the other Hub services; isolation is enforced per database, not per client. Among service roles, only the Desire Store's application and migration roles (`desire_store_app` and `desire_store_migrate`) hold `CONNECT` on the `desire_store` database; `PUBLIC` holds neither `CONNECT` nor `TEMPORARY` on it; and the platform admin or partner applies those grants ([co-located service databases design](co-located-service-databases-postgres-design.md#roles-and-grants)). Administrative and monitoring access is managed separately by the platform admin and is not a service grant. Only the Desire Store API workload receives the `desire_store_app` credential, and only that database's migration executor receives the `desire_store_migrate` credential. No service role holds `CONNECT` on `hyperfleet`.
+- **Database:** Keep Postgres private to the Hub. [ADR-0026](../adrs/0026-co-located-service-databases-shared-postgres-isolation.md) places the API, Desire Store, and Broker databases on one shared instance, so the instance's ingress admits the Desire Store API alongside the other Hub services, and isolation is per database, not per client. Apart from administrative and monitoring access, which the platform admin manages separately, only `desire_store_app` and `desire_store_migrate` hold `CONNECT` on the `desire_store` database. Only the Desire Store API workload gets the `desire_store_app` credential, and only that database's migration executor gets `desire_store_migrate`. The full grants are in [Roles and grants](co-located-service-databases-postgres-design.md#roles-and-grants).
 - **Bypass defense:** Require and validate a signed Wristband before allowing data access, even if the gateway is bypassed.
 - **Headers and credentials:** Ignore the client-supplied headers listed in the [Gateway Trust Contract](#gateway-trust-contract) and reject missing, invalid, or expired Wristbands.
 
