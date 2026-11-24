@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-18
+Last Updated: 2026-11-19
 ---
 
 # Desire Store Architecture Overview
@@ -123,7 +123,7 @@ sequenceDiagram
 
 The gateway authenticates each Desire Store data caller and provides its caller class in the signed Wristband. [ADR-0029](../adrs/0029-desire-store-authorization.md) defines caller authorization and partition-selection rules; the [Detailed Design](desire-store-dd.md#authconfig-structure-and-reconciliation) defines the concrete AuthConfig, gateway, and API configuration used to enforce them.
 
-[ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records option 2 for partition discovery: the sweeper lists distinct partition identifiers from remaining apply, delete, and read records, including fully decommissioned partitions absent from registrations. This API/Postgres metadata query is separate from the shared partition-scoped store interface. Only the exact sweeper identity can use `GET /api/hyperfleet/desire-store/v1/partitions`, with `hf_operation=partition-list` and no `hf_partition` in its Wristband. Metadata scope grants no desire-record access; each subsequent record request requires its own partition scope. The endpoint still requires a specification release and implementation. Discovery does not establish that an origin is absent or a remote object is deleted; the [orphan-scan spike](spike-sweeper-orphan-scan.md#review-and-implementation-gates) tracks the remaining cleanup-safety decisions.
+[ADR-0039](../adrs/0039-sweeper-partition-enumeration.md) records option 2 for partition discovery: the sweeper lists distinct partition identifiers from remaining apply, delete, and read records, including fully decommissioned partitions absent from registrations. This API/Postgres metadata query is separate from the shared partition-scoped store interface. Only the exact sweeper identity can use `GET /api/hyperfleet/desire-store/v1/partitions`, with `hf_operation=partition-list` and no `hf_partition` in its Wristband. Metadata scope grants no desire-record access; each subsequent record request requires its own partition scope. The endpoint still requires a specification release and implementation. Discovery does not establish that an origin is absent or a remote object is deleted, and it does not remove rows left after an Applier is decommissioned; the [orphan-scan spike](spike-sweeper-orphan-scan.md#review-and-implementation-gates) tracks the remaining cleanup-safety and row-retention decisions.
 
 ## Trust Boundaries and Partition Isolation
 

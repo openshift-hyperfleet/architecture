@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-18
+Last Updated: 2026-11-19
 ---
 
 # HyperFleet Glossary
@@ -111,6 +111,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **tenant_claims** | A per-issuer JWT configuration map specifying which JWT claims to extract as enrichment key/value pairs. Each map entry maps an enrichment key (e.g., `org`) to a JWT claim name (e.g., `hd`). See: [Multi-Tenant Identity and Authorization Design](multi-tenant-identity-authz-design.md) | API |
 | **Terminal Error** | An error that will not resolve on retry and requires human investigation (e.g., HTTP 400, 403, malformed event payload, invalid manifest template). When the adapter classifies an error as terminal, it ACKs the message (preventing redelivery), reports error status to the API, and logs at `error` level. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
 | **Transient Error** | An error expected to resolve without human intervention (e.g., HTTP 429, 5xx, network timeout, API server overload). When the adapter classifies an error as transient, it returns an error to the broker library, which NACKs the message and triggers redelivery with backoff. See: [ADR-0017](../adrs/0017-adapter-error-taxonomy.md) | Adapter Framework, Broker |
+| **Target-Identity Invariant** | A required adapter rule: one remote Kubernetes object belongs to exactly one HyperFleet API resource, and its name or containing namespace derives from that resource's immutable UUID. It prevents another resource from reusing an orphan's target, but it is not yet a runtime guard. See: [Sweeper Orphan-Scan spike](spike-sweeper-orphan-scan.md#working-assumption-and-open-question) | Adapter Framework, Applier |
 | **Topic** | A named channel in the Message Broker to which Sentinel publishes events. HyperFleet uses topic naming convention: `hyperfleet.<resourceType>.changed.<version>` (e.g., `hyperfleet.clusters.changed.v1`). | Broker, Sentinel |
 | **Trust Bundle** | The set of CA certificates a deployment trusts for PostgreSQL server identity verification, distributed to every PostgreSQL client with its connection details. See: [ADR-0033](../adrs/0033-postgres-transport-security.md) | All |
 | **Watermill** | The Go pub/sub library ([ThreeDotsLabs/watermill](https://github.com/ThreeDotsLabs/watermill)) used as the transport abstraction inside `hyperfleet-broker`. Watermill handles broker-specific protocol details; the HyperFleet broker library adds CloudEvents conversion, metrics, and health checks on top. | Broker |

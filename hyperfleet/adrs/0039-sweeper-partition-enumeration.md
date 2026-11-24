@@ -28,7 +28,7 @@ Record a narrow additive exception to the Detailed Design's v1 compatibility rul
 
 ### Decision Boundary
 
-This records the partition-discovery, metadata-authorization, store-boundary, and compatibility decisions. Deletion confirmation after record recreation, destructive supersede of a replacement apply, and safe cleanup of a read beside a confirmed delete remain [open safety gates in the spike](../docs/spike-sweeper-orphan-scan.md#review-and-implementation-gates). The spike also tracks source restoration or target reassignment under [A1 (pending validation)](../docs/spike-sweeper-orphan-scan.md#working-assumption-and-open-question). This ADR does not accept their destructive risks or select cancellation behavior. Enumeration does not prove source absence or remote deletion and cannot restore an unavailable Applier. Recording this ADR alone does not complete all six spike criteria or claim that the endpoint is implemented.
+This records the partition-discovery, metadata-authorization, store-boundary, and compatibility decisions. Deletion confirmation after record recreation, destructive supersede of a replacement apply, safe cleanup of a read beside a confirmed delete, and cleanup of rows left after a management cluster is decommissioned remain [open safety gates in the spike](../docs/spike-sweeper-orphan-scan.md#review-and-implementation-gates). The spike records the [A1 target-identity invariant](../docs/spike-sweeper-orphan-scan.md#working-assumption-and-open-question) as supported by the reviewed API and adapter configurations, but its publication and enforcement remain open work. This ADR does not accept their destructive risks or select cancellation behavior. Enumeration does not prove source absence or remote deletion and cannot restore an unavailable Applier or confirm a delete after its Applier is removed. Recording this ADR alone does not complete all six spike criteria or claim that the endpoint is implemented.
 
 ## Consequences
 
@@ -44,6 +44,7 @@ This records the partition-discovery, metadata-authorization, store-boundary, an
 - Distinct partition queries add database work. Their bounded query/index strategy and contention with Applier polls need validation against the actual schema and workload.
 - Concurrent changes can defer discovery until the next scan. Empty partitions disappear from the list; the operation is not a registry or evidence that Kubernetes resources were deleted.
 - Unconfirmed cleanup remains unresolved when its Applier is unavailable. No timeout or registration removal substitutes for deletion confirmation.
+- Enumeration discovers decommissioned partitions but does not remove their remaining rows. No existing row-cleanup mechanism was identified; registration deletion and AuthConfig removal are HYPERFLEET-1831 work, and no management-cluster decommission flow is documented. Deletion confirmation still needs an Applier, so a separate decommission or row-retention decision and owner is required; this ADR adds no partition-delete operation.
 
 ## Alternatives Considered
 
