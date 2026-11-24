@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-11
+Last Updated: 2026-11-24
 ---
 
 # HyperFleet Glossary
@@ -99,6 +99,7 @@ Definitions for HyperFleet-specific terms, concepts, and abbreviations used acro
 | **ResourceCondition** | A resource-level status condition computed by the API from adapter statuses. Standard types: `Reconciled`, `LastKnownReconciled`, and `{AdapterName}Successful`. Present on the Cluster/NodePool `status.conditions` field. Distinct from `AdapterCondition`, which is reported by adapters. Defined in the [API spec](https://github.com/openshift-hyperfleet/hyperfleet-api-spec). See: [Status Guide](status-guide.md) | API, Sentinel |
 | **Retention Reaper** | The background task in the `hyperfleet-broker` library that invokes the Maintenance Routine on an interval. See: [ADR-0031](../adrs/0031-broker-postgres-event-log.md) | Broker |
 | **Self-Managed Box** | The operator-bundle deployment target for self-managed, disconnected installs. The box currently uses RabbitMQ; the decided target is for the shared PostgreSQL instance to carry all service state once the event-log transport ships. See: [ADR-0032](../adrs/0032-broker-transport-shared-postgres.md) | Broker, Operator |
+| **Served Zone** | The DNS zone whose hostnames a HyperFleet gateway serves, today the public `oci.hypershell.app` zone. Certificate coverage for the Desire Store gateway is decided per served zone. See: [ADR-0039](../adrs/0039-desire-store-gateway-reachability-tls-trust.md) | Infrastructure |
 | **Sentinel** | The HyperFleet reconciliation service that continuously polls the API for resources, evaluates configurable CEL-based decision logic, and publishes CloudEvents to the Message Broker to trigger adapter processing. Multiple Sentinel instances can be deployed with different resource selectors for horizontal scalability. See: [Sentinel Design](../components/sentinel/sentinel.md) | Sentinel |
 | **Shard / Sharding** | The strategy of deploying multiple Sentinel instances, each watching a different subset of resources (e.g., by region label). Enables horizontal scaling of the reconciliation loop without coordination between instances. Note: this is label-based filtering, not true sharding — operators must ensure full resource coverage. | Sentinel |
 | **Sizing Profile** | The resourcing tier (small, medium, large) selected in `HyperFleetConfig`, controlling replicas, resource requests/limits, and HPA/PDB defaults. Distinct from Bundle: Sizing Profile controls resourcing only and does not affect which components are deployed. Its field name is not yet finalized ([HYPERFLEET-1406](https://redhat.atlassian.net/browse/HYPERFLEET-1406) draft uses `profile`). See: [ADR-0019](../adrs/0019-package-hyperfleet-as-operator.md) | Operator |

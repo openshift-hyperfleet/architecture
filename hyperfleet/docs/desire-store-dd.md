@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-19
+Last Updated: 2026-11-20
 ---
 
 # Desire Store Detailed Design
@@ -141,7 +141,7 @@ Remote Appliers use the existing [ADR-0020](../adrs/0020-envoy-authorino-api-gat
 
 ### Revocation and JWKS Failure Behavior
 
-The management cluster must publish the registered issuer's discovery and JWKS endpoints over the approved private path and keep them reachable for key refresh.
+The management cluster must publish the registered issuer's discovery and JWKS endpoints through the issuer-publication mechanism ([HYPERFLEET-1834](https://redhat.atlassian.net/browse/HYPERFLEET-1834)) and keep them reachable for key refresh; hub-initiated reachability into management clusters is not assumed.
 
 - Each binding `AuthConfig` contains exactly one issuer configuration, selected by per-partition hostname lookup before authentication (see [AuthConfig Structure and Reconciliation](#authconfig-structure-and-reconciliation)); a request cannot trigger JWKS resolution for an unrelated issuer.
 - JWKS refresh is bounded and canceled when the authorization request no longer needs it.
@@ -286,9 +286,9 @@ The Adapter and sweeper have different permissions, enforced from `hf_identity` 
 - **Operator, fleet-scoped:** render and reconcile the base-host `AuthConfig` and its TokenReview subject allowlist, generated from the deployed adapters (each has its own `<name>-hyperfleet-adapter` service account) and the sweeper, as the general gateway's allowlist is.
 - **Operator, registration validation:** reject a registration whose issuer is already claimed by another binding, and reject issuers whose signing keys overlap an existing registration (the main gateway chart already rejects duplicate `issuerUrl` at render, same pattern). With one CR per binding, no request-time component sees two bindings, so issuer uniqueness is what keeps one management cluster's Applier out of another's partition.
 - **Operator, keys:** own the shared Wristband signing-key `Secret`s; rotate by putting the new key first in `signingKeyRefs` and retaining the previous key for the retention window ([Signing-Key Rotation and Failure Handling](#signing-key-rotation-and-failure-handling)).
-- **Gateway:** a private Envoy listener for the Desire Store:
+- **Gateway:** a dedicated Envoy listener for the Desire Store:
   - Serves the base host and the `{partition}.desire-store` wildcard hostnames.
-  - Uses a wildcard DNS record; TLS certificates are minted from the internal CA ([ADR-0036](../adrs/0036-management-cluster-ingress-tls-termination.md)), and trust distribution to the management clusters is [HYPERFLEET-1866](https://redhat.atlassian.net/browse/HYPERFLEET-1866)'s design.
+  - Is reachable through the hub's public entry with trust-based privacy: one wildcard certificate per served zone, minted by a dedicated internal CA and verified by management-cluster clients against the bundle distributed at onboarding; private network paths are deployment-specific overlays on the same hostnames and certificate ([ADR-0039](../adrs/0039-desire-store-gateway-reachability-tls-trust.md), [connectivity spike](spike-desire-store-gateway-connectivity-tls.md)).
   - Strips the client-supplied headers defined in the [Gateway Trust Contract](#gateway-trust-contract) before authorization ([ADR-0020](../adrs/0020-envoy-authorino-api-gateway.md)).
 
 **Verified by the [Authorino verification spike](spike-authorino-verification.md) (HYPERFLEET-1822):**
