@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-23
+Last Updated: 2026-11-24
 ---
 
 # 0039 — Desire Store Gateway Reachability and TLS Trust
@@ -23,10 +23,11 @@ This record amends [ADR-0036](0036-management-cluster-ingress-tls-termination.md
 
 ## Mechanics
 
-- **Trust bootstrap:** The authenticated registration handoff carries the CA bundle to the operator, which delivers it to the Applier for connected and disconnected installs alike. The bundle is not secret; its integrity depends on the same registration channel that protects the identity-to-partition binding.
+- **Trust bootstrap:** The authenticated registration handoff carries the CA bundle to the management-cluster operator at onboarding, and the operator loads it into the Applier's operand configuration for connected and disconnected installs alike. The Applier serves no endpoint to receive the bundle, and the hub opens no connection into the management cluster to deliver it. The bundle is not secret; its integrity depends on the same registration channel that protects the identity-to-partition binding.
 - **CA rollover:** Rotate trust without interrupting clients, in this order:
-  - **Bundle rollout:** Distribute both roots through the registration handoff. The Applier reloads the bundle in place where supported; otherwise the operator rolls the pods.
-  - **Cutover:** Serve the certificate signed by the new CA only after clients trust both roots. [ADR-0038](0038-gateway-certificate-rotation.md) owns hub-side certificate pickup.
+  - **Bundle rollout:** Distribute both roots through the registration handoff, including to clients that register or re-register during the rollover. The Applier reloads the bundle in place where supported; otherwise the operator rolls the pods.
+  - **Cutover gate:** Serve the certificate signed by the new CA only after every enrolled management cluster holds both roots, not a subset; the hub operator confirms rollout completion per cluster before proceeding. The concrete completion signal and stale-bundle alerting are implementation decisions this record does not fix.
+  - **Certificate pickup:** The Envoy Gateway controller delivers the reissued certificate Secret to the gateway's proxies, the form [ADR-0036](0036-management-cluster-ingress-tls-termination.md) decides; [ADR-0038](0038-gateway-certificate-rotation.md) owns rolling restarts for workloads not yet in that form.
   - **Retirement:** Retire the old root only after every gateway instance serves the new certificate and an overlap margin has elapsed; a client that drops the old root earlier fails verification against an instance still serving the old certificate.
 - **Issuer discovery:** The Applier initiates HTTPS to the gateway. This does not create a reverse path: issuer publication must not assume the hub can initiate connections to management clusters at request time.
 

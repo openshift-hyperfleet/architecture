@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-23
+Last Updated: 2026-11-24
 ---
 
 # Desire Store Architecture Overview
@@ -177,7 +177,7 @@ The Desire Store API is a dedicated Hub service behind its own Envoy and Authori
 
 **Alternative:** Host the endpoints in the existing API, but this would couple Desire Store traffic and failures to the general API's resources and releases.
 
-**Trade-off:** A dedicated service adds another deployable and private gateway configuration. A [NetworkPolicy](https://redhat.atlassian.net/browse/HYPERFLEET-1613) is required to restrict API ingress to its Envoy gateway, but enforcement depends on the cluster network plugin. The signed Wristband provides defense in depth when NetworkPolicy is missing or not enforced. This does not isolate shared Postgres capacity.
+**Trade-off:** A dedicated service adds another deployable and its own gateway configuration. A [NetworkPolicy](https://redhat.atlassian.net/browse/HYPERFLEET-1613) is required to restrict API ingress to its Envoy gateway, but enforcement depends on the cluster network plugin. The signed Wristband provides defense in depth when NetworkPolicy is missing or not enforced. This does not isolate shared Postgres capacity.
 
 **Acceptable because:** Independent scaling, rollout, and service-level failure isolation are more valuable than the additional stateless service and gateway operations.
 

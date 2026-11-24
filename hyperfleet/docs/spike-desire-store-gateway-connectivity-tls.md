@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-23
+Last Updated: 2026-11-24
 ---
 
 # SPIKE: Private Desire Store Gateway Connectivity and TLS Trust
@@ -65,7 +65,7 @@ The Applier validates the certificate chain against the onboarding bundle and ma
 
 ### Trust Bootstrap
 
-- **Use authenticated onboarding:** The operator delivers the bundle from the registration record. The same handoff works for connected and disconnected installs.
+- **Use authenticated onboarding:** The registration handoff delivers the bundle to the management-cluster operator, which loads it into the Applier's operand configuration. The same handoff works for connected and disconnected installs.
 - **Do not add a public bundle endpoint:** Fetching from a publicly trusted endpoint could automate refresh for connected installs but adds a second mechanism that cannot replace the disconnected handoff.
 
 ### CA Distribution and Rotation
@@ -139,5 +139,5 @@ A fully isolated cluster cannot use the gateway. It needs an HTTPS path to the h
 Implementation and validation are tracked under the [Desire Store epic](https://redhat.atlassian.net/browse/HYPERFLEET-1518):
 
 - **Gateway serving:** Gateway, certificate, and DNS integration, including verifying the deployed ExternalDNS matches the inspected zone-scope behavior.
-- **Trust distribution:** Onboarding handoff, client reload, and CA rollover operations: the rotation trigger and cadence decision, and alerting for stale bundles.
+- **Trust distribution:** Onboarding handoff, client reload, and CA rollover operations: the rotation trigger and cadence decision, the per-cluster rollout completion signal, and alerting for stale bundles.
 - **Validation:** End-to-end verification of the flows not exercised by the TLS probe, including private connectivity and the DRG attachment quota where a topology exists.
