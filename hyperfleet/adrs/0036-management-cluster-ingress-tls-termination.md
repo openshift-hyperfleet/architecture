@@ -1,10 +1,12 @@
 ---
 Status: Active
 Owner: HyperFleet Architecture Team
-Last Updated: 2026-11-09
+Last Updated: 2026-11-20
 ---
 
 # 0036 — Management-Cluster Ingress and TLS Termination
+
+> Amended by [ADR-0039](0039-desire-store-gateway-reachability-tls-trust.md) — single-public-listener slice only: the public boundary extends to a second Gateway, the Desire Store gateway. The entry architecture this record decides is otherwise unchanged.
 
 ## Context
 
