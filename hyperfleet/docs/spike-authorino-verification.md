@@ -1,7 +1,7 @@
 ---
 Status: Active
 Owner: Leonardo Dorneles
-Last Updated: 2026-11-19
+Last Updated: 2026-11-24
 ---
 
 # Spike: Verify Authorino Revocation Delay and Issuer Enforcement for the Desire Store Gateway
@@ -322,7 +322,9 @@ Verified with Authorino at debug log level and two mock issuers (`/default`,
   rollout) reconciled the AuthConfigs — 15 `openid connect configuration
   updated` lines, all at reconcile time, none at request time.
 - Deleting the second issuer's AuthConfig stopped its resolution (no further
-  `/other` lines).
+  `/other` lines). No fetch was in flight at deletion time, so this shows
+  that resolution stops, not that in-flight fetches are cancelled —
+  in-flight fetch cancellation is **untested** by this spike.
 - Request-time fetches are bounded: earlier in the spike, an unreachable JWKS
   endpoint produced `Client.Timeout exceeded while awaiting headers`
   (UNAUTHENTICATED denial), not a hang.
@@ -344,7 +346,9 @@ Verified with Authorino at debug log level and two mock issuers (`/default`,
 
 The behaviors the Desire Store detailed design assumes were tested against
 the deployed Authorino v0.28.0 / Envoy v1.39.1 pair. Every acceptance
-criterion of HYPERFLEET-1822 is covered:
+criterion of HYPERFLEET-1822 is covered except cancellation-aware refresh,
+which is **partially verified**: resolution stops after AuthConfig
+deletion, but in-flight fetch cancellation is untested (see 3.6):
 
 | # | Design assumption | Verdict |
 |---|-------------------|---------|
@@ -353,7 +357,7 @@ criterion of HYPERFLEET-1822 is covered:
 | 3 | CEL errors deny, not pass | ✅ PERMISSION_DENIED for missing-claim ("no such key"), type ("no such overload") and out-of-bounds ("index out of bounds") errors |
 | 4 | Local rate limiting keyed by caller class/partition | ✅ both descriptor keys enforce their buckets via the metadata→header bridge (`mc-01` partition key drew 429s); per-partition bucket isolation **untested** — the `mc-02` burst hit the fail-open default bucket, not a second descriptor (see 3.4); buckets are per Envoy process in the default v1.39.1 configuration (shared across workers) |
 | 5 | Example `v1beta3` CRs work; Wristband as upstream header | ✅ `ES256` verified end-to-end (Authorino side in this spike; the Desire Store validator's acceptance confirmed against the real service); `RS256` also works on the Authorino side; `x-wristband` reaches upstream; general-gateway Lua check requires metadata too |
-| 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded, cancelled on deletion |
+| 6 | JWKS refresh bounded, no fan-out | ✅ reconcile-driven, timeout-bounded; resolution stops after AuthConfig deletion — **in-flight fetch cancellation untested** (no fetch was in flight at deletion time; see 3.6) |
 
 No design rework is required for the verified mechanisms; the findings are
 refinements for the rendering and gateway stories. The missing-claim CEL
@@ -361,13 +365,22 @@ denial, partition-keyed rate limiting, and signing-algorithm runs that
 completed the acceptance criteria are recorded in 3.3–3.5 (the algorithm is
 `ES256`, the Desire Store validator's default; an earlier `RS256` adoption
 was based on the wrong consumer's constraints and is withdrawn — see the
-correction in 3.5). One follow-up remains open beyond the ticket's
+correction in 3.5). Two follow-ups remain open beyond the ticket's
 acceptance criteria:
 
+- **In-flight JWKS fetch cancellation on AuthConfig deletion** (3.6):
+  untested — no fetch was in flight at deletion time, so the spike shows
+  only that resolution stops. Live verification (delete an AuthConfig
+  during a slow or hanging issuer fetch and report whether the fetch is
+  cancelled) is absorbed by HYPERFLEET-1831's verify-at-implementation
+  work (per HYPERFLEET-1957).
 - **Key-rotation pickup at request time** (3.6): not established by this
   spike; a controlled rotation test is still required. This goes beyond the
   ticket's ACs (which require bounded, cancellation-aware refresh with no
-  fan-out — confirmed) and is recorded for the gateway story (1829).
+  fan-out — bounded refresh and no fan-out confirmed; cancellation-aware:
+  the spike observed only that resolution stops after AuthConfig deletion,
+  with no fetch in flight at deletion time, so in-flight fetch cancellation
+  is untested, see 3.6) and is recorded for the gateway story (1829).
 
 ## 5. Impact on HYPERFLEET-1831 (AuthConfig rendering)
 
