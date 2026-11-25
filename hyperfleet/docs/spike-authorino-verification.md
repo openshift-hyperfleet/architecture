@@ -346,7 +346,9 @@ Verified with Authorino at debug log level and two mock issuers (`/default`,
 
 The behaviors the Desire Store detailed design assumes were tested against
 the deployed Authorino v0.28.0 / Envoy v1.39.1 pair. Every acceptance
-criterion of HYPERFLEET-1822 is covered:
+criterion of HYPERFLEET-1822 is covered except cancellation-aware refresh,
+which is **partially verified**: resolution stops after AuthConfig
+deletion, but in-flight fetch cancellation is untested (see 3.6):
 
 | # | Design assumption | Verdict |
 |---|-------------------|---------|
@@ -363,9 +365,15 @@ denial, partition-keyed rate limiting, and signing-algorithm runs that
 completed the acceptance criteria are recorded in 3.3–3.5 (the algorithm is
 `ES256`, the Desire Store validator's default; an earlier `RS256` adoption
 was based on the wrong consumer's constraints and is withdrawn — see the
-correction in 3.5). One follow-up remains open beyond the ticket's
+correction in 3.5). Two follow-ups remain open beyond the ticket's
 acceptance criteria:
 
+- **In-flight JWKS fetch cancellation on AuthConfig deletion** (3.6):
+  untested — no fetch was in flight at deletion time, so the spike shows
+  only that resolution stops. Live verification (delete an AuthConfig
+  during a slow or hanging issuer fetch and report whether the fetch is
+  cancelled) is absorbed by HYPERFLEET-1831's verify-at-implementation
+  work (per HYPERFLEET-1957).
 - **Key-rotation pickup at request time** (3.6): not established by this
   spike; a controlled rotation test is still required. This goes beyond the
   ticket's ACs (which require bounded, cancellation-aware refresh with no
